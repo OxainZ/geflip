@@ -127,6 +127,10 @@
   .bindnote{margin-top:12px;padding:10px 12px;background:var(--panel2);border-left:2px solid var(--orange);
             border-radius:0 5px 5px 0;font-size:12px;line-height:1.55;color:var(--dim)}
   .bindnote b{color:var(--orange)}
+  .nextbox{margin:8px 0 4px;padding:11px 13px;background:#241c12;border:1px solid var(--orange-dim);
+           border-radius:7px;font-size:12.5px;line-height:1.5;color:var(--ink);cursor:pointer}
+  .nextbox b{color:var(--orange);letter-spacing:.04em}
+  .nextbox:active{background:#2c2216}
 
   /* settings */
   .form{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
@@ -181,6 +185,7 @@
 
 <main>
 <div id="banner" class="banner"></div>
+<div id="nextBox" class="nextbox" style="display:none"></div>
 
 <!-- ============ SCAN ============ -->
 <section id="v-scan" class="view on">
@@ -201,6 +206,7 @@
     </tr></thead>
     <tbody id="scanBody"></tbody>
   </table></div>
+  <div id="slipBox" class="bindnote" style="display:none"></div>
   <div class="panel" id="rejPanel" style="display:none">
     <h3>Why items were dropped</h3>
     <div class="statgrid" id="rejGrid"></div>
@@ -215,7 +221,34 @@
     <div class="alloc-sum" id="allocSum" style="display:none"></div>
     <div id="bindNote" class="bindnote"></div>
   </div>
+  <p class="hint" id="mixNote"></p>
   <p class="hint"><b>GP/h</b> is what an item earns. <b>%/h</b> is what it earns per gp you tie up. They rank completely differently, and the one that matters is whichever resource you run out of first — the note above says which. Density-greedy with a swap local search: it will trade a small high-ROI pick out of a slot when a bigger absorber earns more gp/hour for the bankroll overall. Idle gp is shown so you can tell when the market, not your bank, is the constraint.</p>
+</section>
+
+<!-- ============ SWING ============ -->
+<section id="v-swing" class="view">
+  <div class="scanbar">
+    <button class="primary" id="btnSwing">Find dips</button>
+  </div>
+  <div class="strip" id="swingStrip"></div>
+  <div id="swingEmpty" class="empty">A different trade from the Scan tab.<br>
+    <span style="font-size:11px">Scan captures the bid-ask spread and treats volatility as risk.
+    This treats volatility as the point: buy an item trading below its own 30-day average,
+    sell the recovery. Checks z-score, RSI and trend slope on ~30 days of history —
+    and refuses anything in a structural decline, because a nerfed item is cheap for a reason.</span></div>
+  <div class="tablewrap"><table id="swingTable" style="display:none">
+    <thead><tr>
+      <th>Item</th><th>Buy</th><th>Target</th><th>Upside</th><th>Downside</th><th>R:R</th>
+      <th>Qty</th><th>Capital</th><th>Expected</th><th>Conf</th>
+    </tr></thead>
+    <tbody id="swingBody"></tbody>
+  </table></div>
+  <p class="hint" id="swingNote" style="display:none">Target is the <b>median</b> of the recent range,
+    not the high — reverting to the middle is a far safer assumption than calling the top. Expected
+    profit is already net of the 2% tax. These are holds, not four-hour cycles: there is no guarantee
+    of when, or whether, a price reverts. <b>Downside</b> is the drop to the window's low — not a
+    stop-loss, just the fact that this item has traded that low recently. A reward-to-risk under
+    1 means the plausible loss exceeds the expected gain; those are filtered out.</p>
 </section>
 
 <!-- ============ ITEM ============ -->
@@ -253,6 +286,7 @@
       <span style="font-size:11px">Tap a scan row and press <b>Log buy</b> once an offer fills. That starts the
       item's 4-hour limit timer and stops the scanner recommending what you can no longer buy.</span></div></div>
     <div id="posSum" class="alloc-sum" style="display:none"></div>
+    <div id="holdBox" class="bindnote" style="display:none"></div>
   </div>
   <div class="panel">
     <h3>Buy limits</h3>
@@ -270,6 +304,7 @@
   </div>
   <div id="calibBox" class="bindnote" style="display:none"></div>
   <div id="verifyWarn" class="bindnote" style="display:none"></div>
+  <div id="legNote" class="bindnote" style="display:none"></div>
   <div class="panel">
     <h3>Predicted vs realized</h3>
     <div class="statgrid" id="statsGrid"><div><span>observations</span><b>0</b></div></div>
@@ -301,10 +336,21 @@
       <div><label>Max price</label><input id="cfg-maxprice" value="" placeholder="none" inputmode="text"></div>
     </div>
   </div>
+  <div class="panel"><h3>Swing mode</h3>
+    <div class="form">
+      <div><label>Min item price</label><input id="cfg-swprice" value="500" inputmode="text"></div>
+      <div><label>Min 24h volume</label><input id="cfg-swvol" value="200" inputmode="numeric"></div>
+      <div><label>Items to check in depth</label><input id="cfg-swdepth" value="14" inputmode="numeric"></div>
+      <div><label>Assumed hold (hours)</label><input id="cfg-swhold" value="48" inputmode="numeric"></div>
+      <div class="full"><label>Min reward-to-risk</label><input id="cfg-swrr" value="1.0" inputmode="decimal"></div>
+    </div>
+    <p class="hint">Each item checked costs one extra request, so depth is the time you are willing to
+      spend. 14 takes about ten seconds.</p>
+  </div>
   <div class="panel"><h3>Realism</h3>
     <div class="form">
       <div><label>Slippage (%)</label><input id="cfg-slip" value="0" inputmode="decimal"></div>
-      <div><label>Participation (%)</label><input id="cfg-part" value="10" inputmode="decimal"></div>
+      <div><label>Participation (%)</label><input id="cfg-part" value="25" inputmode="decimal"></div>
       <div><label>Max item share of bank (%)</label><input id="cfg-maxfrac" value="25" inputmode="decimal"></div>
       <div><label>Verify horizon (h)</label><input id="cfg-horizon" value="8" inputmode="decimal"></div>
       <div class="full toggle"><input type="checkbox" id="cfg-journal" checked><span>Journal every scan’s top picks</span></div>
@@ -313,12 +359,24 @@
     <p class="hint">Slippage 0 assumes fills at last-traded prices — optimistic. Journal for a few days, hit Verify, then set slippage to about half of (predicted − realized) ROI. Participation caps how much hourly volume you assume you can capture; 10% is a guess until your fills say otherwise.</p>
   </div>
   <div class="scanbar"><button class="primary" id="btnSave">Save config</button></div>
+  <div class="panel"><h3>Backup</h3>
+    <p class="hint" style="margin-top:0">Your journal and positions live only in this browser.
+      Clearing Safari data, private browsing or a new phone loses them, and that history is the
+      only thing here that cannot be refetched.</p>
+    <div class="scanbar" style="margin-top:10px">
+      <button class="ghost" id="btnExport" style="flex:1">Export backup</button>
+      <button class="ghost" id="btnImport" style="flex:1">Restore</button>
+    </div>
+    <input type="file" id="fileImport" accept="application/json,.json" style="display:none">
+    <div id="backupNote" class="bindnote" style="display:none"></div>
+  </div>
   <p class="hint">Data: OSRS Wiki / RuneLite real-time prices API. Browsers can’t send the custom User-Agent the wiki asks of automated tools, so keep usage reasonable — this app fetches 4 endpoints per scan and caches the item mapping for 24h. Tax model: 2% of sale (since 29 May 2025), floored, capped 5m/item, bonds &amp; starter tools exempt. Not affiliated with Jagex.</p>
 </section>
 </main>
 
 <nav>
   <button data-v="scan" class="on">Scan</button>
+  <button data-v="swing">Swing</button>
   <button data-v="slots">Slots</button>
   <button data-v="item">Item</button>
   <button data-v="book">Book</button>
@@ -501,8 +559,9 @@ const store = {
 
 /* --------------------------- config --------------------------- */
 const DEF_CFG = { bankroll:50_000_000, slots:8, members:true, minVol:20, minVol24:500,
-  maxAgeS:3600, minMargin:1, minPrice:1, maxPrice:null, slip:0, part:0.10, maxFrac:0.25,
-  lite:false,
+  maxAgeS:3600, minMargin:1, minPrice:1, maxPrice:null, slip:0, part:0.25, maxFrac:0.25,
+  lite:false, swingMinPrice:500, swingMinVol24:200, swingDepth:14, swingHoldHours:48,
+  swingMinRR:1.0, calibratedN:0,
   horizon:8, journal:true, tauS:1200, volSat:200, haircut:0.5, cycleH:4 };
 let CFG = {...DEF_CFG};
 
@@ -517,6 +576,11 @@ function cfgToForm(){
   $('cfg-maxfrac').value = +(CFG.maxFrac*100).toFixed(0); $('cfg-horizon').value = CFG.horizon;
   $('cfg-journal').checked = CFG.journal;
   $('cfg-lite').checked = !!CFG.lite;
+  $('cfg-swprice').value = CFG.swingMinPrice;
+  $('cfg-swvol').value = CFG.swingMinVol24;
+  $('cfg-swdepth').value = CFG.swingDepth;
+  $('cfg-swhold').value = CFG.swingHoldHours;
+  $('cfg-swrr').value = CFG.swingMinRR;
 }
 function formToCfg(){
   const n=(v,d)=>{const x=parseFloat(v);return Number.isFinite(x)?x:d;};
@@ -536,7 +600,12 @@ function formToCfg(){
     maxFrac: Math.min(1, Math.max(.01, n($('cfg-maxfrac').value,100)/100)),
     horizon: Math.max(.5, n($('cfg-horizon').value,8)),
     journal: $('cfg-journal').checked,
-    lite: $('cfg-lite').checked };
+    lite: $('cfg-lite').checked,
+    swingMinPrice: Number.isFinite(parseGp($('cfg-swprice').value))?parseGp($('cfg-swprice').value):500,
+    swingMinVol24: Math.max(0, n($('cfg-swvol').value,200)|0),
+    swingDepth: Math.max(1, Math.min(30, n($('cfg-swdepth').value,14)|0)),
+    swingHoldHours: Math.max(1, n($('cfg-swhold').value,48)),
+    swingMinRR: Math.max(0, n($('cfg-swrr').value,1)) };
 }
 
 /* ---------------------------- fetch ---------------------------- */
@@ -603,6 +672,19 @@ function stability(instant, hourly, haircut){
   const sc = Math.max(Math.abs(instant), Math.abs(hourly), 1);
   return Math.max(0, 1 - Math.abs(instant-hourly)/sc);
 }
+function medianOf(values){
+  if (!values.length) return null;
+  const a=[...values].sort((x,y)=>x-y), h=a.length>>1;
+  return a.length%2 ? a[h] : (a[h-1]+a[h])/2;
+}
+
+function observedSlippage(cands, minVol=50){
+  const vals = cands.filter(c=>c.slipObs!=null && c.vol1>=minVol).map(c=>c.slipObs);
+  if (vals.length < 12) return null;             // too few to be a market read
+  return { median: medianOf(vals), n: vals.length,
+           p75: medianOf(vals.filter(v=>v>=medianOf(vals))) };
+}
+
 function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
   const rej = {}; const R = r => rej[r]=(rej[r]||0)+1;
   const natP = latest[NATURE_RUNE]?.high ?? null;
@@ -630,8 +712,17 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
       const hs = cfg.slip>0?Math.floor(w1.avgHighPrice*(1-cfg.slip)):w1.avgHighPrice;
       hourly = netMargin(hb, hs, meta.exempt);
     }
-    // The pessimism that matters: one lucky print never sets the margin.
-    const margin = hourly==null ? Math.floor(instant*cfg.haircut) : Math.min(instant, hourly);
+    const agree = stability(instant, hourly, cfg.haircut);
+    let margin;
+    if (hourly == null){
+      margin = Math.floor(instant*cfg.haircut);          // nothing to corroborate
+    } else if (agree >= 0.7){
+      // Two noisy readings of the same spread. Averaging beats picking the
+      // smaller one, which is biased low by construction.
+      margin = Math.round((instant + hourly)/2);
+    } else {
+      margin = Math.min(instant, hourly);                // they disagree: floor it
+    }
     if (margin < cfg.minMargin){ R('margin below floor'); continue; }
     const roi = buy>0 ? margin/buy : 0;
 
@@ -684,6 +775,17 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     // and holding it through your own sell leg.
     const trendPen = (trend1h!=null && trend1h < -0.03) ? 0.8 : 1;
 
+    // ---- Observed slippage: quoted price vs what actually traded ----
+    // You buy at `low`. If real insta-sells averaged ABOVE that print, the quote
+    // is optimistic and you will pay more. Same logic inverted on the sell side.
+    // Only the adverse direction counts: a favourable gap is luck, not edge.
+    let slipObs = null;
+    if (w5 && w5.avgLowPrice!=null && w5.avgHighPrice!=null && q.low>0 && q.high>0){
+      const adverseBuy  = Math.max(0, (w5.avgLowPrice  - q.low)  / q.low);
+      const adverseSell = Math.max(0, (q.high - w5.avgHighPrice) / q.high);
+      slipObs = (adverseBuy + adverseSell) / 2;   // our slippage applies per side
+    }
+
     // ---- Where to actually place the offers ----
     // Patient rests at the observed bid/ask. Competitive pays one tick on each
     // side to sit in front of the existing queue.
@@ -697,8 +799,9 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
 
     const fresh = Math.exp(-age/cfg.tauS);
     const volS  = Math.sqrt(Math.min(1, vol1/cfg.volSat));
-    const stab  = stability(instant, hourly, cfg.haircut);
-    const conf  = Math.max(0, Math.min(1, fresh*volS*stab*trendPen));
+    const stab  = agree;
+    const quality = Math.sqrt(fresh * volS);
+    const conf  = Math.max(0, Math.min(1, quality * stab * trendPen));
     // Return on the gold this position ties up, per hour, confidence weighted.
     // Independent of position size, so a 250k rune flip and a 10m plank flip
     // become directly comparable.
@@ -712,7 +815,7 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
       gph, expGph:gph*conf, roiHr, gpPerMil, confidence:conf, fresh, volS, stab, trendPen,
       bidComp, askComp, marginComp, checkCost, tkB, tkS,
       sellersHr, buyersHr, fillBuyMin, fillSellMin, bottleneck, flowSkew,
-      trend1h, trend24, activity, flowFcast, limitResetAt, buy_limit_total:meta.limit,
+      trend1h, trend24, activity, flowFcast, slipObs, limitResetAt, buy_limit_total:meta.limit,
       limitShared: !!(ls && ls.shared),
       age, vol1, vol24, vol5: w5?Math.min(w5.highPriceVolume||0,w5.lowPriceVolume||0):0,
       breakeven:breakevenSell(buy,meta.exempt),
@@ -757,8 +860,10 @@ function applyDeep(cand, m){
 }
 
 async function deepScan(cands, n){
+  const gen = SCAN_GEN;
   let done = 0;
   for (const c of cands.slice(0, n)){
+    if (gen !== SCAN_GEN) { status('deep scan cancelled — the market was rescanned'); return cands; }
     status(`deep scan ${++done}/${n}…`);
     try{
       const series = (await getJSON(`${API}/timeseries?timestep=1h&id=${c.id}`)).data || [];
@@ -769,9 +874,138 @@ async function deepScan(cands, n){
   return cands;
 }
 
+/* =========================== SWING MODE =========================== *
+ * Spread flipping and swing trading are different trades. The scanner above
+ * captures the bid-ask gap and treats volatility as risk. This treats
+ * volatility as the opportunity: buy a genuine dip, sell the recovery.
+ *
+ * The hard part is telling a dip from a decline. An item that fell 30% because
+ * an update nerfed it is not reverting, and the signals that spot a cheap price
+ * (low z-score, low RSI) fire identically in both cases. So the trend slope is
+ * a hard gate, not a soft penalty.                                          */
+
+function mean(a){ return a.reduce((x,y)=>x+y,0)/a.length; }
+function stdev(a){ const m=mean(a); return Math.sqrt(a.reduce((s,v)=>s+(v-m)**2,0)/a.length); }
+function clamp01(v){ return Math.max(0, Math.min(1, v)); }
+
+// Wilder's RSI. Below ~30 is the conventional oversold reading.
+function rsi(values, period=14){
+  if (values.length < period+1) return null;
+  let gain=0, loss=0;
+  for (let i=1;i<=period;i++){
+    const d = values[i]-values[i-1];
+    if (d>0) gain+=d; else loss-=d;
+  }
+  let ag=gain/period, al=loss/period;
+  for (let i=period+1;i<values.length;i++){
+    const d = values[i]-values[i-1];
+    ag = (ag*(period-1) + (d>0? d:0))/period;
+    al = (al*(period-1) + (d<0?-d:0))/period;
+  }
+  if (al===0) return ag===0 ? 50 : 100;
+  return 100 - 100/(1 + ag/al);
+}
+
+// Least-squares slope per period. Used to separate "cheap" from "dying".
+function slopeOf(values){
+  const n=values.length; if (n<2) return 0;
+  const mx=(n-1)/2, my=mean(values);
+  let num=0, den=0;
+  for (let i=0;i<n;i++){ num += (i-mx)*(values[i]-my); den += (i-mx)**2; }
+  return den>0 ? num/den : 0;
+}
+
+function swingMetrics(series, period=14){
+  const pts = series.filter(w=>w.avgHighPrice!=null && w.avgLowPrice!=null);
+  if (pts.length < period+6) return null;
+  const mids = pts.map(w=>(w.avgHighPrice+w.avgLowPrice)/2);
+  const n = mids.length, cur = mids[n-1];
+  const mu = mean(mids), sd = stdev(mids);
+  const sorted = [...mids].sort((a,b)=>a-b);
+  const slope = slopeOf(mids);
+  return {
+    n, current: cur, mean: mu, sd,
+    median: sorted[Math.floor(n/2)],
+    high: sorted[n-1], low: sorted[0],
+    z: sd>0 ? (cur-mu)/sd : 0,
+    percentile: mids.filter(m=>m<cur).length/n,
+    rsi: rsi(mids, period),
+    slope,
+    driftPct: mu>0 ? (slope*n)/mu : 0,      // total drift across the window
+    volatility: mu>0 ? sd/mu : 0,
+  };
+}
+
+//: A window that has fallen more than this is trending, not dipping.
+const SWING_DECLINE_LIMIT = -0.15;
+
+function swingScore(cand, m, cfg){
+  if (!m) return null;
+  const target = Math.round(m.median);            // revert to the middle, not the top
+  const net = netMargin(cand.buy, target, cand.exempt);
+  if (net <= 0) return null;
+
+  const dip  = clamp01(-m.z / 2);                 // 2 sigma below mean scores 1
+  const over = m.rsi==null ? 0 : clamp01((45 - m.rsi) / 30);
+  // Hard gate. Buying a structural decline is how swing traders lose money.
+  const structural = m.driftPct >= SWING_DECLINE_LIMIT ? 1 : 0;
+  const conf = Math.sqrt(dip * over) * structural;
+  if (conf <= 0) return null;
+
+  // Downside is not a stop-loss, it is the plausible adverse case: this item
+  // has traded this low inside the same window we drew the target from.
+  const downside = cand.buy>0 ? (m.low - cand.buy)/cand.buy : 0;
+  const upsideRaw = cand.buy>0 ? net/cand.buy : 0;
+  const riskReward = downside < 0 ? upsideRaw/Math.abs(downside) : Infinity;
+  if (riskReward < (cfg.swingMinRR ?? 1)) return null;
+
+  const qty = Math.max(0, Math.min(cand.limit,
+              Math.floor(cfg.bankroll * cfg.maxFrac / cand.buy),
+              Math.floor(cfg.part * cand.flowFcast * cfg.cycleH)));
+  if (qty <= 0) return null;
+
+  return { ...cand, swing:m, target, downside, riskReward, swingMargin:net, swingQty:qty,
+           swingCapital: qty*cand.buy, swingProfit: net*qty,
+           swingConfidence: conf, swingExpected: net*qty*conf,
+           upside: cand.buy>0 ? net/cand.buy : 0 };
+}
+
+// Swing needs a different universe from the spread scanner. A positive bid-ask
+// spread is irrelevant here; what matters is that the item is worth something,
+// trades enough to exit, and is currently below its own recent average.
+function swingUniverse(map, latest, h1, d24, cfg, now){
+  const out=[];
+  for (const idStr in latest){
+    const id=+idStr, q=latest[idStr], meta=map.get(id);
+    if (!meta || (meta.members && !cfg.members)) continue;
+    if (q.high==null || q.low==null || q.low<=0) continue;
+    if (q.highTime==null || q.lowTime==null) continue;
+    if (now - Math.min(q.highTime,q.lowTime) > cfg.maxAgeS*4) continue;
+    if (meta.limit==null) continue;
+    if (q.low < cfg.swingMinPrice) continue;      // swinging 5gp runes is pointless
+    const w24=d24?.[idStr], w1=h1?.[idStr];
+    const vol24 = w24 ? Math.min(w24.highPriceVolume||0, w24.lowPriceVolume||0) : 0;
+    if (vol24 < cfg.swingMinVol24) continue;      // must be able to get back out
+    if (!w24 || w24.avgHighPrice==null || w24.avgLowPrice==null) continue;
+    const mid   = (q.low+q.high)/2;
+    const mid24 = (w24.avgLowPrice+w24.avgHighPrice)/2;
+    const dev   = mid24>0 ? (mid-mid24)/mid24 : 0;
+    const vol1  = w1 ? Math.min(w1.highPriceVolume||0, w1.lowPriceVolume||0) : 0;
+    out.push({ id, name:meta.name, exempt:meta.exempt, members:meta.members,
+               buy:q.low, sell:q.high, limit:meta.limit, dev, vol24,
+               flowFcast: vol24>0 ? (vol1 + vol24/24)/2 : vol1 });
+  }
+  out.sort((a,b)=>a.dev-b.dev);                   // deepest discounts first
+  return out;
+}
+
 /* ------------------------- allocation ------------------------- */
 const unitCap = c => Math.max(0, Math.min(c.limit, c.through));
-const density = c => c.buy>0 ? (c.margin*c.confidence/CFG.cycleH)/c.buy : 0;
+// Each candidate carries its own realisation period: a spread flip turns over
+// in one 4h buy-limit cycle, a swing hold does not. Dividing both by cycleH
+// silently inflated swings by the ratio between them.
+const cycleOf = c => (c.cycleHours && c.cycleHours>0) ? c.cycleHours : CFG.cycleH;
+const density = c => c.buy>0 ? (c.margin*c.confidence/cycleOf(c))/c.buy : 0;
 function fill(picks, bank, frac){
   const cap = Math.floor(bank*frac);
   let rem = bank; const pos = [];
@@ -780,7 +1014,7 @@ function fill(picks, bank, frac){
     const qty = Math.min(unitCap(c), Math.floor(Math.min(rem,cap)/c.buy));
     if (qty<=0) continue;
     const capital = qty*c.buy, prof = c.margin*qty;
-    pos.push({c, qty, capital, prof, egph:(prof/CFG.cycleH)*c.confidence});
+    pos.push({c, qty, capital, prof, egph:(prof/cycleOf(c))*c.confidence});
     rem -= capital;
   }
   return [pos, pos.reduce((s,p)=>s+p.egph,0)];
@@ -883,11 +1117,12 @@ async function verifyJournal(){
   }
   await saveJournal(j);
   status(`verified ${done} · ${filled} round trips`);
-  renderJournal();
+  renderBook();
 }
 
 /* ============================ UI ============================ */
 let LAST = {cands:[], rej:{}, alloc:{pos:[]}, t:0};
+let SCAN_GEN = 0;   // bumped by every scan so long passes can detect staleness
 let sortKey='expGph', sortAsc=false, expandedId=null, autoTimer=null;
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
@@ -934,6 +1169,24 @@ function renderScan(){
     <span>slots <b>${CFG.slots}</b></span>
     <span>slip <b>${pct(CFG.slip,1)}</b></span>${CFG.lite?'<span class="warn">lite</span>':''}
     <span>as of <b>${new Date(t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</b></span>` : '';
+  const sl = LAST.slip;
+  const box = $('slipBox');
+  if (sl){
+    const same = Math.abs(sl.median - CFG.slip) < 0.0005;
+    box.innerHTML = `<b>Measured slippage: ${pct(sl.median,2)}</b> (median across ${sl.n} liquid
+      items, three-quarters under ${pct(sl.p75,2)}). This is how far the last printed price sat
+      from what actually traded in the past five minutes, counting only the direction that costs
+      you. Your setting is ${pct(CFG.slip,2)}.`
+      + (same ? ' <span class="pos">Already matched.</span>'
+              : ` <button class="ghost" id="btnApplySlip" style="margin-top:8px">Use ${pct(sl.median,2)}</button>`);
+    box.style.display='block';
+    const b=$('btnApplySlip');
+    if (b) b.onclick = async ()=>{
+      CFG.slip = sl.median; await store.set('settings', CFG); cfgToForm();
+      box.innerHTML = `<b>Slippage set to ${pct(CFG.slip,2)}.</b> Rescan to price it in.`;
+    };
+  } else { box.style.display='none'; }
+
   const rj = Object.entries(rej).sort((a,b)=>b[1]-a[1]).slice(0,10);
   $('rejPanel').style.display = rj.length? '':'none';
   $('rejGrid').innerHTML = rj.map(([k,v])=>`<div><span>${esc(k)}</span><b>${v.toLocaleString()}</b></div>`).join('');
@@ -971,7 +1224,8 @@ function detailRow(c){
         <span>buy <b>${c.bidComp.toLocaleString()}</b></span>
         <span>sell <b>${c.askComp.toLocaleString()}</b></span>
         <span class="om">${gpHtml(c.marginComp)}/ea</span></div>
-      <div class="onote">One tick in front of the queue. The GE fills better prices
+      <div class="onote">Slippage and the tick stack: slippage moves the quote to where trades
+        actually happen, then the tick buys you queue position on top. One tick in front of the queue. The GE fills better prices
         first, and ties go to whoever offered earliest — so a tick is what buys you
         priority. Costs ${gpTxt(c.tkB+c.tkS)}/ea against a much faster fill.</div>
       <div class="rowbtns">
@@ -994,6 +1248,8 @@ function detailRow(c){
       <div><label>price volatility</label>${pct(c.deep.volatility,1)}</div>`:''}
         <div><label>price vs 1h / 24h avg</label>${trendTxt(c.trend1h)} / ${trendTxt(c.trend24)}</div>
         <div><label>margin check costs</label>${gpHtml(c.checkCost)} for 1 unit</div>
+      <div><label>this item's slippage</label>${c.slipObs==null?'—':
+        `<span class="${c.slipObs>0.01?'warn':''}">${pct(c.slipObs,2)}</span>`}</div>
       ${c.limitResetAt? `<div><label>limit partly spent</label><span class="warn">${
         c.buy_limit_note||''}resets in ${dur(c.limitResetAt - Date.now()/1000)}</span></div>`:''}
       </div>
@@ -1019,13 +1275,43 @@ document.querySelectorAll('#scanTable thead th').forEach(th=>th.onclick=()=>{
 });
 $('filterBox').addEventListener('input', renderScan);
 
+// Put a swing hold on the same axis as a spread flip. The holding period is a
+// guess and is labelled as one — but comparing a 4h cycle against an unknown
+// hold by feel is worse than comparing it against a stated number.
+function swingAsHourly(r){
+  return {
+    id:r.id, name:r.name, buy:r.buy, sell:r.target, margin:r.swingMargin,
+    confidence:r.swingConfidence, quantity:r.swingQty, limit:r.limit,
+    through:r.swingQty, capital:r.swingCapital, kind:'swing',
+    cycleHours: CFG.swingHoldHours,   // realises over the hold, not a 4h cycle
+    expGph: r.swingExpected / CFG.swingHoldHours,
+    roiHr: r.buy>0 ? (r.upside / CFG.swingHoldHours) * r.swingConfidence : 0,
+  };
+}
+
+function combinedBook(){
+  const spread = LAST.cands.map(c=>({...c, kind:'spread'}));
+  // Swing prices older than half an hour should not be sized against a fresh
+  // bankroll alongside live spread quotes.
+  const fresh = SWING.t && (Date.now()/1000 - SWING.t) < 1800;
+  const swing  = fresh ? (SWING.rows||[]).map(swingAsHourly) : [];
+  // Never propose the same item on both sides of the same bankroll.
+  const seen = new Set(swing.map(s=>s.id));
+  return [...swing, ...spread.filter(c=>!seen.has(c.id))]
+         .sort((a,b)=>b.expGph-a.expGph);
+}
+
 function renderSlots(){
-  const a = LAST.alloc;
+  const pool = combinedBook();
+  const a = pool.length
+    ? allocate(pool, CFG.bankroll, CFG.slots, CFG.maxFrac)
+    : LAST.alloc;
   if (!a.pos.length){ $('slotList').innerHTML='<div class="empty">Run a scan first.</div>';
     $('allocSum').style.display='none'; return; }
   $('slotList').innerHTML = a.pos.map((p,i)=>`
     <div class="slot"><span class="n">${i+1}</span>
-      <span class="nm">${esc(p.c.name)}</span>
+      <span class="nm">${esc(p.c.name)}${p.c.kind==='swing'
+        ? ' <span class="warn" title="swing hold">↗</span>':''}</span>
       <span class="qty">×${p.qty.toLocaleString()}</span>
       <span>buy ${gpHtml(p.c.buy)}</span><span>sell ${gpHtml(p.c.sell)}</span>
       <span>→ ${gpHtml(Math.round(p.egph))}/h</span>
@@ -1055,6 +1341,15 @@ function renderSlots(){
     advice  = `${gpTxt(idle)} is idle with slots to spare, because not enough items pass your filters or can absorb the volume. Loosen min volume or min margin in Config.`;
   }
   $('bindNote').innerHTML = `<b>${verdict}.</b> ${advice}`;
+  const sw = a.pos.filter(p=>p.c.kind==='swing');
+  $('mixNote').innerHTML = sw.length
+    ? `Mixing both strategies: <b>${sw.length}</b> swing hold${sw.length>1?'s':''} (↗) against
+       <b>${a.pos.length-sw.length}</b> spread flips. Swing profit is divided by an assumed
+       <b>${CFG.swingHoldHours}h</b> hold to make it comparable — change that in Config and the
+       balance shifts. A shorter assumed hold favours swings, a longer one favours flips.`
+    : (SWING.rows||[]).length
+      ? 'No swing hold beat a spread flip at your assumed holding period.'
+      : 'Spread flips only. Run <b>Find dips</b> on the Swing tab to let holds compete for these slots.';
 }
 
 /* ---------------------------- scan ---------------------------- */
@@ -1062,6 +1357,7 @@ async function doScan(){
   const btn = $('btnScan'); btn.disabled = true; banner('');
   try{
     formToCfg(); await store.set('settings', CFG);
+    SCAN_GEN++;
     const map = await loadMapping();
     // Four parallel multi-hundred-KB downloads is a lot to ask of a phone on a
     // weak signal. Required data first, extras after, and the extras are allowed
@@ -1088,10 +1384,10 @@ async function doScan(){
     const pos = await loadPositions();
     const {cands, rej} = scoreAll(map, latest, h1, d24, m5, CFG, now, limitMap(pos.rows, map, now));
     const alloc = allocate(cands, CFG.bankroll, CFG.slots, CFG.maxFrac);
-    LAST = {cands, rej, alloc, t:now};
+    LAST = {cands, rej, alloc, t:now, slip:observedSlippage(cands)};
     expandedId = null;
     renderScan(); renderSlots();
-    await journalScan(cands, alloc); renderBook();
+    await journalScan(cands, alloc); await renderBook(); renderNext();
     status(`<span class="live">● live</span> · ${Object.keys(latest).length.toLocaleString()} items · ${cands.length} pass`);
   }catch(e){
     console.error(e);
@@ -1119,6 +1415,132 @@ $('btnAuto').onclick = ()=>{
 };
 document.addEventListener('visibilitychange', ()=>{ // don't poll a backgrounded phone tab
   if (document.hidden && autoTimer){ clearInterval(autoTimer); autoTimer=null; $('btnAuto').classList.remove('on'); }
+});
+
+/* ---------------------------- swing --------------------------- */
+let SWING = {rows:[], t:0, checked:0};
+
+async function runSwing(){
+  const btn=$('btnSwing'); btn.disabled=true; banner('');
+  try{
+    formToCfg(); await store.set('settings', CFG);
+    const map = await loadMapping();
+    status('fetching prices…');
+    const [latest, d24] = await Promise.all([
+      getJSON(`${API}/latest`).then(r=>r.data),
+      getJSON(`${API}/24h`).then(r=>r.data),
+    ]);
+    let h1 = null;
+    try{ h1 = (await getJSON(`${API}/1h`)).data; }catch(e){ /* optional */ }
+
+    const now = Date.now()/1000;
+    const universe = swingUniverse(map, latest, h1, d24, CFG, now);
+    if (!universe.length){
+      $('swingEmpty').innerHTML = 'Nothing passed the filters. Lower the min price or '
+        + 'min 24h volume in Config.';
+      $('swingEmpty').style.display='block'; $('swingTable').style.display='none';
+      return;
+    }
+
+    // Second pass: only the deepest discounts are worth a history request.
+    const depth = Math.min(CFG.swingDepth, universe.length);
+    const rows=[];
+    for (let i=0;i<depth;i++){
+      const c = universe[i];
+      status(`checking history ${i+1}/${depth}…`);
+      try{
+        const series = (await getJSON(`${API}/timeseries?timestep=6h&id=${c.id}`)).data || [];
+        const scored = swingScore(c, swingMetrics(series.slice(-120)), CFG);
+        if (scored) rows.push(scored);
+      }catch(e){ /* skip this one */ }
+      await new Promise(r=>setTimeout(r, 280));
+    }
+    rows.sort((a,b)=>b.swingExpected-a.swingExpected);
+    SWING = {rows, t:now, checked:depth, scanned:universe.length, gen:SCAN_GEN};
+    renderSwing();
+    status(`<span class="live">● swing</span> · ${rows.length} of ${depth} checked qualify`);
+  }catch(e){
+    banner('Swing scan failed: '+e.message);
+    status('<span class="err">● error</span>');
+  }finally{ btn.disabled=false; }
+}
+
+function renderSwing(){
+  const {rows, checked, scanned, t} = SWING;
+  $('swingEmpty').style.display = rows.length? 'none':'block';
+  $('swingTable').style.display = rows.length? '':'none';
+  $('swingNote').style.display  = rows.length? '':'none';
+  if (!rows.length){
+    $('swingEmpty').innerHTML = `Checked the ${checked} deepest discounts of ${scanned} liquid items — `
+      + `none qualified. Either nothing is genuinely oversold right now, or the ones that look `
+      + `cheap are in a downtrend, which is the case the gate exists to catch.`;
+    $('swingStrip').innerHTML=''; return;
+  }
+  $('swingStrip').innerHTML = `
+    <span>qualify <b>${rows.length}/${checked}</b></span>
+    <span>universe <b>${scanned.toLocaleString()}</b></span>
+    <span>best <b>${gpTxt(Math.round(rows[0].swingExpected))}</b></span>
+    <span>as of <b>${new Date(t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</b></span>`;
+  $('swingBody').innerHTML = rows.map(r=>`
+    <tr data-sid="${r.id}">
+      <td>${esc(r.name)}</td>
+      <td>${gpHtml(r.buy)}</td>
+      <td>${gpHtml(r.target)}</td>
+      <td class="pos">${pct(r.upside,1)}</td>
+      <td class="neg">${pct(r.downside,1)}</td>
+      <td class="${r.riskReward>=2?'pos':''}">${r.riskReward===Infinity?'—':r.riskReward.toFixed(1)}</td>
+      <td>${r.swingQty.toLocaleString()}</td>
+      <td>${gpHtml(r.swingCapital)}</td>
+      <td>${gpHtml(Math.round(r.swingExpected))}</td>
+      <td>${r.swingConfidence.toFixed(2)}${confBar(r.swingConfidence)}</td>
+    </tr>
+    ${SWING_OPEN===r.id? swingDetail(r):''}`).join('');
+}
+let SWING_OPEN=null;
+
+function swingDetail(r){
+  const m=r.swing;
+  return `<tr class="detail"><td colspan="10">
+    <div class="dgrid">
+      <div><label>30d range</label>${gpTxt(m.low)} – ${gpTxt(m.high)}</div>
+      <div><label>30d median</label>${gpTxt(m.median)}</div>
+      <div><label>z-score</label><span class="${m.z<-1?'pos':''}">${m.z.toFixed(2)}σ</span></div>
+      <div><label>RSI</label><span class="${m.rsi<30?'pos':''}">${m.rsi.toFixed(0)}</span>${
+        m.rsi<30?' oversold':''}</div>
+      <div><label>price percentile</label>${pct(m.percentile,0)} of range</div>
+      <div><label>trend over window</label><span class="${m.driftPct<0?'neg':'pos'}">${
+        pct(m.driftPct,0)}</span></div>
+      <div><label>volatility</label>${pct(m.volatility,1)}</div>
+      <div><label>net per unit</label>${gpHtml(r.swingMargin)}</div>
+      <div><label>profit if it reverts</label>${gpHtml(r.swingProfit)}</div>
+      <div><label>loss at the 30d low</label><span class="neg">${
+        gpHtml(Math.round(r.downside*r.swingCapital))}</span></div>
+      <div><label>reward to risk</label>${r.riskReward===Infinity?'—':r.riskReward.toFixed(2)+':1'}</div>
+      <div><label>windows checked</label>${m.n} x 6h</div>
+    </div>
+    <div class="rowbtns">
+      <button class="ghost" data-copy="${r.buy}">Copy buy ${r.buy.toLocaleString()}</button>
+      <button class="ghost" data-copy="${r.target}">Copy target ${r.target.toLocaleString()}</button>
+      <button class="ghost" data-chart="${r.id}" data-name="${esc(r.name)}">Chart →</button>
+      <button class="ghost" data-swingbuy="${r.id}">Log buy</button>
+    </div>
+  </td></tr>`;
+}
+
+$('btnSwing').onclick = runSwing;
+$('swingBody').addEventListener('click', async e=>{
+  const cp=e.target.closest('[data-copy]');
+  if (cp){ try{ await navigator.clipboard.writeText(cp.dataset.copy); cp.textContent='Copied ✓'; }catch(_){} return; }
+  const ch=e.target.closest('[data-chart]');
+  if (ch){ openItem(+ch.dataset.chart, ch.dataset.name);
+           document.querySelector('nav button[data-v="item"]').click(); return; }
+  const sb=e.target.closest('[data-swingbuy]');
+  if (sb){ const r=(SWING.rows||[]).find(x=>x.id===+sb.dataset.swingbuy);
+           if (r) logBuy({...r, quantity:r.swingQty, bidComp:r.buy, buy_limit_total:r.limit}, 'swing');
+           return; }
+  const tr=e.target.closest('tr[data-sid]'); if (!tr) return;
+  SWING_OPEN = SWING_OPEN===+tr.dataset.sid ? null : +tr.dataset.sid;
+  renderSwing();
 });
 
 /* ---------------------------- item ---------------------------- */
@@ -1197,7 +1619,7 @@ $('itemMatches').addEventListener('click', e=>{
 async function loadPositions(){ return (await store.get('positions')) || {seq:0, rows:[]}; }
 async function savePositions(p){ await store.set('positions', p); }
 
-async function logBuy(cand){
+async function logBuy(cand, kind='spread'){
   const qtyRaw = prompt(`How many ${cand.name} filled?`, String(cand.quantity));
   if (qtyRaw===null) return;
   const qty = Math.floor(Number(qtyRaw));
@@ -1209,9 +1631,10 @@ async function logBuy(cand){
   const p = await loadPositions();
   p.rows.push({ pid:++p.seq, itemId:cand.id, name:cand.name, qty, buyPrice:price,
                 boughtAt:Date.now()/1000, exempt:cand.exempt?1:0, limit:cand.buy_limit_total||null,
+                kind, target: kind==='swing' ? (cand.target||null) : null,
                 soldQty:0, sellPrice:null, soldAt:null });
   await savePositions(p);
-  status(`logged ${qty.toLocaleString()} ${cand.name} @ ${price.toLocaleString()}`);
+  status(`logged ${qty.toLocaleString()} ${esc(cand.name)} @ ${price.toLocaleString()}`);
   renderBook();
 }
 
@@ -1274,7 +1697,7 @@ async function renderBook(){
       return `<div class="jrow">
         <span class="badge ${openQty>0?'b-wait':'b-fill'}">${openQty>0?'holding':'closed'}</span>
         <span style="flex:1;min-width:110px">${esc(r.name)}</span>
-        <span>${openQty>0?openQty.toLocaleString()+' @ ':''}${r.buyPrice.toLocaleString()}</span>
+        <span>${r.kind==='swing'?'↗ ':''}${openQty>0?openQty.toLocaleString()+' @ ':''}${r.buyPrice.toLocaleString()}</span>
         <span>be ${target.toLocaleString()}</span>
         <span class="${pnl>=0?'pos':'neg'}">${pnl>=0?'+':''}${gpTxt(pnl)}</span>
         ${openQty>0?`<button class="ghost" style="padding:3px 8px;font-size:10px" data-sell="${r.pid}">Log sale</button>`:''}
@@ -1315,7 +1738,36 @@ async function renderBook(){
     </div>`).join('')
     : '<div class="empty">No limits in use.</div>';
 
+  // --- measured round-trip times -----------------------------------
+  const hs = holdStats(p.rows);
+  const hb = $('holdBox');
+  if (hs && hs.all){
+    const fmtH = h => h<1 ? `${Math.round(h*60)}m` : h<48 ? `${h.toFixed(1)}h` : `${(h/24).toFixed(1)}d`;
+    let txt = `<b>Measured round trips: ${hs.all.n}.</b> Median ${fmtH(hs.all.median)},
+      middle half between ${fmtH(hs.all.fast)} and ${fmtH(hs.all.slow)}.`;
+    if (hs.swing && hs.swing.n>=3){
+      txt += ` Swing holds specifically: median <b>${fmtH(hs.swing.median)}</b> across
+        ${hs.swing.n}, against the ${CFG.swingHoldHours}h you have assumed.`;
+      if (Math.abs(hs.swing.median - CFG.swingHoldHours) > 2){
+        txt += ` <button class="ghost" id="btnApplyHold" style="margin-top:8px">Use ${
+          Math.round(hs.swing.median)}h</button>`;
+      }
+    } else if (hs.spread && hs.spread.n>=3){
+      txt += ` Once you have three closed swing holds this replaces the ${CFG.swingHoldHours}h
+        assumption on the Slots tab.`;
+    }
+    hb.innerHTML = txt; hb.style.display='block';
+    const b=$('btnApplyHold');
+    if (b) b.onclick = async ()=>{
+      CFG.swingHoldHours = Math.max(1, Math.round(hs.swing.median));
+      await store.set('settings', CFG); cfgToForm();
+      hb.innerHTML = `<b>Hold set to ${CFG.swingHoldHours}h from your own trades.</b>
+        The Slots tab now compares swings against flips on measured time.`;
+    };
+  } else { hb.style.display='none'; }
+
   renderJournal();
+  renderNext();
 }
 
 $('posList').addEventListener('click', e=>{
@@ -1357,13 +1809,28 @@ async function renderJournal(){
 
   const done = j.recs.filter(r=>r.out && !r.out.note);
   const grid = $('statsGrid');
-  if (!done.length){ grid.innerHTML = `<div><span>observations</span><b>${j.recs.length} (0 verified)</b></div>`; return; }
+  if (!done.length){
+    grid.innerHTML = `<div><span>observations</span><b>${j.recs.length} (0 verified)</b></div>`;
+    $('legNote').style.display='none'; return;
+  }
   const n = done.length;
   const buyF = done.filter(r=>r.out.buyF).length;
   const both = done.filter(r=>r.out.buyF && r.out.sellF).length;
   const predRoi = done.reduce((s,r)=>s+r.roi,0)/n;
   const realRois = done.filter(r=>r.out.rm!=null && r.buy>0).map(r=>r.out.rm/r.buy);
   const realRoi = realRois.length? realRois.reduce((a,b)=>a+b,0)/realRois.length : null;
+  const failed = done.filter(r=>!(r.out.buyF && r.out.sellF));
+  const buySide = failed.filter(r=>!r.out.buyF).length;
+  const sellSide = failed.filter(r=>r.out.buyF && !r.out.sellF).length;
+  $('legNote').innerHTML = failed.length
+    ? `<b>Of ${failed.length} incomplete round trips:</b> ${buySide} never filled the buy,
+       ${sellSide} bought but never sold. ${
+        buySide > sellSide
+          ? 'Your bids are the problem — you are pricing below what sellers accept. Raise the bid a tick, or add slippage.'
+          : 'Your asks are the problem — you are buying fine but pricing the exit too high. Target the median, not the peak.'}`
+    : '<b>Every verified pick completed both legs.</b> Your pricing is not the constraint; size up or loosen the filters.';
+  $('legNote').style.display='block';
+
   grid.innerHTML = `
     <div><span>verified</span><b>${n}</b></div>
     <div><span>buy fill rate</span><b>${pct(buyF/n,0)}</b></div>
@@ -1376,6 +1843,7 @@ $('btnVerify').onclick = ()=>{ formToCfg(); verifyJournal(); };
 $('btnCalib').onclick = runCalibration;
 $('btnDeep').onclick = async ()=>{
   if (!LAST.cands.length){ banner('Run a scan first.'); return; }
+  if (autoTimer){ clearInterval(autoTimer); autoTimer=null; $('btnAuto').classList.remove('on'); }
   const btn=$('btnDeep'); btn.disabled=true; btn.classList.add('on');
   try{
     await deepScan(LAST.cands, Math.min(12, LAST.cands.length));
@@ -1390,6 +1858,20 @@ $('btnClearJ').onclick = async ()=>{
   if (!confirm('Delete the whole journal? Your calibration history goes with it.')) return;
   await store.del('journal'); renderJournal();
 };
+
+function holdStats(rows){
+  const closed = rows.filter(r => r.soldQty>=r.qty && r.soldAt && r.boughtAt
+                                  && r.soldAt > r.boughtAt);
+  if (!closed.length) return null;
+  const pick = k => {
+    const h = closed.filter(r => k==null || (r.kind||'spread')===k)
+                    .map(r => (r.soldAt-r.boughtAt)/3600).sort((a,b)=>a-b);
+    if (!h.length) return null;
+    const q = f => h[Math.min(h.length-1, Math.floor(h.length*f))];
+    return {n:h.length, median:q(0.5), fast:q(0.25), slow:q(0.75)};
+  };
+  return {all:pick(null), spread:pick('spread'), swing:pick('swing')};
+}
 
 /* --------------------------- calibration --------------------------- *
  * participation and slippage are the two numbers I cannot know for you.
@@ -1437,13 +1919,104 @@ async function runCalibration(){
     <button class="ghost" id="btnApplyCalib" style="margin-top:8px">Apply both</button>`;
   box.style.display='block';
   $('btnApplyCalib').onclick = async ()=>{
-    CFG.slip = c.suggestedSlip; CFG.part = c.suggestedPart;
-    await store.set('settings', CFG); cfgToForm();
+    CFG.slip = c.suggestedSlip; CFG.part = c.suggestedPart; CFG.calibratedN = c.n;
+    await store.set('settings', CFG); cfgToForm(); renderNext();
     box.innerHTML = `<b>Applied.</b> Slippage ${pct(CFG.slip,2)}, participation
       ${pct(CFG.part,0)}. Rescan to see the difference.`;
   };
 }
 let CALIB = null;
+
+/* ------------------------- backup / restore ------------------------- *
+ * Prices regenerate; your journal does not. Clearing Safari data, switching
+ * phones or private browsing all wipe localStorage silently.               */
+async function exportAll(){
+  const payload = {
+    format:'geflip-backup', version:2, exportedAt:new Date().toISOString(),
+    settings: CFG,
+    journal: await loadJournal(),
+    positions: await loadPositions(),
+  };
+  const text = JSON.stringify(payload);
+  const name = `geflip-backup-${new Date().toISOString().slice(0,10)}.json`;
+  try{
+    const blob = new Blob([text], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), {href:url, download:name});
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+    $('backupNote').innerHTML = `<b>Saved ${name}.</b> Keep it somewhere off this device.`;
+  }catch(e){
+    try{
+      await navigator.clipboard.writeText(text);
+      $('backupNote').innerHTML = '<b>Copied to clipboard.</b> Download was blocked, so paste '
+        + 'this into a note or file to keep it.';
+    }catch(e2){
+      $('backupNote').innerHTML = 'Could not export automatically. '
+        + `Your data is ${(text.length/1024).toFixed(0)}KB; try again from a normal Safari tab.`;
+    }
+  }
+  $('backupNote').style.display='block';
+}
+
+async function importAll(text){
+  let data;
+  try{ data = JSON.parse(text); }
+  catch(e){ return {ok:false, msg:'That is not valid JSON.'}; }
+  if (!data || data.format !== 'geflip-backup'){
+    return {ok:false, msg:'That file is not a GE Flip backup.'};
+  }
+  if (data.settings) { CFG = {...DEF_CFG, ...data.settings}; await store.set('settings', CFG); }
+  if (data.journal?.recs)   await store.set('journal', data.journal);
+  if (data.positions?.rows) await store.set('positions', data.positions);
+  cfgToForm(); await renderBook();
+  return {ok:true, msg:`Restored ${data.journal?.recs?.length ?? 0} journal entries and `
+                     + `${data.positions?.rows?.length ?? 0} positions.`};
+}
+
+/* --------------------------- next action --------------------------- *
+ * One instruction, derived from actual state. Everything else on screen is
+ * reference material; this is the thing to do now.                        */
+async function nextAction(){
+  const j = await loadJournal();
+  const pos = (await loadPositions()).rows;
+  const now = Date.now()/1000;
+  const open = pos.filter(r => r.qty > r.soldQty);
+  const verified = j.recs.filter(r => r.out && !r.out.note).length;
+  const ripe = j.recs.filter(r => !r.out && (now - r.t) > CFG.horizon*3600).length;
+  const expiring = j.recs.filter(r => !r.out && (now-r.t) > 22*3600 && (now-r.t) < 30*3600).length;
+  const stale = open.filter(r => now - r.boughtAt > 6*3600).length;
+
+  // Ordered by cost of ignoring it: irreversible data loss, then blocked work,
+  // then calibration, then routine trading.
+  if (expiring)
+    return {tab:'book', do:`Verify now — ${expiring} pick${expiring>1?'s':''} lose their history within hours.`};
+  if (!LAST.cands.length)
+    return {tab:'scan', do:'Set your bankroll in Config, then Scan market.'};
+  if (ripe)
+    return {tab:'book', do:`Run Verify — ${ripe} pick${ripe>1?'s are':' is'} old enough to grade.`};
+  if (verified >= 8 && verified >= (CFG.calibratedN ?? 0) + 8)
+    return {tab:'book', do:`Run Calibrate. ${verified} graded picks is enough to replace my `
+                          + `defaults with your own slippage and participation.`};
+  if (stale)
+    return {tab:'book', do:`${stale} position${stale>1?'s have':' has'} been open over 6 hours. Check whether the sell filled and Log sale.`};
+  if (!pos.length){
+    const progress = verified ? ` (${verified} of 8 picks graded — Calibrate unlocks at 8.)` : '';
+    return {tab:'scan', do:'Tap your top row, post the Competitive buy and sell prices in game, '
+                          + 'then Log buy when it fills.' + progress};
+  }
+  if (open.length)
+    return {tab:'book', do:'Positions are open. Log the sale when each fills, then Verify tomorrow.'};
+  return {tab:'scan', do:'Scan, post the competitive prices, log what fills.'};
+}
+
+async function renderNext(){
+  const a = await nextAction();
+  const el = $('nextBox');
+  el.innerHTML = `<b>Next:</b> ${a.do}`;
+  el.style.display = 'block';
+  el.onclick = ()=> document.querySelector(`nav button[data-v="${a.tab}"]`)?.click();
+}
 
 /* ---------------------------- boot ---------------------------- */
 $('cfg-members').addEventListener('change', ()=>{
@@ -1452,6 +2025,16 @@ $('cfg-members').addEventListener('change', ()=>{
   const slots = $('cfg-slots');
   if (!$('cfg-members').checked && slots.value==='8') slots.value='3';
   if ($('cfg-members').checked && slots.value==='3') slots.value='8';
+});
+
+$('btnExport').onclick = exportAll;
+$('btnImport').onclick = ()=> $('fileImport').click();
+$('fileImport').addEventListener('change', async e=>{
+  const f = e.target.files?.[0]; if (!f) return;
+  const res = await importAll(await f.text());
+  $('backupNote').innerHTML = res.ok ? `<b>${res.msg}</b>` : res.msg;
+  $('backupNote').style.display='block';
+  e.target.value='';
 });
 
 $('btnSave').onclick = async ()=>{
@@ -1467,7 +2050,7 @@ $('btnSave').onclick = async ()=>{
   }[BACKEND];
   const saved = await store.get('settings');
   if (saved) CFG = {...DEF_CFG, ...saved};
-  cfgToForm(); renderBook();
+  cfgToForm(); await renderBook(); renderNext();
   status('ready');
 })();
 </script>
