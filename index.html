@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>GE Flip Terminal</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GE Flip">
+<meta name="theme-color" content="#14100c">
+<meta name="description" content="Rank OSRS Grand Exchange flips by expected gp per hour, tax and buy limits included.">
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAADJUlEQVR4nO3dMU4bQRiA0SFKSYEUuEzukDp9ToE4AOIU6VPnDrkM4gykAQksReDYO7t8fq9babWe4tOvlT3ynF1enD8OiPi09gLgmARNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgibl89oL4HD3d19eXV9dP6y0kvWZ0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNypmzvrdvdzfdIeo78UzojTtmzEs8b2sEvWFLxVeOWtAbtXR01agFvUGzYitGLWhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFCfJ7uH25ser65vbnyuthH8xoUkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFLvtXtjdTXfI/XbircOEfrJvzLOfx/sIeiwXn6jnO/mgl45O1HOddNCzYhP1PCcdND2CJkXQpAiaFEGTsslfCr9/+/rq+tfvPyuthI/GhCZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUlbZbbe7m+6Q++3E46XpE3rfmGc/j49tatBLxSdqnk0LeunoRM0Yk4KeFZuo8S0HKYImRdAbdHX9kPqcmQS9UUvHVox5DEFv2lLRVWMeQ9Cbd+z4yjGPsdE/muG1tyK8v/uy1/1lJjQpgiZF0KQImhRBkyJoUgRNykkHPev4Ysckz3PSQY+xfGxinuvkgx5juejEPJ+gnxw7PjGvw16OF96KcPeIY9FujwlNigkdcMq763aZ0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk3J2eXH+OOODZvwZuQOEmDahl45NzIwx+ZVjqejEzLPp79DHjk/MvDTtHXofu+/bouW9fMtBiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KRscrcd/C8TmhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpfwHPzW/tey49QwAAAABJRU5ErkJggg==">
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAADJUlEQVR4nO3dMU4bQRiA0SFKSYEUuEzukDp9ToE4AOIU6VPnDrkM4gykAQksReDYO7t8fq9babWe4tOvlT3ynF1enD8OiPi09gLgmARNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgibl89oL4HD3d19eXV9dP6y0kvWZ0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNypmzvrdvdzfdIeo78UzojTtmzEs8b2sEvWFLxVeOWtAbtXR01agFvUGzYitGLWhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFCfJ7uH25ser65vbnyuthH8xoUkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFLvtXtjdTXfI/XbircOEfrJvzLOfx/sIeiwXn6jnO/mgl45O1HOddNCzYhP1PCcdND2CJkXQpAiaFEGTsslfCr9/+/rq+tfvPyuthI/GhCZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUlbZbbe7m+6Q++3E46XpE3rfmGc/j49tatBLxSdqnk0LeunoRM0Yk4KeFZuo8S0HKYImRdAbdHX9kPqcmQS9UUvHVox5DEFv2lLRVWMeQ9Cbd+z4yjGPsdE/muG1tyK8v/uy1/1lJjQpgiZF0KQImhRBkyJoUgRNykkHPev4Ysckz3PSQY+xfGxinuvkgx5juejEPJ+gnxw7PjGvw16OF96KcPeIY9FujwlNigkdcMq763aZ0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk3J2eXH+OOODZvwZuQOEmDahl45NzIwx+ZVjqejEzLPp79DHjk/MvDTtHXofu+/bouW9fMtBiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KRscrcd/C8TmhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpfwHPzW/tey49QwAAAABJRU5ErkJggg==">
 <style>
   :root{
     --bg:#14100c; --panel:#1d1712; --panel2:#241c15; --line:#3a2f24;
@@ -33,7 +41,9 @@
   #status .live{color:var(--gp-green)}
   #status .err{color:var(--red)}
 
-  main{padding:0 10px;max-width:980px;margin:0 auto}
+  main{padding:0 10px;max-width:980px;margin:0 auto;overflow-x:hidden}
+  .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -10px;padding:0 10px}
+  .tablewrap::-webkit-scrollbar{height:0}
   .view{display:none}.view.on{display:block}
 
   /* scan bar */
@@ -52,13 +62,14 @@
 
   /* table */
   table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
-  thead th{color:var(--faint);font-weight:600;text-align:right;padding:6px 6px;font-size:10px;
-           letter-spacing:.08em;text-transform:uppercase;cursor:pointer;user-select:none;white-space:nowrap;
-           position:sticky;top:44px;background:var(--bg);z-index:5}
+  thead th{color:var(--faint);font-weight:600;text-align:right;padding:6px 5px;font-size:10px;
+           letter-spacing:.06em;text-transform:uppercase;cursor:pointer;user-select:none;white-space:nowrap;
+           background:var(--bg)}
   thead th:first-child{text-align:left}
   thead th.sorted{color:var(--orange)}
-  tbody td{padding:8px 6px;text-align:right;border-top:1px solid #241d15;white-space:nowrap}
-  tbody td:first-child{text-align:left;max-width:34vw;overflow:hidden;text-overflow:ellipsis}
+  tbody td{padding:8px 5px;text-align:right;border-top:1px solid #241d15;white-space:nowrap}
+  tbody td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);
+                       max-width:33vw;overflow:hidden;text-overflow:ellipsis;padding-left:0}
   tbody tr{cursor:pointer}
   tbody tr:active{background:var(--panel)}
   .cbar{display:inline-block;width:26px;height:5px;background:#2c231a;border-radius:3px;vertical-align:1px;margin-left:5px}
@@ -78,6 +89,21 @@
         font-size:10.5px;color:var(--dim);max-width:340px;margin-bottom:10px}
   .bars .tr{height:6px;background:#2c231a;border-radius:3px;overflow:hidden}
   .bars .tr i{display:block;height:100%;background:var(--orange)}
+  .offers{border-top:1px solid var(--line);padding-top:10px;margin-top:2px}
+  .oh{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+      color:var(--faint);margin-bottom:8px}
+  .orow{display:flex;gap:10px;align-items:baseline;font-family:var(--mono);font-size:12px;
+        padding:6px 8px;border-radius:5px;flex-wrap:wrap}
+  .orow.best{background:#2a2015;border:1px solid var(--orange-dim)}
+  .orow .ol{color:var(--faint);width:82px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .orow b{color:var(--gp-white);font-weight:700}
+  .orow .om{margin-left:auto}
+  .onote{color:var(--faint);font-size:10.5px;line-height:1.5;margin:7px 2px 9px}
+  .ofacts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 14px;
+          font-size:11.5px;margin-top:10px}
+  .ofacts label{display:block;color:var(--faint);font-size:9.5px;letter-spacing:.08em;
+                text-transform:uppercase;margin-bottom:2px}
+  .dimx{color:var(--faint)}
   .rowbtns{display:flex;gap:8px;flex-wrap:wrap}
   .rowbtns .ghost{padding:8px 12px}
 
@@ -98,6 +124,9 @@
   .alloc-sum{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-family:var(--mono);
              font-size:12px;color:var(--dim);margin-top:10px}
   .alloc-sum b{color:var(--ink);font-weight:600}
+  .bindnote{margin-top:12px;padding:10px 12px;background:var(--panel2);border-left:2px solid var(--orange);
+            border-radius:0 5px 5px 0;font-size:12px;line-height:1.55;color:var(--dim)}
+  .bindnote b{color:var(--orange)}
 
   /* settings */
   .form{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
@@ -163,13 +192,14 @@
   <div class="searchrow" style="margin:0 0 6px"><input id="filterBox" placeholder="Filter results… (e.g. rune, seed)" inputmode="search"></div>
   <div id="scanEmpty" class="empty">No scan yet.<br>Set your <b>bankroll</b> in Config, then <b>Scan market</b>.<br>
     <span style="font-size:11px">Ranks every GE item by expected gp/hour — 2% tax, buy limits, liquidity and quote staleness priced in.</span></div>
-  <table id="scanTable" style="display:none">
+  <div class="tablewrap"><table id="scanTable" style="display:none">
     <thead><tr>
-      <th data-k="name">Item</th><th data-k="margin">Margin</th><th data-k="roi">ROI</th>
-      <th data-k="quantity">Qty</th><th data-k="expGph" class="sorted">Exp/h ▾</th><th data-k="confidence">Conf</th>
+      <th data-k="name">Item</th><th data-k="buy">Buy</th><th data-k="margin">Margin</th>
+      <th data-k="roi">ROI</th><th data-k="quantity">Qty</th><th data-k="capital">Capital</th>
+      <th data-k="expGph" class="sorted">GP/h ▾</th><th data-k="roiHr">%/h</th><th data-k="confidence">Conf</th>
     </tr></thead>
     <tbody id="scanBody"></tbody>
-  </table>
+  </table></div>
   <div class="panel" id="rejPanel" style="display:none">
     <h3>Why items were dropped</h3>
     <div class="statgrid" id="rejGrid"></div>
@@ -182,8 +212,9 @@
     <h3>Slot allocation</h3>
     <div id="slotList"><div class="empty">Run a scan first — the allocator spreads your bankroll across your GE slots.</div></div>
     <div class="alloc-sum" id="allocSum" style="display:none"></div>
+    <div id="bindNote" class="bindnote"></div>
   </div>
-  <p class="hint">Density-greedy with a swap local search: it will trade a small high-ROI pick out of a slot when a bigger absorber earns more gp/hour for the bankroll overall. Idle gp is shown so you can tell when the market, not your bank, is the constraint.</p>
+  <p class="hint"><b>GP/h</b> is what an item earns. <b>%/h</b> is what it earns per gp you tie up. They rank completely differently, and the one that matters is whichever resource you run out of first — the note above says which. Density-greedy with a swap local search: it will trade a small high-ROI pick out of a slot when a bigger absorber earns more gp/hour for the bankroll overall. Idle gp is shown so you can tell when the market, not your bank, is the constraint.</p>
 </section>
 
 <!-- ============ ITEM ============ -->
@@ -214,11 +245,28 @@
 </section>
 
 <!-- ============ JOURNAL ============ -->
-<section id="v-journal" class="view">
+<section id="v-book" class="view">
+  <div class="panel">
+    <h3>Open positions</h3>
+    <div id="posList"><div class="empty">Nothing held.<br>
+      <span style="font-size:11px">Tap a scan row and press <b>Log buy</b> once an offer fills. That starts the
+      item's 4-hour limit timer and stops the scanner recommending what you can no longer buy.</span></div></div>
+    <div id="posSum" class="alloc-sum" style="display:none"></div>
+  </div>
+  <div class="panel">
+    <h3>Buy limits</h3>
+    <div id="limList"><div class="empty">No limits in use.</div></div>
+    <p class="hint">The window opens on your <b>first</b> buy and resets exactly 4h later, no matter when the rest
+      fills — so buy as much as you can early. Staggering items across the session gives you a rolling reset every
+      30-60 minutes instead of all eight at once. Dose variants marked ◈ draw from a single shared
+      allowance — buying Prayer potion(4) eats into what you can buy of Prayer potion(1).
+      Selling is never limited, only buying.</p>
+  </div>
   <div class="scanbar">
     <button class="primary" id="btnVerify">Verify matured picks</button>
     <button class="ghost" id="btnClearJ">Clear</button>
   </div>
+  <div id="verifyWarn" class="bindnote" style="display:none"></div>
   <div class="panel">
     <h3>Predicted vs realized</h3>
     <div class="statgrid" id="statsGrid"><div><span>observations</span><b>0</b></div></div>
@@ -254,9 +302,10 @@
     <div class="form">
       <div><label>Slippage (%)</label><input id="cfg-slip" value="0" inputmode="decimal"></div>
       <div><label>Participation (%)</label><input id="cfg-part" value="10" inputmode="decimal"></div>
-      <div><label>Max item share of bank (%)</label><input id="cfg-maxfrac" value="100" inputmode="decimal"></div>
+      <div><label>Max item share of bank (%)</label><input id="cfg-maxfrac" value="25" inputmode="decimal"></div>
       <div><label>Verify horizon (h)</label><input id="cfg-horizon" value="8" inputmode="decimal"></div>
       <div class="full toggle"><input type="checkbox" id="cfg-journal" checked><span>Journal every scan’s top picks</span></div>
+      <div class="full toggle"><input type="checkbox" id="cfg-lite"><span>Lite mode — skip the 5m and 24h windows (half the data, for weak signal)</span></div>
     </div>
     <p class="hint">Slippage 0 assumes fills at last-traded prices — optimistic. Journal for a few days, hit Verify, then set slippage to about half of (predicted − realized) ROI. Participation caps how much hourly volume you assume you can capture; 10% is a guess until your fills say otherwise.</p>
   </div>
@@ -269,7 +318,7 @@
   <button data-v="scan" class="on">Scan</button>
   <button data-v="slots">Slots</button>
   <button data-v="item">Item</button>
-  <button data-v="journal">Journal</button>
+  <button data-v="book">Book</button>
   <button data-v="config">Config</button>
 </nav>
 
@@ -290,6 +339,10 @@ const EXEMPT = new Set(['old school bond','chisel','gardening trowel','glassblow
   'spade','watering can']);
 // Exact integer math: price*2 stays < 2^53 for any gp value, so floor is exact.
 const saleTax = (sell, exempt) => (exempt || sell < 50) ? 0 : Math.min(Math.floor(sell*2/100), TAX_CAP);
+// Smallest meaningful price step for jumping the offer queue. The GE matches
+// better prices first, and among equal prices the OLDER offer wins, so one tick
+// is what buys you priority over everyone already sitting at the same price.
+const tickSize = p => Math.max(1, Math.round(p * 0.0005));
 const netMargin = (buy, sell, exempt) => sell - saleTax(sell, exempt) - buy;
 function breakevenSell(buy, exempt){
   if (exempt) return buy;
@@ -322,7 +375,68 @@ function parseGp(t){
 }
 const pct = (v,d=2) => (v*100).toFixed(d)+'%';
 const dur = s => s<60?`${s|0}s`: s<3600?`${(s/60)|0}m`: s<86400?`${(s/3600).toFixed(1)}h`:`${(s/86400).toFixed(1)}d`;
+const fillTxt = m => !isFinite(m) ? 'never' : m<1 ? '<1m' : m<90 ? `${Math.round(m)}m` : `${(m/60).toFixed(1)}h`;
+const trendTxt = t => t==null ? '—'
+  : `<span class="${t>0.001?'pos':t<-0.001?'neg':''}">${t>0?'+':''}${(t*100).toFixed(1)}%</span>`;
 const esc = t => String(t).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ----------------------- buy limit windows ----------------------- *
+ * The 4h window is anchored to the FIRST purchase in that window, not the
+ * last, and it resets completely 4h later. Windows are therefore consecutive
+ * and must be replayed in order — "everything bought in the last 4 hours" is
+ * the wrong model and over-counts across a reset boundary.                */
+const LIMIT_WINDOW_S = 4*3600;
+
+// "Prayer potion(4)" and "Prayer potion(1)" share one allowance. Strip a trailing
+// (1)-(6) to get the shared key. The pattern is deliberately narrow: a single
+// digit in parentheses at the end of the name. Suffixes like "(g)" or "(or)" are
+// cosmetic variants with their own limits and must not be grouped.
+function limitGroup(name){
+  const m = String(name||'').match(/^(.*?)\s*\([1-6]\)$/);
+  return (m ? m[1] : String(name||'')).trim().toLowerCase();
+}
+
+function limitFor(positions, itemId, limit, now, group){
+  const key = group || null;
+  const buys = positions
+    .filter(p => key ? limitGroup(p.name)===key : p.itemId===itemId)
+    .sort((a,b)=>a.boughtAt-b.boughtAt);
+  let windowStart=null, spent=0;
+  for (const b of buys){
+    if (windowStart===null || b.boughtAt >= windowStart + LIMIT_WINDOW_S){
+      windowStart = b.boughtAt; spent = 0;              // a new window opened
+    }
+    spent += b.qty;
+  }
+  if (windowStart===null || now >= windowStart + LIMIT_WINDOW_S){
+    return {spent:0, remaining:limit, resetAt:null, open:false};
+  }
+  return {spent, remaining:Math.max(0, limit-spent),
+          resetAt:windowStart+LIMIT_WINDOW_S, open:true};
+}
+
+function limitMap(positions, mapping, now){
+  const out = new Map();
+  if (!mapping || !mapping.forEach) return out;
+  // Names drive the shared-allowance grouping, so resolve them from the mapping
+  // rather than relying on what was stored with the position.
+  const rows = positions.map(p => ({...p, name: p.name || mapping.get(p.itemId)?.name || ''}))
+                        .filter(r => r.name);
+  const heldGroups = new Set(rows.map(r=>limitGroup(r.name)));
+  if (!heldGroups.size) return out;
+  // Constrain every item sharing an allowance with something held, not just the
+  // exact ids in the book.
+  mapping.forEach((meta,id)=>{
+    const grp = limitGroup(meta.name);
+    if (!heldGroups.has(grp)) return;
+    const st = limitFor(rows, id, meta?.limit ?? Infinity, now, grp);
+    st.group  = grp;
+    st.shared = rows.some(r=>limitGroup(r.name)===grp && r.itemId!==id);
+    out.set(id, st);
+  });
+  return out;
+}
+
 
 /* --------------------------- storage --------------------------- *
  * Three backends, detected once at boot and used transparently:
@@ -384,7 +498,8 @@ const store = {
 
 /* --------------------------- config --------------------------- */
 const DEF_CFG = { bankroll:50_000_000, slots:8, members:true, minVol:20, minVol24:500,
-  maxAgeS:3600, minMargin:1, minPrice:1, maxPrice:null, slip:0, part:0.10, maxFrac:1,
+  maxAgeS:3600, minMargin:1, minPrice:1, maxPrice:null, slip:0, part:0.10, maxFrac:0.25,
+  lite:false,
   horizon:8, journal:true, tauS:1200, volSat:200, haircut:0.5, cycleH:4 };
 let CFG = {...DEF_CFG};
 
@@ -398,6 +513,7 @@ function cfgToForm(){
   $('cfg-slip').value = +(CFG.slip*100).toFixed(2); $('cfg-part').value = +(CFG.part*100).toFixed(1);
   $('cfg-maxfrac').value = +(CFG.maxFrac*100).toFixed(0); $('cfg-horizon').value = CFG.horizon;
   $('cfg-journal').checked = CFG.journal;
+  $('cfg-lite').checked = !!CFG.lite;
 }
 function formToCfg(){
   const n=(v,d)=>{const x=parseFloat(v);return Number.isFinite(x)?x:d;};
@@ -416,17 +532,41 @@ function formToCfg(){
     part: Math.min(1, Math.max(.001, n($('cfg-part').value,10)/100)),
     maxFrac: Math.min(1, Math.max(.01, n($('cfg-maxfrac').value,100)/100)),
     horizon: Math.max(.5, n($('cfg-horizon').value,8)),
-    journal: $('cfg-journal').checked };
+    journal: $('cfg-journal').checked,
+    lite: $('cfg-lite').checked };
 }
 
 /* ---------------------------- fetch ---------------------------- */
 function status(html){ $('status').innerHTML = html; }
 function banner(msg){ const b=$('banner'); if(!msg){b.classList.remove('on');return;}
   b.textContent = msg; b.classList.add('on'); }
-async function getJSON(url){
-  const r = await fetch(url, {headers:{'Accept':'application/json'}});
-  if (!r.ok) throw new Error(`HTTP ${r.status} on ${url.replace(API,'')}`);
-  return r.json();
+async function getJSON(url, attempt=0){
+  try{
+    const r = await fetch(url, {headers:{'Accept':'application/json'}});
+    if (r.status===429 || r.status>=500){
+      throw Object.assign(new Error(`HTTP ${r.status}`), {retryable:true, code:r.status});
+    }
+    if (!r.ok) throw new Error(`HTTP ${r.status} on ${url.replace(API,'')}`);
+    return r.json();
+  }catch(e){
+    // TypeError is what a dropped connection looks like from fetch(). On a
+    // phone that is routine, so give it one more go before saying anything.
+    const transient = e.retryable || e instanceof TypeError;
+    if (transient && attempt < 2){
+      await new Promise(r=>setTimeout(r, 900*(attempt+1)));
+      return getJSON(url, attempt+1);
+    }
+    throw e;
+  }
+}
+
+// A sandboxed preview has no real origin; a hosted page does. Blaming the wrong
+// one sends you off fixing something that is not broken.
+function isHostedOrigin(){
+  try{
+    return /^https?:$/.test(location.protocol) && !!location.hostname
+           && location.hostname !== 'null';
+  }catch(e){ return false; }
 }
 let MAPPING = null; // id -> meta
 async function loadMapping(force=false){
@@ -460,7 +600,7 @@ function stability(instant, hourly, haircut){
   const sc = Math.max(Math.abs(instant), Math.abs(hourly), 1);
   return Math.max(0, 1 - Math.abs(instant-hourly)/sc);
 }
-function scoreAll(map, latest, h1, d24, m5, cfg, now){
+function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
   const rej = {}; const R = r => rej[r]=(rej[r]||0)+1;
   const natP = latest[NATURE_RUNE]?.high ?? null;
   const perItemCap = Math.floor(cfg.bankroll * cfg.maxFrac);
@@ -499,22 +639,69 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now){
 
     let limit = meta.limit;
     if (limit==null){ R('unknown buy limit'); continue; }
+    // Whatever you already bought this window is gone until it resets.
+    const ls = limits ? limits.get(id) : null;
+    const limitResetAt = ls && ls.open ? ls.resetAt : null;
+    if (ls && ls.open){
+      limit = ls.remaining;
+      if (limit <= 0){ R('buy limit already spent'); continue; }
+    }
     const afford = Math.floor(perItemCap / buy);
     const through = Math.floor(cfg.part * vol1 * cfg.cycleH);
     const qty = Math.min(limit, afford, through);
     if (qty <= 0){ R('no affordable/absorbable qty'); continue; }
     const bound = qty===limit?'buy limit': qty===afford?'capital':'throughput';
 
+    // ---- Order flow: which leg is actually the bottleneck ----
+    // lowPriceVolume = people INSTA-SELLING, i.e. the flow that fills your BUY.
+    // highPriceVolume = people INSTA-BUYING, i.e. the flow that fills your SELL.
+    const sellersHr = w1 ? (w1.lowPriceVolume||0)  : 0;
+    const buyersHr  = w1 ? (w1.highPriceVolume||0) : 0;
+    const fillBuyMin  = sellersHr>0 ? (qty/(sellersHr*cfg.part))*60 : Infinity;
+    const fillSellMin = buyersHr >0 ? (qty/(buyersHr *cfg.part))*60 : Infinity;
+    const bottleneck = fillSellMin > fillBuyMin ? 'sell' : 'buy';
+    const flowSkew = (sellersHr+buyersHr)>0 ? (sellersHr-buyersHr)/(sellersHr+buyersHr) : 0;
+
+    // ---- Drift: a great spread on a collapsing price is not a flip ----
+    const midNow = (buy+sell)/2;
+    const mid1h  = (w1  && w1.avgLowPrice!=null  && w1.avgHighPrice!=null)  ? (w1.avgLowPrice+w1.avgHighPrice)/2   : null;
+    const mid24  = (w24 && w24.avgLowPrice!=null && w24.avgHighPrice!=null) ? (w24.avgLowPrice+w24.avgHighPrice)/2 : null;
+    const trend1h = mid1h ? (midNow-mid1h)/mid1h : null;
+    const trend24 = mid24 ? (midNow-mid24)/mid24 : null;
+    // Only penalise a sharp intra-hour slide: you would be buying a falling knife
+    // and holding it through your own sell leg.
+    const trendPen = (trend1h!=null && trend1h < -0.03) ? 0.8 : 1;
+
+    // ---- Where to actually place the offers ----
+    // Patient rests at the observed bid/ask. Competitive pays one tick on each
+    // side to sit in front of the existing queue.
+    const tkB = tickSize(buy), tkS = tickSize(sell);
+    const bidComp = buy + tkB;
+    const askComp = Math.max(bidComp+1, sell - tkS);
+    const haircutDelta = instant - margin;            // preserve the pessimism
+    const marginComp = (askComp - saleTax(askComp, meta.exempt) - bidComp) - haircutDelta;
+    // Cost of verifying the spread in-game: buy 1 at the ask, dump 1 at the bid.
+    const checkCost = q.high - q.low + saleTax(q.low, meta.exempt);
+
     const fresh = Math.exp(-age/cfg.tauS);
     const volS  = Math.sqrt(Math.min(1, vol1/cfg.volSat));
     const stab  = stability(instant, hourly, cfg.haircut);
-    const conf  = Math.max(0, Math.min(1, fresh*volS*stab));
+    const conf  = Math.max(0, Math.min(1, fresh*volS*stab*trendPen));
+    // Return on the gold this position ties up, per hour, confidence weighted.
+    // Independent of position size, so a 250k rune flip and a 10m plank flip
+    // become directly comparable.
+    const roiHr = (roi/cfg.cycleH)*conf;
+    const gpPerMil = roiHr*1e6;   // gp/hour earned per 1m deployed
     const cycleProfit = margin*qty, gph = cycleProfit/cfg.cycleH;
 
     out.push({ id, name:meta.name, members:meta.members, exempt:meta.exempt,
       buy, sell, tax:saleTax(sell,meta.exempt), margin, instant, hourly, roi,
       limit, through, quantity:qty, capital:qty*buy, cycleProfit,
-      gph, expGph:gph*conf, confidence:conf, fresh, volS, stab,
+      gph, expGph:gph*conf, roiHr, gpPerMil, confidence:conf, fresh, volS, stab, trendPen,
+      bidComp, askComp, marginComp, checkCost, tkB, tkS,
+      sellersHr, buyersHr, fillBuyMin, fillSellMin, bottleneck, flowSkew,
+      trend1h, trend24, limitResetAt, buy_limit_total:meta.limit,
+      limitShared: !!(ls && ls.shared),
       age, vol1, vol24, vol5: w5?Math.min(w5.highPriceVolume||0,w5.lowPriceVolume||0):0,
       breakeven:breakevenSell(buy,meta.exempt),
       alch:(meta.highalch&&natP&&buy>0)?(meta.highalch-natP-buy)/buy:null,
@@ -668,11 +855,16 @@ function renderScan(){
   });
   $('scanBody').innerHTML = shown.map(c=>`
     <tr data-id="${c.id}">
-      <td>${esc(c.name)}${c.exempt?' <span class="warn" title="tax exempt">◈</span>':''}</td>
+      <td>${esc(c.name)}${c.exempt?' <span class="warn" title="tax exempt">◈</span>':''}${
+        c.trend1h!=null && Math.abs(c.trend1h)>0.01
+          ? ` <span class="${c.trend1h>0?'pos':'neg'}" style="font-size:9px">${c.trend1h>0?'▲':'▼'}</span>` : ''}</td>
+      <td>${gpHtml(c.buy)}</td>
       <td>${gpHtml(c.margin)}</td>
       <td class="${c.roi>=0?'':'neg'}">${pct(c.roi,1)}</td>
       <td>${c.quantity.toLocaleString()}</td>
+      <td>${gpHtml(c.capital)}</td>
       <td>${gpHtml(Math.round(c.expGph))}</td>
+      <td class="${c.roiHr>=0.01?'pos':''}">${pct(c.roiHr,2)}</td>
       <td>${(c.confidence).toFixed(2)}${confBar(c.confidence)}</td>
     </tr>
     ${expandedId===c.id? detailRow(c):''}`).join('');
@@ -681,22 +873,24 @@ function renderScan(){
     <span>best <b>${gpTxt(Math.round(cands[0].expGph))}/h</b></span>
     <span>bank <b>${gpTxt(CFG.bankroll)}</b></span>
     <span>slots <b>${CFG.slots}</b></span>
-    <span>slip <b>${pct(CFG.slip,1)}</b></span>
+    <span>slip <b>${pct(CFG.slip,1)}</b></span>${CFG.lite?'<span class="warn">lite</span>':''}
     <span>as of <b>${new Date(t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</b></span>` : '';
   const rj = Object.entries(rej).sort((a,b)=>b[1]-a[1]).slice(0,10);
   $('rejPanel').style.display = rj.length? '':'none';
   $('rejGrid').innerHTML = rj.map(([k,v])=>`<div><span>${esc(k)}</span><b>${v.toLocaleString()}</b></div>`).join('');
 }
 function detailRow(c){
-  return `<tr class="detail"><td colspan="6">
+  return `<tr class="detail"><td colspan="9">
     <div class="dgrid">
       <div><label>buy at</label>${gpHtml(c.buy)}</div>
       <div><label>sell at</label>${gpHtml(c.sell)}</div>
       <div><label>tax / unit</label>${gpHtml(c.tax)}</div>
       <div><label>break-even sell</label>${gpHtml(c.breakeven)}</div>
+      <div><label>never sell below</label>${gpHtml(c.breakeven)}</div>
       <div><label>buy limit / 4h</label>${c.limit.toLocaleString()}</div>
       <div><label>capital for qty</label>${gpHtml(c.capital)}</div>
       <div><label>profit / cycle</label>${gpHtml(c.cycleProfit)}</div>
+      <div><label>per 1m deployed</label>${gpHtml(Math.round(c.gpPerMil))}/h</div>
       <div><label>bound by</label>${c.bound}</div>
       <div><label>vol 5m / 1h / 24h</label>${c.vol5} / ${c.vol1.toLocaleString()} / ${c.vol24.toLocaleString()}</div>
       <div><label>quote age</label>${dur(c.age)}</div>
@@ -708,16 +902,42 @@ function detailRow(c){
       <span>volume</span><span class="tr"><i style="width:${c.volS*100}%"></i></span><span>${c.volS.toFixed(2)}</span>
       <span>stable</span><span class="tr"><i style="width:${c.stab*100}%"></i></span><span>${c.stab.toFixed(2)}</span>
     </div>
-    <div class="rowbtns">
-      <button class="ghost" data-chart="${c.id}" data-name="${esc(c.name)}">Open chart →</button>
-      <button class="ghost" data-copy="${c.buy}">Copy buy ${gpTxt(c.buy)}</button>
-      <button class="ghost" data-copy="${c.sell}">Copy sell ${gpTxt(c.sell)}</button>
+    <div class="offers">
+      <div class="oh">Where to place your offers</div>
+      <div class="orow"><span class="ol">Patient</span>
+        <span>buy <b>${c.buy.toLocaleString()}</b></span>
+        <span>sell <b>${c.sell.toLocaleString()}</b></span>
+        <span class="om">${gpHtml(c.margin)}/ea</span></div>
+      <div class="orow best"><span class="ol">Competitive</span>
+        <span>buy <b>${c.bidComp.toLocaleString()}</b></span>
+        <span>sell <b>${c.askComp.toLocaleString()}</b></span>
+        <span class="om">${gpHtml(c.marginComp)}/ea</span></div>
+      <div class="onote">One tick in front of the queue. The GE fills better prices
+        first, and ties go to whoever offered earliest — so a tick is what buys you
+        priority. Costs ${gpTxt(c.tkB+c.tkS)}/ea against a much faster fill.</div>
+      <div class="rowbtns">
+        <button class="ghost" data-copy="${c.bidComp}">Copy buy ${c.bidComp.toLocaleString()}</button>
+        <button class="ghost" data-copy="${c.askComp}">Copy sell ${c.askComp.toLocaleString()}</button>
+        <button class="ghost" data-chart="${c.id}" data-name="${esc(c.name)}">Chart →</button>
+        <button class="ghost" data-buy="${c.id}">Log buy</button>
+      </div>
+      <div class="ofacts">
+        <div><label>fill time buy / sell</label>${fillTxt(c.fillBuyMin)} / ${fillTxt(c.fillSellMin)}
+             <span class="${c.bottleneck==='sell'?'warn':'dimx'}">(${c.bottleneck} leg is slower)</span></div>
+        <div><label>flow per hour</label>${c.sellersHr.toLocaleString()} selling vs ${c.buyersHr.toLocaleString()} buying</div>
+        <div><label>price vs 1h / 24h avg</label>${trendTxt(c.trend1h)} / ${trendTxt(c.trend24)}</div>
+        <div><label>margin check costs</label>${gpHtml(c.checkCost)} for 1 unit</div>
+      ${c.limitResetAt? `<div><label>limit partly spent</label><span class="warn">${
+        c.buy_limit_note||''}resets in ${dur(c.limitResetAt - Date.now()/1000)}</span></div>`:''}
+      </div>
     </div>
   </td></tr>`;
 }
 $('scanBody').addEventListener('click', async e=>{
   const cp = e.target.closest('[data-copy]');
   if (cp){ try{ await navigator.clipboard.writeText(cp.dataset.copy); cp.textContent='Copied ✓'; }catch(_){} return; }
+  const lb = e.target.closest('[data-buy]');
+  if (lb){ const c = LAST.cands.find(x=>x.id===+lb.dataset.buy); if (c) logBuy(c); return; }
   const ch = e.target.closest('[data-chart]');
   if (ch){ openItem(+ch.dataset.chart, ch.dataset.name); 
            document.querySelector('nav button[data-v="item"]').click(); return; }
@@ -753,7 +973,21 @@ function renderSlots(){
     <div>idle gp <b>${gpTxt(CFG.bankroll-dep)}</b></div>
     <div>per 4h cycle <b>${gpTxt(prof)}</b></div>
     <div>on deployed <b>${dep?pct(prof/dep,2):'—'}</b></div>
-    <div>expected <b>${gpTxt(Math.round(egph))}/h</b></div>`;
+    <div>expected <b>${gpTxt(Math.round(egph))}/h</b></div>
+    <div>per 1m deployed <b>${dep?gpTxt(Math.round(egph/(dep/1e6))):'—'}/h</b></div>`;
+  const idle = CFG.bankroll - dep, idleFrac = CFG.bankroll? idle/CFG.bankroll : 0;
+  let verdict, advice;
+  if (a.pos.length >= CFG.slots && idleFrac > 0.10){
+    verdict = 'Slots are the constraint';
+    advice  = `All ${CFG.slots} slots are full and ${gpTxt(idle)} is still idle. More gold will not help — sort the scan by GP/h to put the biggest earners in the slots you have.`;
+  } else if (idleFrac <= 0.05){
+    verdict = 'Gold is the constraint';
+    advice  = 'Your bank is fully deployed. Sort the scan by %/h instead — with limited gold you want the highest return per gp, not the biggest absolute earner.';
+  } else {
+    verdict = 'The market is the constraint';
+    advice  = `${gpTxt(idle)} is idle with slots to spare, because not enough items pass your filters or can absorb the volume. Loosen min volume or min margin in Config.`;
+  }
+  $('bindNote').innerHTML = `<b>${verdict}.</b> ${advice}`;
 }
 
 /* ---------------------------- scan ---------------------------- */
@@ -762,28 +996,51 @@ async function doScan(){
   try{
     formToCfg(); await store.set('settings', CFG);
     const map = await loadMapping();
+    // Four parallel multi-hundred-KB downloads is a lot to ask of a phone on a
+    // weak signal. Required data first, extras after, and the extras are allowed
+    // to fail: a missing 24h window costs one liquidity gate, not the whole scan.
     status('fetching prices…');
-    const [latest, h1, m5, d24] = await Promise.all([
+    const [latest, h1] = await Promise.all([
       getJSON(`${API}/latest`).then(r=>r.data),
       getJSON(`${API}/1h`).then(r=>r.data),
-      getJSON(`${API}/5m`).then(r=>r.data),
-      getJSON(`${API}/24h`).then(r=>r.data).catch(()=>null),
     ]);
+    let m5 = null, d24 = null;
+    if (!CFG.lite){
+      status('fetching volume windows…');
+      const extras = await Promise.allSettled([
+        getJSON(`${API}/5m`).then(r=>r.data),
+        getJSON(`${API}/24h`).then(r=>r.data),
+      ]);
+      m5  = extras[0].status==='fulfilled' ? extras[0].value : null;
+      d24 = extras[1].status==='fulfilled' ? extras[1].value : null;
+      if (!d24) banner('24h volume data did not load, so the daily liquidity gate is '
+                     + 'off for this scan. Everything else is live.');
+    }
     const now = Date.now()/1000;
     status('scoring…');
-    const {cands, rej} = scoreAll(map, latest, h1, d24, m5, CFG, now);
+    const pos = await loadPositions();
+    const {cands, rej} = scoreAll(map, latest, h1, d24, m5, CFG, now, limitMap(pos.rows, map, now));
     const alloc = allocate(cands, CFG.bankroll, CFG.slots, CFG.maxFrac);
     LAST = {cands, rej, alloc, t:now};
     expandedId = null;
     renderScan(); renderSlots();
-    await journalScan(cands, alloc); renderJournal();
+    await journalScan(cands, alloc); renderBook();
     status(`<span class="live">● live</span> · ${Object.keys(latest).length.toLocaleString()} items · ${cands.length} pass`);
   }catch(e){
     console.error(e);
-    const sandboxed = e instanceof TypeError || /load failed|failed to fetch/i.test(e.message);
-    banner(sandboxed
-      ? 'Network blocked. If you are viewing this inside a chat/file preview, that sandbox cannot reach the wiki API — open this page from a real URL (e.g. GitHub Pages) in Safari/Chrome instead.'
-      : `Scan failed: ${e.message}. The wiki API may be down — retry in a minute.`);
+    const network = e instanceof TypeError || /load failed|failed to fetch|networkerror/i.test(e.message);
+    if (network && isHostedOrigin()){
+      banner('Could not reach the wiki API after three tries. A scan pulls several '
+           + 'hundred KB, so a weak signal is the usual cause — try wifi, or turn on '
+           + 'Lite mode in Config to halve the data.');
+    } else if (network){
+      banner('Network blocked. This page is not running from a real web address, and a '
+           + 'sandboxed preview cannot reach the wiki API. Open it from your hosted URL instead.');
+    } else if (/HTTP 429/.test(e.message)){
+      banner('The wiki API asked us to slow down. Turn off auto-refresh and wait a minute.');
+    } else {
+      banner(`Scan failed: ${e.message}`);
+    }
     status('<span class="err">● error</span>');
   }finally{ btn.disabled=false; }
 }
@@ -869,6 +1126,136 @@ $('itemMatches').addEventListener('click', e=>{
   const b = e.target.closest('[data-pick]'); if (b) openItem(+b.dataset.pick, b.dataset.nm);
 });
 
+/* --------------------------- positions --------------------------- */
+async function loadPositions(){ return (await store.get('positions')) || {seq:0, rows:[]}; }
+async function savePositions(p){ await store.set('positions', p); }
+
+async function logBuy(cand){
+  const qtyRaw = prompt(`How many ${cand.name} filled?`, String(cand.quantity));
+  if (qtyRaw===null) return;
+  const qty = Math.floor(Number(qtyRaw));
+  if (!Number.isFinite(qty) || qty<=0){ banner('Quantity must be a positive number.'); return; }
+  const priceRaw = prompt(`Price paid each?`, String(cand.bidComp));
+  if (priceRaw===null) return;
+  const price = Math.floor(Number(priceRaw));
+  if (!Number.isFinite(price) || price<=0){ banner('Price must be a positive number.'); return; }
+  const p = await loadPositions();
+  p.rows.push({ pid:++p.seq, itemId:cand.id, name:cand.name, qty, buyPrice:price,
+                boughtAt:Date.now()/1000, exempt:cand.exempt?1:0, limit:cand.buy_limit_total||null,
+                soldQty:0, sellPrice:null, soldAt:null });
+  await savePositions(p);
+  status(`logged ${qty.toLocaleString()} ${cand.name} @ ${price.toLocaleString()}`);
+  renderBook();
+}
+
+async function logSell(pid){
+  const p = await loadPositions();
+  const row = p.rows.find(r=>r.pid===pid); if (!row) return;
+  const open = row.qty - row.soldQty;
+  const qtyRaw = prompt(`How many ${row.name} sold? (holding ${open.toLocaleString()})`, String(open));
+  if (qtyRaw===null) return;
+  const qty = Math.min(open, Math.floor(Number(qtyRaw)));
+  if (!Number.isFinite(qty) || qty<=0){ banner('Quantity must be a positive number.'); return; }
+  const priceRaw = prompt('Price received each? (before tax)', String(row.sellPrice ?? ''));
+  if (priceRaw===null) return;
+  const price = Math.floor(Number(priceRaw));
+  if (!Number.isFinite(price) || price<=0){ banner('Price must be a positive number.'); return; }
+  // Blend into a weighted average so partial sells stay accurate.
+  const prevQty = row.soldQty, prevPx = row.sellPrice ?? 0;
+  row.soldQty = prevQty + qty;
+  row.sellPrice = Math.round((prevPx*prevQty + price*qty) / row.soldQty);
+  row.soldAt = Date.now()/1000;
+  await savePositions(p); renderBook();
+}
+
+async function dropPosition(pid){
+  if (!confirm('Delete this position from the book?')) return;
+  const p = await loadPositions();
+  p.rows = p.rows.filter(r=>r.pid!==pid);
+  await savePositions(p); renderBook();
+}
+
+function positionPnL(row, live){
+  const cost = row.buyPrice * row.qty;
+  const realised = row.soldQty
+    ? (row.sellPrice - saleTax(row.sellPrice, !!row.exempt)) * row.soldQty - row.buyPrice*row.soldQty
+    : 0;
+  const openQty = row.qty - row.soldQty;
+  const mark = live?.high ?? null;
+  const unrealised = (openQty>0 && mark!=null)
+    ? (mark - saleTax(mark, !!row.exempt) - row.buyPrice) * openQty : null;
+  return {cost, realised, openQty, unrealised, mark};
+}
+
+async function renderBook(){
+  const p = await loadPositions();
+  const now = Date.now()/1000;
+  const liveById = Object.fromEntries(LAST.cands.map(c=>[c.id, c]));
+
+  const open = p.rows.filter(r=>r.qty>r.soldQty);
+  const closed = p.rows.filter(r=>r.qty<=r.soldQty);
+
+  if (!p.rows.length){
+    $('posList').innerHTML = '<div class="empty">Nothing held.<br><span style="font-size:11px">Tap a scan row and press <b>Log buy</b> once an offer fills.</span></div>';
+    $('posSum').style.display='none';
+  } else {
+    const rows = [...open, ...closed].slice(0,60).map(r=>{
+      const live = liveById[r.itemId];
+      const {realised, openQty, unrealised, mark} = positionPnL(r, live);
+      const pnl = realised + (unrealised ?? 0);
+      const target = breakevenSell(r.buyPrice, !!r.exempt);
+      return `<div class="jrow">
+        <span class="badge ${openQty>0?'b-wait':'b-fill'}">${openQty>0?'holding':'closed'}</span>
+        <span style="flex:1;min-width:110px">${esc(r.name)}</span>
+        <span>${openQty>0?openQty.toLocaleString()+' @ ':''}${r.buyPrice.toLocaleString()}</span>
+        <span>be ${target.toLocaleString()}</span>
+        <span class="${pnl>=0?'pos':'neg'}">${pnl>=0?'+':''}${gpTxt(pnl)}</span>
+        ${openQty>0?`<button class="ghost" style="padding:3px 8px;font-size:10px" data-sell="${r.pid}">Log sale</button>`:''}
+        <button class="ghost" style="padding:3px 8px;font-size:10px" data-drop="${r.pid}">✕</button>
+      </div>`;
+    }).join('');
+    $('posList').innerHTML = rows;
+    const deployed = open.reduce((s,r)=>s+r.buyPrice*(r.qty-r.soldQty),0);
+    const realTot = p.rows.reduce((s,r)=>s+positionPnL(r, liveById[r.itemId]).realised,0);
+    const unrealTot = open.reduce((s,r)=>s+(positionPnL(r, liveById[r.itemId]).unrealised ?? 0),0);
+    $('posSum').style.display='grid';
+    $('posSum').innerHTML = `
+      <div>gp at risk <b>${gpTxt(deployed)}</b></div>
+      <div>positions open <b>${open.length}</b></div>
+      <div>realised <b class="${realTot>=0?'pos':'neg'}">${realTot>=0?'+':''}${gpTxt(realTot)}</b></div>
+      <div>unrealised <b class="${unrealTot>=0?'pos':'neg'}">${unrealTot>=0?'+':''}${gpTxt(unrealTot)}</b></div>`;
+  }
+
+  // --- limit timers ---
+  const groups = [...new Set(p.rows.map(r=>limitGroup(r.name)))];
+  const live = [];
+  for (const grp of groups){
+    const row = p.rows.find(r=>limitGroup(r.name)===grp);
+    const meta = MAPPING? MAPPING.get(row.itemId) : null;
+    const cap = meta?.limit ?? null;
+    const ls = limitFor(p.rows, row.itemId, cap ?? Infinity, now, grp);
+    const variants = new Set(p.rows.filter(r=>limitGroup(r.name)===grp).map(r=>r.name));
+    if (ls.open) live.push({id:row.itemId, name:[...variants].join(' + '),
+                            shared:variants.size>1, cap, ...ls});
+  }
+  live.sort((a,b)=>a.resetAt-b.resetAt);
+  $('limList').innerHTML = live.length ? live.map(l=>`
+    <div class="jrow">
+      <span style="flex:1;min-width:110px">${esc(l.name)}${l.shared?' <span class="warn" title="doses share one limit">◈</span>':''}</span>
+      <span>${l.spent.toLocaleString()}${l.cap?' / '+l.cap.toLocaleString():''} used</span>
+      <span class="${l.remaining>0?'pos':'warn'}">${l.remaining===Infinity?'—':l.remaining.toLocaleString()} left</span>
+      <span style="color:var(--faint)">resets in ${dur(l.resetAt-now)}</span>
+    </div>`).join('')
+    : '<div class="empty">No limits in use.</div>';
+
+  renderJournal();
+}
+
+$('posList').addEventListener('click', e=>{
+  const sell=e.target.closest('[data-sell]'); if (sell) return logSell(+sell.dataset.sell);
+  const drop=e.target.closest('[data-drop]'); if (drop) return dropPosition(+drop.dataset.drop);
+});
+
 /* --------------------------- journal UI --------------------------- */
 async function renderJournal(){
   const j = await loadJournal();
@@ -890,6 +1277,17 @@ async function renderJournal(){
         <span style="color:var(--faint)">${dur(Date.now()/1000-r.t)} ago</span></div>`;
     }).join('');
   }
+  const nowS = Date.now()/1000;
+  const expiring = j.recs.filter(r=>!r.out && (nowS-r.t) > 22*3600 && (nowS-r.t) < 30*3600).length;
+  const expired  = j.recs.filter(r=>!r.out && (nowS-r.t) >= 30*3600).length;
+  const warn = $('verifyWarn');
+  if (expiring) warn.innerHTML = `<b>${expiring} pick${expiring>1?'s':''} expiring.</b> Five-minute history
+    only reaches back about 30 hours, so verify now or they can never be graded.`;
+  else if (expired) warn.innerHTML = `<b>${expired} pick${expired>1?'s':''} too old to grade.</b> Their
+    5-minute history has scrolled off. Verify within a day of scanning.`;
+  else warn.innerHTML = '';
+  warn.style.display = warn.innerHTML? 'block':'none';
+
   const done = j.recs.filter(r=>r.out && !r.out.note);
   const grid = $('statsGrid');
   if (!done.length){ grid.innerHTML = `<div><span>observations</span><b>${j.recs.length} (0 verified)</b></div>`; return; }
@@ -914,6 +1312,14 @@ $('btnClearJ').onclick = async ()=>{
 };
 
 /* ---------------------------- boot ---------------------------- */
+$('cfg-members').addEventListener('change', ()=>{
+  // Free players get 3 slots, members 8. Nudge the obvious value, never overwrite
+  // a deliberate custom number.
+  const slots = $('cfg-slots');
+  if (!$('cfg-members').checked && slots.value==='8') slots.value='3';
+  if ($('cfg-members').checked && slots.value==='3') slots.value='8';
+});
+
 $('btnSave').onclick = async ()=>{
   formToCfg(); await store.set('settings', CFG); cfgToForm();
   $('btnSave').textContent='Saved ✓'; setTimeout(()=>$('btnSave').textContent='Save config',1200);
@@ -927,7 +1333,7 @@ $('btnSave').onclick = async ()=>{
   }[BACKEND];
   const saved = await store.get('settings');
   if (saved) CFG = {...DEF_CFG, ...saved};
-  cfgToForm(); renderJournal();
+  cfgToForm(); renderBook();
   status('ready');
 })();
 </script>
