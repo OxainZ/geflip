@@ -281,6 +281,17 @@
 <!-- ============ JOURNAL ============ -->
 <section id="v-book" class="view">
   <div class="panel">
+    <h3>Log a trade</h3>
+    <div class="searchrow">
+      <input id="logSearch" placeholder="Any item — Aether rune, Osmumten's fang…" inputmode="search">
+      <button class="ghost" id="btnLogFind">Find</button>
+    </div>
+    <div id="logMatches" class="strip"></div>
+    <p class="hint" style="margin-top:6px">Searches all 4,000+ tradeable items, not just what passed
+      the scan filters. Use this for anything you bought before the app suggested it, or that the
+      filters dropped.</p>
+  </div>
+  <div class="panel">
     <h3>Open positions</h3>
     <div id="posList"><div class="empty">Nothing held.<br>
       <span style="font-size:11px">Tap a scan row and press <b>Log buy</b> once an offer fills. That starts the
@@ -1739,15 +1750,52 @@ $('itemMatches').addEventListener('click', e=>{
 });
 
 /* --------------------------- positions --------------------------- */
+async function findForLog(){
+  const q = $('logSearch').value.trim().toLowerCase();
+  const box = $('logMatches');
+  if (!q){ box.innerHTML=''; return; }
+  let map;
+  try{ map = await loadMapping(); }
+  catch(e){ box.innerHTML = `<span class="warn">${esc(describeError(e))}</span>`; return; }
+  const hits = [...map.values()].filter(m=>m.name.toLowerCase().includes(q))
+    .sort((a,b)=>a.name.length-b.name.length).slice(0,10);
+  box.innerHTML = hits.length
+    ? hits.map(h=>`<button class="ghost" data-logitem="${h.id}" data-nm="${esc(h.name)}">${esc(h.name)}</button>`).join('')
+    : '<span class="dimx">no item by that name</span>';
+}
+
+async function logManual(itemId, name){
+  const map = await loadMapping();
+  const meta = map.get(itemId);
+  // Prefill from the live quote so you are not typing prices from memory.
+  let suggested = '';
+  try{
+    const q = (await getJSON(`${API}/latest?id=${itemId}`)).data[itemId];
+    if (q && q.low) suggested = String(q.low);
+  }catch(e){ /* prefill is a convenience, not a requirement */ }
+  await logBuy({
+    id: itemId, name, exempt: meta?.tax_exempt ?? meta?.exempt ?? false,
+    quantity: 1, bidComp: suggested, buy_limit_total: meta?.limit ?? null,
+  }, 'spread');
+  $('logSearch').value=''; $('logMatches').innerHTML='';
+}
+
+$('btnLogFind').onclick = findForLog;
+$('logSearch').addEventListener('keydown', e=>{ if (e.key==='Enter') findForLog(); });
+$('logMatches').addEventListener('click', e=>{
+  const b = e.target.closest('[data-logitem]');
+  if (b) logManual(+b.dataset.logitem, b.dataset.nm);
+});
+
 async function loadPositions(){ return (await store.get('positions')) || {seq:0, rows:[]}; }
 async function savePositions(p){ await store.set('positions', p); }
 
 async function logBuy(cand, kind='spread'){
-  const qtyRaw = prompt(`How many ${cand.name} filled?`, String(cand.quantity));
+  const qtyRaw = prompt(`How many ${cand.name} filled?`, cand.quantity ? String(cand.quantity) : '');
   if (qtyRaw===null) return;
   const qty = Math.floor(Number(qtyRaw));
   if (!Number.isFinite(qty) || qty<=0){ banner('Quantity must be a positive number.'); return; }
-  const priceRaw = prompt(`Price paid each?`, String(cand.bidComp));
+  const priceRaw = prompt(`Price paid each?`, cand.bidComp ? String(cand.bidComp) : '');
   if (priceRaw===null) return;
   const price = Math.floor(Number(priceRaw));
   if (!Number.isFinite(price) || price<=0){ banner('Price must be a positive number.'); return; }
