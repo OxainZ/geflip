@@ -186,6 +186,7 @@
 <section id="v-scan" class="view on">
   <div class="scanbar">
     <button class="primary" id="btnScan">Scan market</button>
+    <button class="ghost" id="btnDeep" title="Check the shortlist against 48h of history">deep</button>
     <button class="ghost" id="btnAuto" title="Auto-refresh every 60s">auto ⟳</button>
   </div>
   <div class="strip" id="scanStrip"></div>
@@ -264,8 +265,10 @@
   </div>
   <div class="scanbar">
     <button class="primary" id="btnVerify">Verify matured picks</button>
+    <button class="ghost" id="btnCalib">Calibrate</button>
     <button class="ghost" id="btnClearJ">Clear</button>
   </div>
+  <div id="calibBox" class="bindnote" style="display:none"></div>
   <div id="verifyWarn" class="bindnote" style="display:none"></div>
   <div class="panel">
     <h3>Predicted vs realized</h3>
@@ -636,6 +639,11 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     if (vol1 < cfg.minVol){ R('1h volume too thin'); continue; }
     const vol24 = w24 ? Math.min(w24.highPriceVolume||0, w24.lowPriceVolume||0) : 0;
     if (d24 && vol24 < cfg.minVol24){ R('24h volume too thin'); continue; }
+    // Shrinkage estimator: the average of this hour and the day's mean hour.
+    // A 3am lull and a post-update spike are both bad predictors on their own.
+    const hourly24  = vol24 > 0 ? vol24/24 : null;
+    const flowFcast = hourly24!=null ? (vol1 + hourly24)/2 : vol1;
+    const activity  = hourly24 > 0 ? vol1/hourly24 : null;   // 1.0 = a normal hour
 
     let limit = meta.limit;
     if (limit==null){ R('unknown buy limit'); continue; }
@@ -647,7 +655,7 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
       if (limit <= 0){ R('buy limit already spent'); continue; }
     }
     const afford = Math.floor(perItemCap / buy);
-    const through = Math.floor(cfg.part * vol1 * cfg.cycleH);
+    const through = Math.floor(cfg.part * flowFcast * cfg.cycleH);
     const qty = Math.min(limit, afford, through);
     if (qty <= 0){ R('no affordable/absorbable qty'); continue; }
     const bound = qty===limit?'buy limit': qty===afford?'capital':'throughput';
@@ -657,8 +665,12 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     // highPriceVolume = people INSTA-BUYING, i.e. the flow that fills your SELL.
     const sellersHr = w1 ? (w1.lowPriceVolume||0)  : 0;
     const buyersHr  = w1 ? (w1.highPriceVolume||0) : 0;
-    const fillBuyMin  = sellersHr>0 ? (qty/(sellersHr*cfg.part))*60 : Infinity;
-    const fillSellMin = buyersHr >0 ? (qty/(buyersHr *cfg.part))*60 : Infinity;
+    // Apply the same shrinkage to each leg so fill times track the forecast,
+    // not whichever hour we happened to sample.
+    const shrink    = (hourly24!=null && vol1>0) ? flowFcast/vol1 : 1;
+    const sellersFc = sellersHr*shrink, buyersFc = buyersHr*shrink;
+    const fillBuyMin  = sellersFc>0 ? (qty/(sellersFc*cfg.part))*60 : Infinity;
+    const fillSellMin = buyersFc >0 ? (qty/(buyersFc *cfg.part))*60 : Infinity;
     const bottleneck = fillSellMin > fillBuyMin ? 'sell' : 'buy';
     const flowSkew = (sellersHr+buyersHr)>0 ? (sellersHr-buyersHr)/(sellersHr+buyersHr) : 0;
 
@@ -700,7 +712,7 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
       gph, expGph:gph*conf, roiHr, gpPerMil, confidence:conf, fresh, volS, stab, trendPen,
       bidComp, askComp, marginComp, checkCost, tkB, tkS,
       sellersHr, buyersHr, fillBuyMin, fillSellMin, bottleneck, flowSkew,
-      trend1h, trend24, limitResetAt, buy_limit_total:meta.limit,
+      trend1h, trend24, activity, flowFcast, limitResetAt, buy_limit_total:meta.limit,
       limitShared: !!(ls && ls.shared),
       age, vol1, vol24, vol5: w5?Math.min(w5.highPriceVolume||0,w5.lowPriceVolume||0):0,
       breakeven:breakevenSell(buy,meta.exempt),
@@ -709,6 +721,52 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
   }
   out.sort((a,b)=> b.expGph-a.expGph || b.confidence-a.confidence || a.name.localeCompare(b.name));
   return {cands:out, rej};
+}
+
+/* --------------------------- deep scan --------------------------- *
+ * The fast scan compares one instant against one hour. That cannot tell a
+ * durable spread from one that opened ninety seconds ago. This pulls the hourly
+ * timeseries for the shortlist and asks how often the margin has actually been
+ * there. One extra request per item, so it runs on the top N only.           */
+function deepMetrics(series, cand, hours=48){
+  const win = series.slice(-hours).filter(w=>w.avgHighPrice!=null && w.avgLowPrice!=null);
+  if (win.length < 6) return null;
+  const margins = win.map(w=>netMargin(w.avgLowPrice, w.avgHighPrice, cand.exempt));
+  const mids    = win.map(w=>(w.avgLowPrice+w.avgHighPrice)/2);
+  const sorted  = [...margins].sort((a,b)=>a-b);
+  const median  = sorted[Math.floor(sorted.length/2)];
+  // How often has at least half of today's margin actually been available?
+  const persistence = cand.margin > 0
+    ? margins.filter(m => m >= cand.margin*0.5).length / margins.length : 0;
+  const positive = margins.filter(m=>m>0).length / margins.length;
+  const mean = mids.reduce((a,b)=>a+b,0)/mids.length;
+  const sd   = Math.sqrt(mids.reduce((s,m)=>s+(m-mean)**2,0)/mids.length);
+  return { windows:win.length, medianMargin:median, persistence, positive,
+           volatility: mean>0 ? sd/mean : 0 };
+}
+
+function applyDeep(cand, m){
+  if (!m) return cand;
+  cand.deep = m;
+  // Never let the snapshot beat the history: the durable margin is the floor.
+  cand.deepMargin = Math.max(0, Math.min(cand.margin, m.medianMargin));
+  cand.deepConfidence = Math.max(0, Math.min(1, cand.confidence * m.persistence));
+  cand.deepGph = (cand.deepMargin*cand.quantity/CFG.cycleH)*cand.deepConfidence;
+  cand.deepRoiHr = cand.buy>0 ? (cand.deepMargin/cand.buy/CFG.cycleH)*cand.deepConfidence : 0;
+  return cand;
+}
+
+async function deepScan(cands, n){
+  let done = 0;
+  for (const c of cands.slice(0, n)){
+    status(`deep scan ${++done}/${n}…`);
+    try{
+      const series = (await getJSON(`${API}/timeseries?timestep=1h&id=${c.id}`)).data || [];
+      applyDeep(c, deepMetrics(series, c));
+    }catch(e){ /* one bad item must not abort the pass */ }
+    await new Promise(r=>setTimeout(r, 280));   // politeness gap
+  }
+  return cands;
 }
 
 /* ------------------------- allocation ------------------------- */
@@ -863,8 +921,9 @@ function renderScan(){
       <td class="${c.roi>=0?'':'neg'}">${pct(c.roi,1)}</td>
       <td>${c.quantity.toLocaleString()}</td>
       <td>${gpHtml(c.capital)}</td>
-      <td>${gpHtml(Math.round(c.expGph))}</td>
-      <td class="${c.roiHr>=0.01?'pos':''}">${pct(c.roiHr,2)}</td>
+      <td>${c.deep? `${gpHtml(Math.round(c.deepGph))} <span class="dimx" style="font-size:9px">✓</span>`
+                   : gpHtml(Math.round(c.expGph))}</td>
+      <td class="${(c.deep?c.deepRoiHr:c.roiHr)>=0.01?'pos':''}">${pct(c.deep?c.deepRoiHr:c.roiHr,2)}</td>
       <td>${(c.confidence).toFixed(2)}${confBar(c.confidence)}</td>
     </tr>
     ${expandedId===c.id? detailRow(c):''}`).join('');
@@ -925,6 +984,14 @@ function detailRow(c){
         <div><label>fill time buy / sell</label>${fillTxt(c.fillBuyMin)} / ${fillTxt(c.fillSellMin)}
              <span class="${c.bottleneck==='sell'?'warn':'dimx'}">(${c.bottleneck} leg is slower)</span></div>
         <div><label>flow per hour</label>${c.sellersHr.toLocaleString()} selling vs ${c.buyersHr.toLocaleString()} buying</div>
+      <div><label>market activity now</label>${c.activity==null?'—':
+        `${c.activity.toFixed(2)}x normal${c.activity<0.6?' <span class="warn">quiet</span>':
+          c.activity>1.8?' <span class="warn">spiking</span>':''}`}</div>
+      ${c.deep? `
+      <div><label>margin held (48h)</label><span class="${c.deep.persistence>=0.6?'pos':'neg'}">${
+        pct(c.deep.persistence,0)} of hours</span></div>
+      <div><label>median margin 48h</label>${gpHtml(c.deep.medianMargin)}</div>
+      <div><label>price volatility</label>${pct(c.deep.volatility,1)}</div>`:''}
         <div><label>price vs 1h / 24h avg</label>${trendTxt(c.trend1h)} / ${trendTxt(c.trend24)}</div>
         <div><label>margin check costs</label>${gpHtml(c.checkCost)} for 1 unit</div>
       ${c.limitResetAt? `<div><label>limit partly spent</label><span class="warn">${
@@ -1306,10 +1373,77 @@ async function renderJournal(){
     <div><span>gap → slippage</span><b class="${predRoi-realRoi>0?'neg':'pos'}">${pct(predRoi-realRoi)}</b></div>`:''}`;
 }
 $('btnVerify').onclick = ()=>{ formToCfg(); verifyJournal(); };
+$('btnCalib').onclick = runCalibration;
+$('btnDeep').onclick = async ()=>{
+  if (!LAST.cands.length){ banner('Run a scan first.'); return; }
+  const btn=$('btnDeep'); btn.disabled=true; btn.classList.add('on');
+  try{
+    await deepScan(LAST.cands, Math.min(12, LAST.cands.length));
+    // Re-rank on the history-backed number where we have one.
+    LAST.cands.sort((a,b)=>(b.deepGph ?? b.expGph)-(a.deepGph ?? a.expGph));
+    renderScan();
+    status(`<span class="live">● deep</span> · shortlist checked against 48h`);
+  }catch(e){ banner('Deep scan failed: '+e.message); }
+  finally{ btn.disabled=false; btn.classList.remove('on'); }
+};
 $('btnClearJ').onclick = async ()=>{
   if (!confirm('Delete the whole journal? Your calibration history goes with it.')) return;
   await store.del('journal'); renderJournal();
 };
+
+/* --------------------------- calibration --------------------------- *
+ * participation and slippage are the two numbers I cannot know for you.
+ * Once the journal has graded enough picks, it can propose both from what
+ * actually happened rather than from my defaults.                          */
+function calibrateFrom(recs){
+  const done = recs.filter(r=>r.out && !r.out.note);
+  if (done.length < 8) return {n:done.length, ready:false};
+
+  const buyFill  = done.filter(r=>r.out.buyF).length / done.length;
+  const roundTrip = done.filter(r=>r.out.buyF && r.out.sellF).length / done.length;
+  const predRoi = done.reduce((s,r)=>s+r.roi,0) / done.length;
+  const realRois = done.filter(r=>r.out.rm!=null && r.buy>0).map(r=>r.out.rm/r.buy);
+  const realRoi = realRois.length ? realRois.reduce((a,b)=>a+b,0)/realRois.length : null;
+
+  // The shortfall is paid on both legs, so half of it is the per-side slippage.
+  const gap = (realRoi!=null) ? Math.max(0, predRoi - realRoi) : 0;
+  const slip = Math.min(0.05, gap/2);
+
+  // Round-trip rate is a direct read on how much of the flow you really capture:
+  // if only half your picks completed, your effective participation was half.
+  const part = Math.max(0.02, Math.min(1, CFG.part * (roundTrip || 0.5) / 0.5));
+
+  return {n:done.length, ready:true, buyFill, roundTrip, predRoi, realRoi,
+          suggestedSlip:slip, suggestedPart:part};
+}
+
+async function runCalibration(){
+  const j = await loadJournal();
+  const c = calibrateFrom(j.recs);
+  const box = $('calibBox');
+  if (!c.ready){
+    box.innerHTML = `<b>Not enough data yet.</b> ${c.n} of 8 verified picks. Keep scanning
+      and running Verify — after that this proposes your own slippage and participation
+      instead of my defaults.`;
+    box.style.display='block'; return;
+  }
+  CALIB = c;
+  box.innerHTML = `<b>From ${c.n} verified picks.</b>
+    Buy offers reachable ${pct(c.buyFill,0)} of the time, round trips ${pct(c.roundTrip,0)}.
+    Predicted ROI ${pct(c.predRoi)} vs realised ${c.realRoi==null?'—':pct(c.realRoi)}.<br>
+    Suggested <b>slippage ${pct(c.suggestedSlip,2)}</b> and
+    <b>participation ${pct(c.suggestedPart,0)}</b>, replacing
+    ${pct(CFG.slip,2)} / ${pct(CFG.part,0)}.
+    <button class="ghost" id="btnApplyCalib" style="margin-top:8px">Apply both</button>`;
+  box.style.display='block';
+  $('btnApplyCalib').onclick = async ()=>{
+    CFG.slip = c.suggestedSlip; CFG.part = c.suggestedPart;
+    await store.set('settings', CFG); cfgToForm();
+    box.innerHTML = `<b>Applied.</b> Slippage ${pct(CFG.slip,2)}, participation
+      ${pct(CFG.part,0)}. Rescan to see the difference.`;
+  };
+}
+let CALIB = null;
 
 /* ---------------------------- boot ---------------------------- */
 $('cfg-members').addEventListener('change', ()=>{
