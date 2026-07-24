@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GE Flip Terminal</title>
+<style>
+  :root{
+    --bg:#14100c; --panel:#1d1712; --panel2:#241c15; --line:#3a2f24;
+    --ink:#e6d9bf; --dim:#9a8a6e; --faint:#6b5d46;
+    --orange:#ff981f; --orange-dim:#b96f17;
+    --gp-gold:#ffd23f; --gp-white:#f5f2ea; --gp-green:#26e07a;
+    --red:#ff5c47; --amber:#ffc14d;
+    --mono:ui-monospace,'SF Mono','Cascadia Mono',Menlo,Consolas,monospace;
+    --sans:-apple-system,'Segoe UI',Roboto,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;
+       padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  input,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);
+       border-radius:4px;padding:7px 9px;width:100%}
+  input:focus,select:focus,button:focus-visible{outline:2px solid var(--orange);outline-offset:1px}
+
+  /* header */
+  header{position:sticky;top:0;z-index:20;background:linear-gradient(var(--bg) 82%,transparent);
+         padding:10px 12px 8px;display:flex;align-items:center;gap:10px}
+  .brand{font-family:var(--mono);font-size:15px;letter-spacing:.14em;color:var(--orange);
+         text-transform:uppercase;font-weight:700}
+  .brand small{color:var(--faint);letter-spacing:.1em;font-weight:400}
+  #status{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right;line-height:1.35}
+  #status .live{color:var(--gp-green)}
+  #status .err{color:var(--red)}
+
+  main{padding:0 10px;max-width:980px;margin:0 auto}
+  .view{display:none}.view.on{display:block}
+
+  /* scan bar */
+  .scanbar{display:flex;gap:8px;margin:4px 0 10px}
+  .primary{background:var(--orange);color:#1a1206;font-weight:700;border-radius:6px;
+           padding:11px 16px;font-family:var(--mono);letter-spacing:.06em;flex:1;text-transform:uppercase;font-size:13px}
+  .primary:disabled{background:var(--orange-dim);color:#3a2c14}
+  .ghost{border:1px solid var(--line);border-radius:6px;padding:11px 12px;color:var(--dim);
+         font-family:var(--mono);font-size:12px;white-space:nowrap}
+  .ghost.on{color:var(--orange);border-color:var(--orange-dim)}
+
+  .strip{display:flex;gap:14px;overflow-x:auto;font-family:var(--mono);font-size:11px;color:var(--dim);
+         padding:0 2px 8px;scrollbar-width:none}
+  .strip::-webkit-scrollbar{display:none}
+  .strip b{color:var(--ink);font-weight:600}
+
+  /* table */
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+  thead th{color:var(--faint);font-weight:600;text-align:right;padding:6px 6px;font-size:10px;
+           letter-spacing:.08em;text-transform:uppercase;cursor:pointer;user-select:none;white-space:nowrap;
+           position:sticky;top:44px;background:var(--bg);z-index:5}
+  thead th:first-child{text-align:left}
+  thead th.sorted{color:var(--orange)}
+  tbody td{padding:8px 6px;text-align:right;border-top:1px solid #241d15;white-space:nowrap}
+  tbody td:first-child{text-align:left;max-width:34vw;overflow:hidden;text-overflow:ellipsis}
+  tbody tr{cursor:pointer}
+  tbody tr:active{background:var(--panel)}
+  .cbar{display:inline-block;width:26px;height:5px;background:#2c231a;border-radius:3px;vertical-align:1px;margin-left:5px}
+  .cbar i{display:block;height:100%;background:var(--orange);border-radius:3px}
+
+  /* colors that mean something: in-game gp tiers */
+  .gp{color:var(--gp-gold)} .gp.k{color:var(--gp-white)} .gp.m{color:var(--gp-green)} .gp.neg{color:var(--red)}
+  .pos{color:var(--gp-green)} .neg{color:var(--red)} .warn{color:var(--amber)}
+
+  /* expanded row */
+  .detail{background:var(--panel);border-top:1px solid var(--line)!important}
+  .detail td{white-space:normal;text-align:left;padding:10px 10px 12px}
+  .dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px 14px;
+         font-size:11.5px;margin-bottom:10px}
+  .dgrid label{display:block;color:var(--faint);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px}
+  .bars{display:grid;grid-template-columns:auto 1fr auto;gap:4px 8px;align-items:center;
+        font-size:10.5px;color:var(--dim);max-width:340px;margin-bottom:10px}
+  .bars .tr{height:6px;background:#2c231a;border-radius:3px;overflow:hidden}
+  .bars .tr i{display:block;height:100%;background:var(--orange)}
+  .rowbtns{display:flex;gap:8px;flex-wrap:wrap}
+  .rowbtns .ghost{padding:8px 12px}
+
+  /* panels */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0}
+  .panel h3{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+            color:var(--faint);margin-bottom:10px;font-weight:600}
+  .empty{color:var(--dim);text-align:center;padding:36px 16px;font-size:13px;line-height:1.6}
+  .empty b{color:var(--orange)}
+
+  /* allocation */
+  .slot{display:flex;align-items:baseline;gap:10px;padding:10px 2px;border-top:1px solid #241d15;
+        font-family:var(--mono);font-size:12px;flex-wrap:wrap}
+  .slot:first-of-type{border-top:none}
+  .slot .n{color:var(--faint);font-size:10px;width:18px}
+  .slot .nm{flex:1;min-width:120px;color:var(--ink)}
+  .slot .qty{color:var(--dim)}
+  .alloc-sum{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-family:var(--mono);
+             font-size:12px;color:var(--dim);margin-top:10px}
+  .alloc-sum b{color:var(--ink);font-weight:600}
+
+  /* settings */
+  .form{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+  .form .full{grid-column:1/-1}
+  .form label{display:block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+              color:var(--faint);margin-bottom:4px;font-family:var(--mono)}
+  .hint{color:var(--faint);font-size:11px;line-height:1.55;margin-top:10px}
+  .toggle{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px}
+  .toggle input{width:auto;accent-color:var(--orange)}
+
+  /* item view */
+  .searchrow{display:flex;gap:8px;margin:4px 0 10px}
+  canvas{width:100%;display:block;border-radius:6px;background:var(--panel2)}
+  .legend{display:flex;gap:14px;font-family:var(--mono);font-size:10px;color:var(--dim);padding:6px 2px}
+  .sw{display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:-1px;margin-right:5px}
+
+  /* journal */
+  .jrow{display:flex;gap:8px;align-items:baseline;padding:9px 2px;border-top:1px solid #241d15;
+        font-family:var(--mono);font-size:11.5px;flex-wrap:wrap}
+  .jrow:first-of-type{border-top:none}
+  .badge{font-size:9px;letter-spacing:.06em;padding:2px 6px;border-radius:3px;text-transform:uppercase;font-weight:700}
+  .b-fill{background:#173524;color:var(--gp-green)} .b-miss{background:#3a1c17;color:var(--red)}
+  .b-part{background:#3a3117;color:var(--amber)} .b-wait{background:#241d15;color:var(--faint)}
+  .statgrid{display:grid;grid-template-columns:1fr 1fr;gap:2px 16px;font-family:var(--mono);font-size:12px}
+  .statgrid div{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #241d15;color:var(--dim)}
+  .statgrid b{color:var(--ink);font-weight:600}
+
+  /* tab bar */
+  nav{position:fixed;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid var(--line);
+      display:flex;z-index:30;padding-bottom:env(safe-area-inset-bottom)}
+  nav button{flex:1;padding:11px 4px 9px;color:var(--faint);font-family:var(--mono);font-size:10px;
+             letter-spacing:.08em;text-transform:uppercase}
+  nav button.on{color:var(--orange)}
+  nav button.on::after{content:'';display:block;margin:5px auto 0;width:18px;height:2px;background:var(--orange);border-radius:1px}
+  nav button::after{content:'';display:block;margin:5px auto 0;width:18px;height:2px;background:transparent}
+
+  .banner{background:#3a1c17;color:#ffb3a8;border:1px solid #5c2a22;border-radius:6px;
+          padding:10px 12px;font-size:12px;margin:8px 0;line-height:1.5;display:none}
+  .banner.on{display:block}
+  @media(prefers-reduced-motion:no-preference){
+    .primary{transition:transform .08s}.primary:active{transform:scale(.98)}
+  }
+  @media(min-width:700px){ body{font-size:14.5px} tbody td:first-child{max-width:none} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">GE·FLIP <small>terminal</small></div>
+  <div id="status">idle</div>
+</header>
+
+<main>
+<div id="banner" class="banner"></div>
+
+<!-- ============ SCAN ============ -->
+<section id="v-scan" class="view on">
+  <div class="scanbar">
+    <button class="primary" id="btnScan">Scan market</button>
+    <button class="ghost" id="btnAuto" title="Auto-refresh every 60s">auto ⟳</button>
+  </div>
+  <div class="strip" id="scanStrip"></div>
+  <div class="searchrow" style="margin:0 0 6px"><input id="filterBox" placeholder="Filter results… (e.g. rune, seed)" inputmode="search"></div>
+  <div id="scanEmpty" class="empty">No scan yet.<br>Set your <b>bankroll</b> in Config, then <b>Scan market</b>.<br>
+    <span style="font-size:11px">Ranks every GE item by expected gp/hour — 2% tax, buy limits, liquidity and quote staleness priced in.</span></div>
+  <table id="scanTable" style="display:none">
+    <thead><tr>
+      <th data-k="name">Item</th><th data-k="margin">Margin</th><th data-k="roi">ROI</th>
+      <th data-k="quantity">Qty</th><th data-k="expGph" class="sorted">Exp/h ▾</th><th data-k="confidence">Conf</th>
+    </tr></thead>
+    <tbody id="scanBody"></tbody>
+  </table>
+  <div class="panel" id="rejPanel" style="display:none">
+    <h3>Why items were dropped</h3>
+    <div class="statgrid" id="rejGrid"></div>
+  </div>
+</section>
+
+<!-- ============ SLOTS ============ -->
+<section id="v-slots" class="view">
+  <div class="panel">
+    <h3>Slot allocation</h3>
+    <div id="slotList"><div class="empty">Run a scan first — the allocator spreads your bankroll across your GE slots.</div></div>
+    <div class="alloc-sum" id="allocSum" style="display:none"></div>
+  </div>
+  <p class="hint">Density-greedy with a swap local search: it will trade a small high-ROI pick out of a slot when a bigger absorber earns more gp/hour for the bankroll overall. Idle gp is shown so you can tell when the market, not your bank, is the constraint.</p>
+</section>
+
+<!-- ============ ITEM ============ -->
+<section id="v-item" class="view">
+  <div class="searchrow">
+    <input id="itemSearch" placeholder="Search an item… (Abyssal whip)" inputmode="search">
+    <button class="ghost" id="btnItemGo">Load</button>
+  </div>
+  <div id="itemMatches" class="strip"></div>
+  <div id="itemPanel" style="display:none">
+    <div class="panel">
+      <h3 id="itemTitle">—</h3>
+      <div class="dgrid" id="itemFacts"></div>
+    </div>
+    <div class="panel">
+      <h3>Price · <span id="chartStep">1h</span> windows
+        <button class="ghost" style="float:right;padding:3px 8px;font-size:10px" id="btnStep">switch 5m/1h</button></h3>
+      <canvas id="priceChart" height="190"></canvas>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--gp-green)"></i>avg insta-buy (sell here)</span>
+        <span><i class="sw" style="background:var(--orange)"></i>avg insta-sell (buy here)</span>
+        <span><i class="sw" style="background:#4a3a28"></i>volume</span>
+      </div>
+      <canvas id="volChart" height="60"></canvas>
+    </div>
+  </div>
+  <div id="itemEmpty" class="empty">Look up any item’s live spread, tax-correct margin,<br>break-even sell and price history.</div>
+</section>
+
+<!-- ============ JOURNAL ============ -->
+<section id="v-journal" class="view">
+  <div class="scanbar">
+    <button class="primary" id="btnVerify">Verify matured picks</button>
+    <button class="ghost" id="btnClearJ">Clear</button>
+  </div>
+  <div class="panel">
+    <h3>Predicted vs realized</h3>
+    <div class="statgrid" id="statsGrid"><div><span>observations</span><b>0</b></div></div>
+    <p class="hint">Every scan pre-registers its top picks here. <b>Verify</b> replays each item’s own 5-minute history and asks whether your buy and sell prices were actually reachable. Realized ROI is a ceiling — it assumes you were first in queue at both ends. The gap between predicted and realized is your slippage: feed it back into Config.</p>
+  </div>
+  <div class="panel">
+    <h3>Recommendations <span id="jCount" style="color:var(--dim)"></span></h3>
+    <div id="jList"><div class="empty">Nothing journalled yet.</div></div>
+  </div>
+</section>
+
+<!-- ============ CONFIG ============ -->
+<section id="v-config" class="view">
+  <div class="panel"><h3>Account</h3>
+    <div class="form">
+      <div><label>Bankroll (gp)</label><input id="cfg-bankroll" value="50m" inputmode="text"></div>
+      <div><label>GE slots</label><input id="cfg-slots" value="8" inputmode="numeric"></div>
+      <div class="full toggle"><input type="checkbox" id="cfg-members" checked><span>Members (unchecked = F2P items only)</span></div>
+      <div class="full"><label>Saved data</label><div id="storeMode" style="font-family:var(--mono);font-size:11.5px;color:var(--dim)">checking…</div></div>
+    </div>
+  </div>
+  <div class="panel"><h3>Filters</h3>
+    <div class="form">
+      <div><label>Min 1h volume (2-sided)</label><input id="cfg-minvol" value="20" inputmode="numeric"></div>
+      <div><label>Min 24h volume</label><input id="cfg-minvol24" value="500" inputmode="numeric"></div>
+      <div><label>Max quote age (min)</label><input id="cfg-maxage" value="60" inputmode="numeric"></div>
+      <div><label>Min margin (gp)</label><input id="cfg-minmargin" value="1" inputmode="text"></div>
+      <div><label>Min price</label><input id="cfg-minprice" value="1" inputmode="text"></div>
+      <div><label>Max price</label><input id="cfg-maxprice" value="" placeholder="none" inputmode="text"></div>
+    </div>
+  </div>
+  <div class="panel"><h3>Realism</h3>
+    <div class="form">
+      <div><label>Slippage (%)</label><input id="cfg-slip" value="0" inputmode="decimal"></div>
+      <div><label>Participation (%)</label><input id="cfg-part" value="10" inputmode="decimal"></div>
+      <div><label>Max item share of bank (%)</label><input id="cfg-maxfrac" value="100" inputmode="decimal"></div>
+      <div><label>Verify horizon (h)</label><input id="cfg-horizon" value="8" inputmode="decimal"></div>
+      <div class="full toggle"><input type="checkbox" id="cfg-journal" checked><span>Journal every scan’s top picks</span></div>
+    </div>
+    <p class="hint">Slippage 0 assumes fills at last-traded prices — optimistic. Journal for a few days, hit Verify, then set slippage to about half of (predicted − realized) ROI. Participation caps how much hourly volume you assume you can capture; 10% is a guess until your fills say otherwise.</p>
+  </div>
+  <div class="scanbar"><button class="primary" id="btnSave">Save config</button></div>
+  <p class="hint">Data: OSRS Wiki / RuneLite real-time prices API. Browsers can’t send the custom User-Agent the wiki asks of automated tools, so keep usage reasonable — this app fetches 4 endpoints per scan and caches the item mapping for 24h. Tax model: 2% of sale (since 29 May 2025), floored, capped 5m/item, bonds &amp; starter tools exempt. Not affiliated with Jagex.</p>
+</section>
+</main>
+
+<nav>
+  <button data-v="scan" class="on">Scan</button>
+  <button data-v="slots">Slots</button>
+  <button data-v="item">Item</button>
+  <button data-v="journal">Journal</button>
+  <button data-v="config">Config</button>
+</nav>
+
+<script>
+'use strict';
+/* ================================================================== *
+ *  GE Flip Terminal — full port of the osrsflip engine to the browser
+ *  tax.js / models / scoring / allocation / journal(verify) / charts
+ * ================================================================== */
+
+const API = 'https://prices.runescape.wiki/api/v1/osrs';
+const NATURE_RUNE = 561;
+
+/* ---------------------------- tax ---------------------------- */
+const TAX_CAP = 5_000_000;
+const EXEMPT = new Set(['old school bond','chisel','gardening trowel','glassblowing pipe',
+  'hammer','needle','pestle and mortar','rake','saw','secateurs','seed dibber','shears',
+  'spade','watering can']);
+// Exact integer math: price*2 stays < 2^53 for any gp value, so floor is exact.
+const saleTax = (sell, exempt) => (exempt || sell < 50) ? 0 : Math.min(Math.floor(sell*2/100), TAX_CAP);
+const netMargin = (buy, sell, exempt) => sell - saleTax(sell, exempt) - buy;
+function breakevenSell(buy, exempt){
+  if (exempt) return buy;
+  let g = buy >= 245_000_000 ? buy + TAX_CAP : Math.ceil(buy*100/98);
+  g = Math.max(0, g-2);
+  while (g - saleTax(g,false) < buy) g++;
+  return g;
+}
+
+/* ------------------------- formatting ------------------------- */
+function gpTxt(v){
+  const a = Math.abs(v), s = v < 0 ? '-' : '';
+  if (a >= 1e9) return s+(a/1e9).toFixed(2)+'b';
+  if (a >= 1e7) return s+(a/1e6).toFixed(1)+'m';
+  if (a >= 1e6) return s+(a/1e6).toFixed(2)+'m';
+  if (a >= 1e4) return s+(a/1e3).toFixed(1)+'k';
+  if (a >= 1e3) return s+(a/1e3).toFixed(2)+'k';
+  return s+Math.round(a).toLocaleString();
+}
+// The signature: in-game gp tiering. gold < 100k, white < 10m, green >= 10m.
+function gpHtml(v){
+  const cls = v < 0 ? 'gp neg' : Math.abs(v) >= 1e7 ? 'gp m' : Math.abs(v) >= 1e5 ? 'gp k' : 'gp';
+  return `<span class="${cls}">${gpTxt(v)}</span>`;
+}
+function parseGp(t){
+  const s = String(t).trim().toLowerCase().replace(/[,_\s]/g,'');
+  if (!s) return NaN;
+  const m = s.match(/^(\d*\.?\d+)([bmk]?)$/); if (!m) return NaN;
+  return Math.round(parseFloat(m[1]) * ({b:1e9,m:1e6,k:1e3,'':1}[m[2]]));
+}
+const pct = (v,d=2) => (v*100).toFixed(d)+'%';
+const dur = s => s<60?`${s|0}s`: s<3600?`${(s/60)|0}m`: s<86400?`${(s/3600).toFixed(1)}h`:`${(s/86400).toFixed(1)}d`;
+const esc = t => String(t).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* --------------------------- storage --------------------------- *
+ * Three backends, detected once at boot and used transparently:
+ *   'artifact'  window.storage — chat preview only
+ *   'local'     localStorage   — any real origin (GitHub Pages, your domain)
+ *   'memory'    last resort, resets on reload
+ * Config and the journal both live here, so on a hosted origin your
+ * calibration history survives closing the tab.                      */
+const mem = new Map();
+let BACKEND = 'memory';
+const PREFIX = 'geflip:';
+
+function detectBackend(){
+  try{
+    if (window.storage && typeof window.storage.get === 'function'){ BACKEND='artifact'; return; }
+  }catch(e){}
+  try{
+    const probe = PREFIX+'__probe';
+    localStorage.setItem(probe,'1'); localStorage.removeItem(probe);
+    BACKEND='local'; return;
+  }catch(e){}
+  BACKEND='memory';
+}
+
+const store = {
+  async get(k){
+    try{
+      if (BACKEND==='artifact'){ const r = await window.storage.get(k); return r? JSON.parse(r.value): null; }
+      if (BACKEND==='local'){ const v = localStorage.getItem(PREFIX+k); return v? JSON.parse(v): null; }
+    }catch(e){ /* missing key or corrupt value: treat as absent */ }
+    return mem.has(k)? JSON.parse(mem.get(k)) : null;
+  },
+  async set(k,v){
+    const s = JSON.stringify(v);
+    try{
+      if (BACKEND==='artifact'){ await window.storage.set(k,s); return true; }
+      if (BACKEND==='local'){
+        try{ localStorage.setItem(PREFIX+k, s); return true; }
+        catch(err){
+          // Quota is almost always the cached item map. Drop it and retry once so
+          // a full store never costs you the journal.
+          if (k !== 'mapping-cache'){
+            try{ localStorage.removeItem(PREFIX+'mapping-cache'); localStorage.setItem(PREFIX+k,s); return true; }catch(e2){}
+          }
+          throw err;
+        }
+      }
+    }catch(e){ console.warn('storage.set fell back to memory:', e.message); }
+    mem.set(k,s); return false;
+  },
+  async del(k){
+    try{
+      if (BACKEND==='artifact'){ await window.storage.delete(k); }
+      else if (BACKEND==='local'){ localStorage.removeItem(PREFIX+k); }
+    }catch(e){}
+    mem.delete(k);
+  }
+};
+
+/* --------------------------- config --------------------------- */
+const DEF_CFG = { bankroll:50_000_000, slots:8, members:true, minVol:20, minVol24:500,
+  maxAgeS:3600, minMargin:1, minPrice:1, maxPrice:null, slip:0, part:0.10, maxFrac:1,
+  horizon:8, journal:true, tauS:1200, volSat:200, haircut:0.5, cycleH:4 };
+let CFG = {...DEF_CFG};
+
+const $ = id => document.getElementById(id);
+function cfgToForm(){
+  $('cfg-bankroll').value = gpTxt(CFG.bankroll).replace(/(\.\d*?)0+([bmk])/,'$1$2').replace(/\.([bmk])/,'$1');
+  $('cfg-slots').value = CFG.slots; $('cfg-members').checked = CFG.members;
+  $('cfg-minvol').value = CFG.minVol; $('cfg-minvol24').value = CFG.minVol24;
+  $('cfg-maxage').value = Math.round(CFG.maxAgeS/60); $('cfg-minmargin').value = CFG.minMargin;
+  $('cfg-minprice').value = CFG.minPrice; $('cfg-maxprice').value = CFG.maxPrice ?? '';
+  $('cfg-slip').value = +(CFG.slip*100).toFixed(2); $('cfg-part').value = +(CFG.part*100).toFixed(1);
+  $('cfg-maxfrac').value = +(CFG.maxFrac*100).toFixed(0); $('cfg-horizon').value = CFG.horizon;
+  $('cfg-journal').checked = CFG.journal;
+}
+function formToCfg(){
+  const n=(v,d)=>{const x=parseFloat(v);return Number.isFinite(x)?x:d;};
+  const bank = parseGp($('cfg-bankroll').value);
+  CFG = {...CFG,
+    bankroll: Number.isFinite(bank)&&bank>=0?bank:CFG.bankroll,
+    slots: Math.max(1, n($('cfg-slots').value,8)|0),
+    members: $('cfg-members').checked,
+    minVol: Math.max(0, n($('cfg-minvol').value,20)|0),
+    minVol24: Math.max(0, n($('cfg-minvol24').value,500)|0),
+    maxAgeS: Math.max(60, n($('cfg-maxage').value,60)*60),
+    minMargin: Number.isFinite(parseGp($('cfg-minmargin').value))?parseGp($('cfg-minmargin').value):1,
+    minPrice: Number.isFinite(parseGp($('cfg-minprice').value))?parseGp($('cfg-minprice').value):1,
+    maxPrice: $('cfg-maxprice').value.trim()? (Number.isFinite(parseGp($('cfg-maxprice').value))?parseGp($('cfg-maxprice').value):null) : null,
+    slip: Math.min(.49, Math.max(0, n($('cfg-slip').value,0)/100)),
+    part: Math.min(1, Math.max(.001, n($('cfg-part').value,10)/100)),
+    maxFrac: Math.min(1, Math.max(.01, n($('cfg-maxfrac').value,100)/100)),
+    horizon: Math.max(.5, n($('cfg-horizon').value,8)),
+    journal: $('cfg-journal').checked };
+}
+
+/* ---------------------------- fetch ---------------------------- */
+function status(html){ $('status').innerHTML = html; }
+function banner(msg){ const b=$('banner'); if(!msg){b.classList.remove('on');return;}
+  b.textContent = msg; b.classList.add('on'); }
+async function getJSON(url){
+  const r = await fetch(url, {headers:{'Accept':'application/json'}});
+  if (!r.ok) throw new Error(`HTTP ${r.status} on ${url.replace(API,'')}`);
+  return r.json();
+}
+let MAPPING = null; // id -> meta
+async function loadMapping(force=false){
+  if (MAPPING && !force) return MAPPING;
+  const cached = await store.get('mapping-cache');
+  if (!force && cached && (Date.now()/1000 - cached.t) < 86400 && cached.items?.length){
+    MAPPING = indexMapping(cached.items); return MAPPING;
+  }
+  status('fetching item map…');
+  const rows = await getJSON(`${API}/mapping`);
+  const slim = rows.map(r=>({id:r.id, name:r.name, members:r.members,
+                             limit:r.limit, highalch:r.highalch}));
+  try{ await store.set('mapping-cache', {t:Date.now()/1000, items:slim}); }catch(e){}
+  MAPPING = indexMapping(rows); return MAPPING;
+}
+function indexMapping(rows){
+  const m = new Map();
+  for (const r of rows){
+    if (!Number.isFinite(r.id) || !r.name) continue;
+    m.set(r.id, { id:r.id, name:r.name, members:!!r.members,
+      limit: Number.isFinite(r.limit)?r.limit:null,
+      highalch: Number.isFinite(r.highalch)?r.highalch:null,
+      exempt: EXEMPT.has(r.name.trim().toLowerCase()) });
+  }
+  return m;
+}
+
+/* --------------------------- scoring --------------------------- */
+function stability(instant, hourly, haircut){
+  if (hourly == null) return haircut;
+  const sc = Math.max(Math.abs(instant), Math.abs(hourly), 1);
+  return Math.max(0, 1 - Math.abs(instant-hourly)/sc);
+}
+function scoreAll(map, latest, h1, d24, m5, cfg, now){
+  const rej = {}; const R = r => rej[r]=(rej[r]||0)+1;
+  const natP = latest[NATURE_RUNE]?.high ?? null;
+  const perItemCap = Math.floor(cfg.bankroll * cfg.maxFrac);
+  const out = [];
+  for (const idStr in latest){
+    const id = +idStr, q = latest[idStr], meta = map.get(id);
+    if (!meta){ R('no mapping entry'); continue; }
+    if (meta.members && !cfg.members){ R('members item on F2P'); continue; }
+    if (q.high==null || q.low==null || q.low<=0){ R('one-sided quote'); continue; }
+    if (q.highTime==null || q.lowTime==null){ R('missing timestamp'); continue; }
+    const age = Math.max(0, now - Math.min(q.highTime, q.lowTime));
+    if (age > cfg.maxAgeS){ R('quote too stale'); continue; }
+
+    const buy  = cfg.slip>0 ? Math.ceil(q.low *(1+cfg.slip)) : q.low;
+    const sell = cfg.slip>0 ? Math.floor(q.high*(1-cfg.slip)) : q.high;
+    if (buy < cfg.minPrice){ R('below min price'); continue; }
+    if (cfg.maxPrice!=null && buy > cfg.maxPrice){ R('above max price'); continue; }
+
+    const instant = netMargin(buy, sell, meta.exempt);
+    const w1 = h1[idStr], w24 = d24?.[idStr], w5 = m5?.[idStr];
+    let hourly = null;
+    if (w1 && w1.avgHighPrice!=null && w1.avgLowPrice!=null){
+      const hb = cfg.slip>0?Math.ceil(w1.avgLowPrice*(1+cfg.slip)):w1.avgLowPrice;
+      const hs = cfg.slip>0?Math.floor(w1.avgHighPrice*(1-cfg.slip)):w1.avgHighPrice;
+      hourly = netMargin(hb, hs, meta.exempt);
+    }
+    // The pessimism that matters: one lucky print never sets the margin.
+    const margin = hourly==null ? Math.floor(instant*cfg.haircut) : Math.min(instant, hourly);
+    if (margin < cfg.minMargin){ R('margin below floor'); continue; }
+    const roi = buy>0 ? margin/buy : 0;
+
+    const vol1 = w1 ? Math.min(w1.highPriceVolume||0, w1.lowPriceVolume||0) : 0;
+    if (vol1 < cfg.minVol){ R('1h volume too thin'); continue; }
+    const vol24 = w24 ? Math.min(w24.highPriceVolume||0, w24.lowPriceVolume||0) : 0;
+    if (d24 && vol24 < cfg.minVol24){ R('24h volume too thin'); continue; }
+
+    let limit = meta.limit;
+    if (limit==null){ R('unknown buy limit'); continue; }
+    const afford = Math.floor(perItemCap / buy);
+    const through = Math.floor(cfg.part * vol1 * cfg.cycleH);
+    const qty = Math.min(limit, afford, through);
+    if (qty <= 0){ R('no affordable/absorbable qty'); continue; }
+    const bound = qty===limit?'buy limit': qty===afford?'capital':'throughput';
+
+    const fresh = Math.exp(-age/cfg.tauS);
+    const volS  = Math.sqrt(Math.min(1, vol1/cfg.volSat));
+    const stab  = stability(instant, hourly, cfg.haircut);
+    const conf  = Math.max(0, Math.min(1, fresh*volS*stab));
+    const cycleProfit = margin*qty, gph = cycleProfit/cfg.cycleH;
+
+    out.push({ id, name:meta.name, members:meta.members, exempt:meta.exempt,
+      buy, sell, tax:saleTax(sell,meta.exempt), margin, instant, hourly, roi,
+      limit, through, quantity:qty, capital:qty*buy, cycleProfit,
+      gph, expGph:gph*conf, confidence:conf, fresh, volS, stab,
+      age, vol1, vol24, vol5: w5?Math.min(w5.highPriceVolume||0,w5.lowPriceVolume||0):0,
+      breakeven:breakevenSell(buy,meta.exempt),
+      alch:(meta.highalch&&natP&&buy>0)?(meta.highalch-natP-buy)/buy:null,
+      bound });
+  }
+  out.sort((a,b)=> b.expGph-a.expGph || b.confidence-a.confidence || a.name.localeCompare(b.name));
+  return {cands:out, rej};
+}
+
+/* ------------------------- allocation ------------------------- */
+const unitCap = c => Math.max(0, Math.min(c.limit, c.through));
+const density = c => c.buy>0 ? (c.margin*c.confidence/CFG.cycleH)/c.buy : 0;
+function fill(picks, bank, frac){
+  const cap = Math.floor(bank*frac);
+  let rem = bank; const pos = [];
+  for (const c of [...picks].sort((a,b)=>density(b)-density(a))){
+    if (rem<=0 || c.buy<=0) continue;
+    const qty = Math.min(unitCap(c), Math.floor(Math.min(rem,cap)/c.buy));
+    if (qty<=0) continue;
+    const capital = qty*c.buy, prof = c.margin*qty;
+    pos.push({c, qty, capital, prof, egph:(prof/CFG.cycleH)*c.confidence});
+    rem -= capital;
+  }
+  return [pos, pos.reduce((s,p)=>s+p.egph,0)];
+}
+function allocate(cands, bank, slots, frac){
+  const pool = cands.slice(0,120).filter(c=>unitCap(c)>0 && c.buy>0);
+  if (!pool.length || bank<=0) return {pos:[], bank, slots};
+  const cap = Math.floor(bank*frac);
+  let chosen = []; let rem = bank;
+  for (const c of [...pool].sort((a,b)=>density(b)-density(a))){
+    if (chosen.length>=slots) break;
+    const spend = Math.min(rem, cap);
+    if (Math.floor(spend/c.buy)<=0) continue;
+    chosen.push(c);
+    rem -= Math.min(unitCap(c), Math.floor(spend/c.buy))*c.buy;
+  }
+  let [pos, best] = fill(chosen, bank, frac);
+  let bench = pool.filter(c=>!chosen.includes(c));
+  for (let round=0; round<20; round++){
+    let improved = false;
+    outer:
+    for (let i=0;i<chosen.length;i++){
+      for (const ch of bench){
+        const trial = chosen.slice(); trial[i]=ch;
+        const [tp,ts] = fill(trial, bank, frac);
+        if (ts > best+1e-9){
+          const ev = chosen[i]; chosen = trial; pos=tp; best=ts;
+          bench = bench.filter(x=>x!==ch); bench.push(ev);
+          improved = true; break outer;
+        }
+      }
+    }
+    if (!improved && chosen.length<slots){
+      for (const ch of bench){
+        const [tp,ts] = fill([...chosen,ch], bank, frac);
+        if (ts > best+1e-9){ chosen=[...chosen,ch]; pos=tp; best=ts;
+          bench = bench.filter(x=>x!==ch); improved=true; break; }
+      }
+    }
+    if (!improved) break;
+  }
+  pos.sort((a,b)=>b.egph-a.egph);
+  return {pos, bank, slots};
+}
+
+/* --------------------------- journal --------------------------- */
+async function loadJournal(){ return (await store.get('journal')) || {seq:0, recs:[]}; }
+async function saveJournal(j){
+  if (j.recs.length > 600) j.recs = j.recs.slice(-600);
+  await store.set('journal', j);
+}
+async function journalScan(cands, alloc){
+  if (!CFG.journal) return;
+  const j = await loadJournal();
+  const allocIds = new Set(alloc.pos.map(p=>p.c.id));
+  const t = Date.now()/1000;
+  const seen = new Set();
+  const push = (c, inAlloc) => {
+    if (seen.has(c.id)) return; seen.add(c.id);
+    j.recs.push({ rid:++j.seq, t, id:c.id, name:c.name, buy:c.buy, sell:c.sell,
+      margin:c.margin, roi:c.roi, qty:c.quantity, exempt:c.exempt?1:0,
+      conf:+c.confidence.toFixed(3), alloc:inAlloc?1:0, out:null });
+  };
+  cands.slice(0,20).forEach(c=>push(c, allocIds.has(c.id)));
+  cands.forEach(c=>{ if (allocIds.has(c.id)) push(c,true); });
+  await saveJournal(j);
+}
+async function verifyJournal(){
+  const j = await loadJournal();
+  const now = Date.now()/1000, cut = now - CFG.horizon*3600;
+  const pending = j.recs.filter(r=>!r.out && r.t<=cut);
+  if (!pending.length){ status('nothing matured yet'); return renderJournal(); }
+  const byItem = new Map();
+  pending.forEach(r=>{ (byItem.get(r.id)||byItem.set(r.id,[]).get(r.id)).push(r); });
+  let done=0, filled=0;
+  for (const [id, recs] of byItem){
+    status(`verifying… ${done}/${pending.length}`);
+    let series;
+    try{
+      series = (await getJSON(`${API}/timeseries?timestep=5m&id=${id}`)).data || [];
+    }catch(e){
+      recs.forEach(r=>r.out={t:now, note:'fetch failed', buyF:0, sellF:0, best:null, rm:null, w:0});
+      done += recs.length; continue;
+    }
+    for (const r of recs){
+      const end = r.t + CFG.horizon*3600;
+      const win = series.filter(w=>w.timestamp>=r.t && w.timestamp<=end);
+      if (!win.length){ r.out={t:now, note:'no history in horizon', buyF:0, sellF:0, best:null, rm:null, w:0}; done++; continue; }
+      const bi = win.findIndex(w=>w.avgLowPrice!=null && w.avgLowPrice<=r.buy);
+      let best=null;
+      if (bi>=0){
+        for (const w of win.slice(bi)) if (w.avgHighPrice!=null) best = best==null?w.avgHighPrice:Math.max(best,w.avgHighPrice);
+      }
+      const sellF = best!=null && best>=r.sell;
+      r.out = {t:now, buyF:bi>=0?1:0, sellF:sellF?1:0, best,
+               rm: best!=null? netMargin(r.buy,best,!!r.exempt): null, w:win.length};
+      done++; if (bi>=0 && sellF) filled++;
+    }
+    await new Promise(r=>setTimeout(r,300)); // politeness gap between item fetches
+  }
+  await saveJournal(j);
+  status(`verified ${done} · ${filled} round trips`);
+  renderJournal();
+}
+
+/* ============================ UI ============================ */
+let LAST = {cands:[], rej:{}, alloc:{pos:[]}, t:0};
+let sortKey='expGph', sortAsc=false, expandedId=null, autoTimer=null;
+
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+  $('v-'+b.dataset.v).classList.add('on');
+});
+
+function confBar(c){ return `<span class="cbar"><i style="width:${Math.round(c*100)}%"></i></span>`; }
+
+function renderScan(){
+  const {cands, rej, t} = LAST;
+  const filter = $('filterBox').value.trim().toLowerCase();
+  const rows = filter ? cands.filter(c=>c.name.toLowerCase().includes(filter)) : cands;
+  const shown = rows.slice(0, 60);
+  $('scanEmpty').style.display = cands.length? 'none':'block';
+  $('scanTable').style.display = cands.length? '':'none';
+  const dir = sortAsc?1:-1;
+  shown.sort((a,b)=> sortKey==='name'? dir*a.name.localeCompare(b.name) : dir*((a[sortKey]??0)-(b[sortKey]??0)));
+  document.querySelectorAll('#scanTable thead th').forEach(th=>{
+    th.classList.toggle('sorted', th.dataset.k===sortKey);
+    th.innerHTML = th.innerHTML.replace(/ [▾▴]/,'') + (th.dataset.k===sortKey ? (sortAsc?' ▴':' ▾'):'');
+  });
+  $('scanBody').innerHTML = shown.map(c=>`
+    <tr data-id="${c.id}">
+      <td>${esc(c.name)}${c.exempt?' <span class="warn" title="tax exempt">◈</span>':''}</td>
+      <td>${gpHtml(c.margin)}</td>
+      <td class="${c.roi>=0?'':'neg'}">${pct(c.roi,1)}</td>
+      <td>${c.quantity.toLocaleString()}</td>
+      <td>${gpHtml(Math.round(c.expGph))}</td>
+      <td>${(c.confidence).toFixed(2)}${confBar(c.confidence)}</td>
+    </tr>
+    ${expandedId===c.id? detailRow(c):''}`).join('');
+  $('scanStrip').innerHTML = cands.length? `
+    <span>items <b>${cands.length}</b></span>
+    <span>best <b>${gpTxt(Math.round(cands[0].expGph))}/h</b></span>
+    <span>bank <b>${gpTxt(CFG.bankroll)}</b></span>
+    <span>slots <b>${CFG.slots}</b></span>
+    <span>slip <b>${pct(CFG.slip,1)}</b></span>
+    <span>as of <b>${new Date(t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</b></span>` : '';
+  const rj = Object.entries(rej).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  $('rejPanel').style.display = rj.length? '':'none';
+  $('rejGrid').innerHTML = rj.map(([k,v])=>`<div><span>${esc(k)}</span><b>${v.toLocaleString()}</b></div>`).join('');
+}
+function detailRow(c){
+  return `<tr class="detail"><td colspan="6">
+    <div class="dgrid">
+      <div><label>buy at</label>${gpHtml(c.buy)}</div>
+      <div><label>sell at</label>${gpHtml(c.sell)}</div>
+      <div><label>tax / unit</label>${gpHtml(c.tax)}</div>
+      <div><label>break-even sell</label>${gpHtml(c.breakeven)}</div>
+      <div><label>buy limit / 4h</label>${c.limit.toLocaleString()}</div>
+      <div><label>capital for qty</label>${gpHtml(c.capital)}</div>
+      <div><label>profit / cycle</label>${gpHtml(c.cycleProfit)}</div>
+      <div><label>bound by</label>${c.bound}</div>
+      <div><label>vol 5m / 1h / 24h</label>${c.vol5} / ${c.vol1.toLocaleString()} / ${c.vol24.toLocaleString()}</div>
+      <div><label>quote age</label>${dur(c.age)}</div>
+      <div><label>instant vs 1h margin</label>${gpTxt(c.instant)} / ${c.hourly==null?'—':gpTxt(c.hourly)}</div>
+      ${c.alch!=null?`<div><label>alch cushion</label><span class="${c.alch>=0?'pos':'neg'}">${pct(c.alch,1)}</span></div>`:''}
+    </div>
+    <div class="bars">
+      <span>fresh</span><span class="tr"><i style="width:${c.fresh*100}%"></i></span><span>${c.fresh.toFixed(2)}</span>
+      <span>volume</span><span class="tr"><i style="width:${c.volS*100}%"></i></span><span>${c.volS.toFixed(2)}</span>
+      <span>stable</span><span class="tr"><i style="width:${c.stab*100}%"></i></span><span>${c.stab.toFixed(2)}</span>
+    </div>
+    <div class="rowbtns">
+      <button class="ghost" data-chart="${c.id}" data-name="${esc(c.name)}">Open chart →</button>
+      <button class="ghost" data-copy="${c.buy}">Copy buy ${gpTxt(c.buy)}</button>
+      <button class="ghost" data-copy="${c.sell}">Copy sell ${gpTxt(c.sell)}</button>
+    </div>
+  </td></tr>`;
+}
+$('scanBody').addEventListener('click', async e=>{
+  const cp = e.target.closest('[data-copy]');
+  if (cp){ try{ await navigator.clipboard.writeText(cp.dataset.copy); cp.textContent='Copied ✓'; }catch(_){} return; }
+  const ch = e.target.closest('[data-chart]');
+  if (ch){ openItem(+ch.dataset.chart, ch.dataset.name); 
+           document.querySelector('nav button[data-v="item"]').click(); return; }
+  const tr = e.target.closest('tr[data-id]'); if (!tr) return;
+  expandedId = expandedId===+tr.dataset.id? null : +tr.dataset.id;
+  renderScan();
+});
+document.querySelectorAll('#scanTable thead th').forEach(th=>th.onclick=()=>{
+  const k=th.dataset.k;
+  if (sortKey===k) sortAsc=!sortAsc; else { sortKey=k; sortAsc=(k==='name'); }
+  renderScan();
+});
+$('filterBox').addEventListener('input', renderScan);
+
+function renderSlots(){
+  const a = LAST.alloc;
+  if (!a.pos.length){ $('slotList').innerHTML='<div class="empty">Run a scan first.</div>';
+    $('allocSum').style.display='none'; return; }
+  $('slotList').innerHTML = a.pos.map((p,i)=>`
+    <div class="slot"><span class="n">${i+1}</span>
+      <span class="nm">${esc(p.c.name)}</span>
+      <span class="qty">×${p.qty.toLocaleString()}</span>
+      <span>buy ${gpHtml(p.c.buy)}</span><span>sell ${gpHtml(p.c.sell)}</span>
+      <span>→ ${gpHtml(Math.round(p.egph))}/h</span>
+    </div>`).join('');
+  const dep = a.pos.reduce((s,p)=>s+p.capital,0);
+  const prof = a.pos.reduce((s,p)=>s+p.prof,0);
+  const egph = a.pos.reduce((s,p)=>s+p.egph,0);
+  $('allocSum').style.display='grid';
+  $('allocSum').innerHTML = `
+    <div>slots used <b>${a.pos.length}/${CFG.slots}</b></div>
+    <div>deployed <b>${gpTxt(dep)}</b> (${pct(dep/Math.max(1,CFG.bankroll),0)})</div>
+    <div>idle gp <b>${gpTxt(CFG.bankroll-dep)}</b></div>
+    <div>per 4h cycle <b>${gpTxt(prof)}</b></div>
+    <div>on deployed <b>${dep?pct(prof/dep,2):'—'}</b></div>
+    <div>expected <b>${gpTxt(Math.round(egph))}/h</b></div>`;
+}
+
+/* ---------------------------- scan ---------------------------- */
+async function doScan(){
+  const btn = $('btnScan'); btn.disabled = true; banner('');
+  try{
+    formToCfg(); await store.set('settings', CFG);
+    const map = await loadMapping();
+    status('fetching prices…');
+    const [latest, h1, m5, d24] = await Promise.all([
+      getJSON(`${API}/latest`).then(r=>r.data),
+      getJSON(`${API}/1h`).then(r=>r.data),
+      getJSON(`${API}/5m`).then(r=>r.data),
+      getJSON(`${API}/24h`).then(r=>r.data).catch(()=>null),
+    ]);
+    const now = Date.now()/1000;
+    status('scoring…');
+    const {cands, rej} = scoreAll(map, latest, h1, d24, m5, CFG, now);
+    const alloc = allocate(cands, CFG.bankroll, CFG.slots, CFG.maxFrac);
+    LAST = {cands, rej, alloc, t:now};
+    expandedId = null;
+    renderScan(); renderSlots();
+    await journalScan(cands, alloc); renderJournal();
+    status(`<span class="live">● live</span> · ${Object.keys(latest).length.toLocaleString()} items · ${cands.length} pass`);
+  }catch(e){
+    console.error(e);
+    const sandboxed = e instanceof TypeError || /load failed|failed to fetch/i.test(e.message);
+    banner(sandboxed
+      ? 'Network blocked. If you are viewing this inside a chat/file preview, that sandbox cannot reach the wiki API — open this page from a real URL (e.g. GitHub Pages) in Safari/Chrome instead.'
+      : `Scan failed: ${e.message}. The wiki API may be down — retry in a minute.`);
+    status('<span class="err">● error</span>');
+  }finally{ btn.disabled=false; }
+}
+$('btnScan').onclick = doScan;
+$('btnAuto').onclick = ()=>{
+  if (autoTimer){ clearInterval(autoTimer); autoTimer=null; $('btnAuto').classList.remove('on'); return; }
+  $('btnAuto').classList.add('on'); doScan();
+  autoTimer = setInterval(doScan, 60_000);
+};
+document.addEventListener('visibilitychange', ()=>{ // don't poll a backgrounded phone tab
+  if (document.hidden && autoTimer){ clearInterval(autoTimer); autoTimer=null; $('btnAuto').classList.remove('on'); }
+});
+
+/* ---------------------------- item ---------------------------- */
+let chartStep='1h', curItem=null;
+async function openItem(id, name){
+  curItem = {id, name};
+  $('itemSearch').value = name; $('itemMatches').innerHTML='';
+  $('itemEmpty').style.display='none'; $('itemPanel').style.display='block';
+  $('itemTitle').textContent = `${name} · #${id}`;
+  try{
+    const map = await loadMapping(); const meta = map.get(id);
+    const latest = (await getJSON(`${API}/latest?id=${id}`)).data[id] || {};
+    const series = (await getJSON(`${API}/timeseries?timestep=${chartStep}&id=${id}`)).data || [];
+    $('chartStep').textContent = chartStep;
+    const m = (latest.high!=null&&latest.low!=null)? netMargin(latest.low, latest.high, meta?.exempt) : null;
+    $('itemFacts').innerHTML = `
+      <div><label>insta-sell (buy here)</label>${latest.low!=null?gpHtml(latest.low):'—'}</div>
+      <div><label>insta-buy (sell here)</label>${latest.high!=null?gpHtml(latest.high):'—'}</div>
+      <div><label>net margin</label>${m!=null?gpHtml(m):'—'}</div>
+      <div><label>break-even sell</label>${latest.low!=null?gpHtml(breakevenSell(latest.low, meta?.exempt)):'—'}</div>
+      <div><label>tax on sell</label>${latest.high!=null?gpHtml(saleTax(latest.high, meta?.exempt)):'—'}</div>
+      <div><label>buy limit / 4h</label>${meta?.limit?.toLocaleString() ?? 'unknown'}</div>
+      <div><label>high alch</label>${meta?.highalch?gpHtml(meta.highalch):'—'}</div>
+      <div><label>access</label>${meta?.members?'members':'F2P'}${meta?.exempt?' · <span class="warn">tax exempt</span>':''}</div>`;
+    drawCharts(series);
+  }catch(e){ banner(`Item load failed: ${e.message}`); }
+}
+function drawCharts(series){
+  const pts = series.filter(w=>w.avgHighPrice!=null||w.avgLowPrice!=null).slice(-120);
+  const pc = $('priceChart'), vc = $('volChart'), dpr = window.devicePixelRatio||1;
+  for (const cv of [pc,vc]){ const w = cv.clientWidth||320;
+    cv.width = w*dpr; cv.height = (+cv.getAttribute('height'))*dpr; }
+  const g = pc.getContext('2d'), gv = vc.getContext('2d');
+  g.scale(dpr,dpr); gv.scale(dpr,dpr);
+  const W = pc.width/dpr, H = pc.height/dpr, VH = vc.height/dpr, pad = 6;
+  g.clearRect(0,0,W,H); gv.clearRect(0,0,W,VH);
+  if (!pts.length){ g.fillStyle='#6b5d46'; g.font='12px monospace'; g.fillText('no trade history', 12, H/2); return; }
+  const vals = pts.flatMap(w=>[w.avgHighPrice,w.avgLowPrice]).filter(v=>v!=null);
+  const lo = Math.min(...vals), hi = Math.max(...vals), span = Math.max(1, hi-lo);
+  const X = i => pad + (W-2*pad)*(pts.length===1?0.5:i/(pts.length-1));
+  const Y = v => pad + (H-2*pad)*(1-(v-lo)/span);
+  // grid + axis labels
+  g.strokeStyle='#2a2118'; g.lineWidth=1; g.font='9px monospace'; g.fillStyle='#6b5d46';
+  for (let k=0;k<=2;k++){ const v = lo + span*k/2, y = Y(v);
+    g.beginPath(); g.moveTo(pad,y); g.lineTo(W-pad,y); g.stroke();
+    g.fillText(gpTxt(v), pad+2, y-3); }
+  const line = (key,color)=>{ g.strokeStyle=color; g.lineWidth=1.6; g.beginPath(); let started=false;
+    pts.forEach((w,i)=>{ if (w[key]==null) return;
+      started? g.lineTo(X(i),Y(w[key])) : g.moveTo(X(i),Y(w[key])); started=true; });
+    g.stroke(); };
+  line('avgLowPrice','#ff981f'); line('avgHighPrice','#26e07a');
+  // volume
+  const vmax = Math.max(1, ...pts.map(w=>(w.highPriceVolume||0)+(w.lowPriceVolume||0)));
+  gv.fillStyle='#4a3a28';
+  const bw = Math.max(1,(W-2*pad)/pts.length - 1);
+  pts.forEach((w,i)=>{ const v=(w.highPriceVolume||0)+(w.lowPriceVolume||0);
+    const h=(VH-4)*v/vmax; gv.fillRect(X(i)-bw/2, VH-h, bw, h); });
+}
+$('btnStep').onclick = ()=>{ chartStep = chartStep==='1h'?'5m':'1h'; if (curItem) openItem(curItem.id, curItem.name); };
+async function itemLookup(){
+  const q = $('itemSearch').value.trim().toLowerCase(); if (!q) return;
+  const map = await loadMapping();
+  const hits = [...map.values()].filter(m=>m.name.toLowerCase().includes(q))
+    .sort((a,b)=>a.name.length-b.name.length).slice(0,8);
+  if (!hits.length){ $('itemMatches').innerHTML='<span>no match</span>'; return; }
+  if (hits.length===1 || hits[0].name.toLowerCase()===q) return openItem(hits[0].id, hits[0].name);
+  $('itemMatches').innerHTML = hits.map(h=>`<button class="ghost" data-pick="${h.id}" data-nm="${esc(h.name)}">${esc(h.name)}</button>`).join('');
+}
+$('btnItemGo').onclick = itemLookup;
+$('itemSearch').addEventListener('keydown', e=>{ if (e.key==='Enter') itemLookup(); });
+$('itemMatches').addEventListener('click', e=>{
+  const b = e.target.closest('[data-pick]'); if (b) openItem(+b.dataset.pick, b.dataset.nm);
+});
+
+/* --------------------------- journal UI --------------------------- */
+async function renderJournal(){
+  const j = await loadJournal();
+  const recs = j.recs.slice().reverse();
+  $('jCount').textContent = recs.length? `· ${recs.length}`:'';
+  if (!recs.length){ $('jList').innerHTML='<div class="empty">Nothing journalled yet.</div>'; }
+  else {
+    $('jList').innerHTML = recs.slice(0,80).map(r=>{
+      let badge;
+      if (!r.out) badge = '<span class="badge b-wait">pending</span>';
+      else if (r.out.buyF && r.out.sellF) badge = '<span class="badge b-fill">filled</span>';
+      else if (r.out.buyF) badge = '<span class="badge b-part">buy only</span>';
+      else badge = '<span class="badge b-miss">missed</span>';
+      const real = r.out?.rm!=null ? ` · real ${gpTxt(r.out.rm)}` : '';
+      return `<div class="jrow">${badge}
+        <span style="flex:1;min-width:110px">${esc(r.name)}${r.alloc?' <span class="warn" title="allocated">●</span>':''}</span>
+        <span>${gpTxt(r.buy)}→${gpTxt(r.sell)}</span>
+        <span>pred ${gpTxt(r.margin)}${real}</span>
+        <span style="color:var(--faint)">${dur(Date.now()/1000-r.t)} ago</span></div>`;
+    }).join('');
+  }
+  const done = j.recs.filter(r=>r.out && !r.out.note);
+  const grid = $('statsGrid');
+  if (!done.length){ grid.innerHTML = `<div><span>observations</span><b>${j.recs.length} (0 verified)</b></div>`; return; }
+  const n = done.length;
+  const buyF = done.filter(r=>r.out.buyF).length;
+  const both = done.filter(r=>r.out.buyF && r.out.sellF).length;
+  const predRoi = done.reduce((s,r)=>s+r.roi,0)/n;
+  const realRois = done.filter(r=>r.out.rm!=null && r.buy>0).map(r=>r.out.rm/r.buy);
+  const realRoi = realRois.length? realRois.reduce((a,b)=>a+b,0)/realRois.length : null;
+  grid.innerHTML = `
+    <div><span>verified</span><b>${n}</b></div>
+    <div><span>buy fill rate</span><b>${pct(buyF/n,0)}</b></div>
+    <div><span>round-trip rate</span><b>${pct(both/n,0)}</b></div>
+    <div><span>pred. ROI (mean)</span><b>${pct(predRoi)}</b></div>
+    ${realRoi!=null?`<div><span>realized ROI (ceiling)</span><b>${pct(realRoi)}</b></div>
+    <div><span>gap → slippage</span><b class="${predRoi-realRoi>0?'neg':'pos'}">${pct(predRoi-realRoi)}</b></div>`:''}`;
+}
+$('btnVerify').onclick = ()=>{ formToCfg(); verifyJournal(); };
+$('btnClearJ').onclick = async ()=>{
+  if (!confirm('Delete the whole journal? Your calibration history goes with it.')) return;
+  await store.del('journal'); renderJournal();
+};
+
+/* ---------------------------- boot ---------------------------- */
+$('btnSave').onclick = async ()=>{
+  formToCfg(); await store.set('settings', CFG); cfgToForm();
+  $('btnSave').textContent='Saved ✓'; setTimeout(()=>$('btnSave').textContent='Save config',1200);
+};
+(async function boot(){
+  detectBackend();
+  $('storeMode').innerHTML = {
+    local:    '<span class="pos">saved on this device</span> — config and journal persist across reloads.',
+    artifact: '<span class="pos">saved by the chat preview</span> — persists here, but host the page for a permanent home.',
+    memory:   '<span class="warn">not saved</span> — this browser blocks storage, so config and journal reset on reload.'
+  }[BACKEND];
+  const saved = await store.get('settings');
+  if (saved) CFG = {...DEF_CFG, ...saved};
+  cfgToForm(); renderJournal();
+  status('ready');
+})();
+</script>
+</body>
+</html>
