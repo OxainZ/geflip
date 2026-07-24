@@ -340,9 +340,10 @@
     <div class="form">
       <div><label>Min item price</label><input id="cfg-swprice" value="500" inputmode="text"></div>
       <div><label>Min 24h volume</label><input id="cfg-swvol" value="200" inputmode="numeric"></div>
-      <div><label>Items to check in depth</label><input id="cfg-swdepth" value="14" inputmode="numeric"></div>
+      <div><label>Items to check in depth</label><input id="cfg-swdepth" value="20" inputmode="numeric"></div>
       <div><label>Assumed hold (hours)</label><input id="cfg-swhold" value="48" inputmode="numeric"></div>
-      <div class="full"><label>Min reward-to-risk</label><input id="cfg-swrr" value="1.0" inputmode="decimal"></div>
+      <div><label>Min reward-to-risk</label><input id="cfg-swrr" value="1.0" inputmode="decimal"></div>
+      <div><label>Min profit to bother (gp)</label><input id="cfg-swmin" value="50k" inputmode="text"></div>
     </div>
     <p class="hint">Each item checked costs one extra request, so depth is the time you are willing to
       spend. 14 takes about ten seconds.</p>
@@ -560,8 +561,8 @@ const store = {
 /* --------------------------- config --------------------------- */
 const DEF_CFG = { bankroll:50_000_000, slots:8, members:true, minVol:20, minVol24:500,
   maxAgeS:3600, minMargin:1, minPrice:1, maxPrice:null, slip:0, part:0.25, maxFrac:0.25,
-  lite:false, swingMinPrice:500, swingMinVol24:200, swingDepth:14, swingHoldHours:48,
-  swingMinRR:1.0, calibratedN:0,
+  lite:false, swingMinPrice:500, swingMinVol24:200, swingDepth:20, swingHoldHours:48,
+  swingMinRR:1.0, swingMinProfit:50000, calibratedN:0,
   horizon:8, journal:true, tauS:1200, volSat:200, haircut:0.5, cycleH:4 };
 let CFG = {...DEF_CFG};
 
@@ -581,6 +582,7 @@ function cfgToForm(){
   $('cfg-swdepth').value = CFG.swingDepth;
   $('cfg-swhold').value = CFG.swingHoldHours;
   $('cfg-swrr').value = CFG.swingMinRR;
+  $('cfg-swmin').value = gpTxt(CFG.swingMinProfit);
 }
 function formToCfg(){
   const n=(v,d)=>{const x=parseFloat(v);return Number.isFinite(x)?x:d;};
@@ -605,7 +607,8 @@ function formToCfg(){
     swingMinVol24: Math.max(0, n($('cfg-swvol').value,200)|0),
     swingDepth: Math.max(1, Math.min(30, n($('cfg-swdepth').value,14)|0)),
     swingHoldHours: Math.max(1, n($('cfg-swhold').value,48)),
-    swingMinRR: Math.max(0, n($('cfg-swrr').value,1)) };
+    swingMinRR: Math.max(0, n($('cfg-swrr').value,1)),
+    swingMinProfit: Number.isFinite(parseGp($('cfg-swmin').value))?parseGp($('cfg-swmin').value):50000 };
 }
 
 /* ---------------------------- fetch ---------------------------- */
@@ -964,6 +967,7 @@ function swingScore(cand, m, cfg){
               Math.floor(cfg.part * cand.flowFcast * cfg.cycleH)));
   if (qty <= 0) return null;
 
+  if (net*qty < cfg.swingMinProfit) return null;
   return { ...cand, swing:m, target, downside, riskReward, swingMargin:net, swingQty:qty,
            swingCapital: qty*cand.buy, swingProfit: net*qty,
            swingConfidence: conf, swingExpected: net*qty*conf,
@@ -990,12 +994,24 @@ function swingUniverse(map, latest, h1, d24, cfg, now){
     const mid   = (q.low+q.high)/2;
     const mid24 = (w24.avgLowPrice+w24.avgHighPrice)/2;
     const dev   = mid24>0 ? (mid-mid24)/mid24 : 0;
+    if (dev >= 0) continue;                        // only items below their own average
     const vol1  = w1 ? Math.min(w1.highPriceVolume||0, w1.lowPriceVolume||0) : 0;
+    const flowFcast = vol24>0 ? (vol1 + vol24/24)/2 : vol1;
+
+    // How much gold is actually on the table: the gap, at a size you could
+    // realistically take, given your bank, the buy limit and the flow.
+    const plausibleQty = Math.max(0, Math.min(
+      meta.limit,
+      Math.floor(cfg.bankroll * cfg.maxFrac / q.low),
+      Math.floor(cfg.part * flowFcast * cfg.cycleH)));
+    const opportunity = -dev * mid * plausibleQty;
+    if (opportunity < cfg.swingMinProfit) continue;
+
     out.push({ id, name:meta.name, exempt:meta.exempt, members:meta.members,
                buy:q.low, sell:q.high, limit:meta.limit, dev, vol24,
-               flowFcast: vol24>0 ? (vol1 + vol24/24)/2 : vol1 });
+               flowFcast, plausibleQty, opportunity });
   }
-  out.sort((a,b)=>a.dev-b.dev);                   // deepest discounts first
+  out.sort((a,b)=>b.opportunity-a.opportunity);    // biggest gp gaps first
   return out;
 }
 
@@ -1471,7 +1487,7 @@ function renderSwing(){
   $('swingTable').style.display = rows.length? '':'none';
   $('swingNote').style.display  = rows.length? '':'none';
   if (!rows.length){
-    $('swingEmpty').innerHTML = `Checked the ${checked} deepest discounts of ${scanned} liquid items — `
+    $('swingEmpty').innerHTML = `Checked the ${checked} biggest gp opportunities of ${scanned} liquid items — `
       + `none qualified. Either nothing is genuinely oversold right now, or the ones that look `
       + `cheap are in a downtrend, which is the case the gate exists to catch.`;
     $('swingStrip').innerHTML=''; return;
