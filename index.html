@@ -615,23 +615,33 @@ function formToCfg(){
 function status(html){ $('status').innerHTML = html; }
 function banner(msg){ const b=$('banner'); if(!msg){b.classList.remove('on');return;}
   b.textContent = msg; b.classList.add('on'); }
+const REQUEST_TIMEOUT_MS = 25_000;
+
 async function getJSON(url, attempt=0){
+  // AbortController is the only way to bound fetch. Without it a stalled
+  // connection hangs the whole scan and leaves the UI stuck mid-flight.
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), REQUEST_TIMEOUT_MS);
   try{
-    const r = await fetch(url, {headers:{'Accept':'application/json'}});
+    const r = await fetch(url, {headers:{'Accept':'application/json'}, signal:ctrl.signal});
     if (r.status===429 || r.status>=500){
       throw Object.assign(new Error(`HTTP ${r.status}`), {retryable:true, code:r.status});
     }
     if (!r.ok) throw new Error(`HTTP ${r.status} on ${url.replace(API,'')}`);
     return r.json();
   }catch(e){
-    // TypeError is what a dropped connection looks like from fetch(). On a
-    // phone that is routine, so give it one more go before saying anything.
-    const transient = e.retryable || e instanceof TypeError;
+    // TypeError is a dropped connection; AbortError is our own timeout. Both
+    // are routine on a phone, so retry before saying anything.
+    const timedOut = e.name === 'AbortError';
+    const transient = e.retryable || timedOut || e instanceof TypeError;
     if (transient && attempt < 2){
       await new Promise(r=>setTimeout(r, 900*(attempt+1)));
       return getJSON(url, attempt+1);
     }
+    if (timedOut) throw new Error(`timed out after ${REQUEST_TIMEOUT_MS/1000}s`);
     throw e;
+  }finally{
+    clearTimeout(timer);
   }
 }
 
@@ -1370,7 +1380,10 @@ function renderSlots(){
 
 /* ---------------------------- scan ---------------------------- */
 async function doScan(){
-  const btn = $('btnScan'); btn.disabled = true; banner('');
+  const btn = $('btnScan');
+  if (btn.disabled) return;                  // ignore a double tap
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'SCANNING…'; banner('');
   try{
     formToCfg(); await store.set('settings', CFG);
     SCAN_GEN++;
@@ -1408,7 +1421,10 @@ async function doScan(){
   }catch(e){
     console.error(e);
     const network = e instanceof TypeError || /load failed|failed to fetch|networkerror/i.test(e.message);
-    if (network && isHostedOrigin()){
+    if (/timed out/.test(e.message)){
+      banner('The wiki API stopped responding mid-request. Tap Scan again, or turn on '
+           + 'Lite mode in Config to halve the data on a weak signal.');
+    } else if (network && isHostedOrigin()){
       banner('Could not reach the wiki API after three tries. A scan pulls several '
            + 'hundred KB, so a weak signal is the usual cause — try wifi, or turn on '
            + 'Lite mode in Config to halve the data.');
@@ -1421,7 +1437,7 @@ async function doScan(){
       banner(`Scan failed: ${e.message}`);
     }
     status('<span class="err">● error</span>');
-  }finally{ btn.disabled=false; }
+  }finally{ btn.disabled=false; btn.textContent = label; }
 }
 $('btnScan').onclick = doScan;
 $('btnAuto').onclick = ()=>{
@@ -1437,7 +1453,10 @@ document.addEventListener('visibilitychange', ()=>{ // don't poll a backgrounded
 let SWING = {rows:[], t:0, checked:0};
 
 async function runSwing(){
-  const btn=$('btnSwing'); btn.disabled=true; banner('');
+  const btn=$('btnSwing');
+  if (btn.disabled) return;
+  const label = btn.textContent;
+  btn.disabled=true; btn.textContent='SEARCHING…'; banner('');
   try{
     formToCfg(); await store.set('settings', CFG);
     const map = await loadMapping();
@@ -1478,7 +1497,7 @@ async function runSwing(){
   }catch(e){
     banner('Swing scan failed: '+e.message);
     status('<span class="err">● error</span>');
-  }finally{ btn.disabled=false; }
+  }finally{ btn.disabled=false; btn.textContent=label; }
 }
 
 function renderSwing(){
