@@ -239,7 +239,7 @@
   <div class="tablewrap"><table id="swingTable" style="display:none">
     <thead><tr>
       <th>Item</th><th>Buy</th><th>Target</th><th>Upside</th><th>Downside</th><th>R:R</th>
-      <th>Qty</th><th>Capital</th><th>Expected</th><th>Conf</th>
+      <th>Qty</th><th>Capital</th><th>Net/ea</th><th>Total exp</th><th>Conf</th>
     </tr></thead>
     <tbody id="swingBody"></tbody>
   </table></div>
@@ -647,6 +647,25 @@ async function getJSON(url, attempt=0){
 
 // A sandboxed preview has no real origin; a hosted page does. Blaming the wrong
 // one sends you off fixing something that is not broken.
+// Every network failure funnels through here so both scans explain themselves
+// the same way. A raw "Load failed" tells you nothing about what to do next.
+function describeError(e){
+  const msg = e && e.message ? e.message : String(e);
+  const network = e instanceof TypeError || /load failed|failed to fetch|networkerror/i.test(msg);
+  if (/timed out/.test(msg))
+    return 'The wiki API stopped responding mid-request. Tap again, or turn on Lite mode '
+         + 'in Config to cut the data in half on a weak signal.';
+  if (/HTTP 429/.test(msg))
+    return 'The wiki API asked us to slow down. Turn off auto-refresh and wait a minute.';
+  if (network && isHostedOrigin())
+    return 'Could not reach the wiki API after three tries. A full pass pulls close to a '
+         + 'megabyte, so a weak signal is the usual cause — try wifi, or turn on Lite mode in Config.';
+  if (network)
+    return 'Network blocked. This page is not running from a real web address, and a sandboxed '
+         + 'preview cannot reach the wiki API. Open it from your hosted URL instead.';
+  return `Failed: ${msg}`;
+}
+
 function isHostedOrigin(){
   try{
     return /^https?:$/.test(location.protocol) && !!location.hostname
@@ -984,11 +1003,53 @@ function swingScore(cand, m, cfg){
            upside: cand.buy>0 ? net/cand.buy : 0 };
 }
 
+// A 24h average cannot see a multi-day dip: by the time an item has been
+// depressed for three days, its own 24h average has followed it down and the
+// deviation reads zero. The /24h endpoint accepts a timestamp, so a handful of
+// historical windows gives every item a real baseline for a few requests total
+// rather than one request per item.
+const DAY_S = 86400;
+const BASELINE_DAYS = [3, 7, 14];
+
+async function fetchBaseline(){
+  const aligned = Math.floor(Date.now()/1000/DAY_S)*DAY_S;
+  // Sequential on purpose: three parallel whole-market payloads is exactly the
+  // pattern that fails on a phone. Partial results are still useful.
+  const windows = [];
+  for (let i=0;i<BASELINE_DAYS.length;i++){
+    status(`baseline ${i+1}/${BASELINE_DAYS.length}…`);
+    try{
+      const w = (await getJSON(`${API}/24h?timestamp=${aligned - BASELINE_DAYS[i]*DAY_S}`)).data;
+      if (w && Object.keys(w).length) windows.push(w);
+    }catch(e){ /* one missing window still leaves a usable baseline */ }
+  }
+  if (!windows.length) return null;          // degrade to 24h-only, do not fake it
+
+  const mids = new Map();
+  for (const w of windows){
+    for (const id in w){
+      const row = w[id];
+      if (row.avgLowPrice==null || row.avgHighPrice==null) continue;
+      const mid = (row.avgLowPrice + row.avgHighPrice)/2;
+      (mids.get(id) || mids.set(id, []).get(id)).push(mid);
+    }
+  }
+  const out = new Map();
+  for (const [id, arr] of mids){
+    if (!arr.length) continue;
+    arr.sort((a,b)=>a-b);
+    out.set(+id, arr[arr.length>>1]);        // median resists a single odd day
+  }
+  return {mids:out, windows:windows.length, days:BASELINE_DAYS};
+}
+
 // Swing needs a different universe from the spread scanner. A positive bid-ask
 // spread is irrelevant here; what matters is that the item is worth something,
 // trades enough to exit, and is currently below its own recent average.
-function swingUniverse(map, latest, h1, d24, cfg, now){
+function swingUniverse(map, latest, h1, d24, cfg, now, baseline){
   const out=[];
+  const skipped = {tooExpensive:0, tooSmall:0, notCheap:0, illiquid:0};
+  out.skipped = skipped;
   for (const idStr in latest){
     const id=+idStr, q=latest[idStr], meta=map.get(id);
     if (!meta || (meta.members && !cfg.members)) continue;
@@ -999,26 +1060,33 @@ function swingUniverse(map, latest, h1, d24, cfg, now){
     if (q.low < cfg.swingMinPrice) continue;      // swinging 5gp runes is pointless
     const w24=d24?.[idStr], w1=h1?.[idStr];
     const vol24 = w24 ? Math.min(w24.highPriceVolume||0, w24.lowPriceVolume||0) : 0;
-    if (vol24 < cfg.swingMinVol24) continue;      // must be able to get back out
+    if (vol24 < cfg.swingMinVol24){ skipped.illiquid++; continue; }  // must be able to exit
     if (!w24 || w24.avgHighPrice==null || w24.avgLowPrice==null) continue;
     const mid   = (q.low+q.high)/2;
     const mid24 = (w24.avgLowPrice+w24.avgHighPrice)/2;
-    const dev   = mid24>0 ? (mid-mid24)/mid24 : 0;
-    if (dev >= 0) continue;                        // only items below their own average
+    const dev24 = mid24>0 ? (mid-mid24)/mid24 : 0;
+    // Prefer the multi-day baseline. Against a 24h average a three-day-old
+    // crash reads as zero deviation, because the average has already followed
+    // the price down.
+    const base  = baseline ? baseline.mids.get(id) : null;
+    const devBase = base>0 ? (mid-base)/base : null;
+    const dev   = devBase!=null ? Math.min(devBase, dev24) : dev24;
+    if (dev >= 0){ skipped.notCheap++; continue; }  // only items below their own norm
     const vol1  = w1 ? Math.min(w1.highPriceVolume||0, w1.lowPriceVolume||0) : 0;
     const flowFcast = vol24>0 ? (vol1 + vol24/24)/2 : vol1;
 
     // How much gold is actually on the table: the gap, at a size you could
     // realistically take, given your bank, the buy limit and the flow.
+    const affordable = Math.floor(cfg.bankroll * cfg.maxFrac / q.low);
+    if (affordable < 1){ skipped.tooExpensive++; continue; }
     const plausibleQty = Math.max(0, Math.min(
-      meta.limit,
-      Math.floor(cfg.bankroll * cfg.maxFrac / q.low),
+      meta.limit, affordable,
       Math.floor(cfg.part * flowFcast * cfg.cycleH)));
     const opportunity = -dev * mid * plausibleQty;
-    if (opportunity < cfg.swingMinProfit) continue;
+    if (opportunity < cfg.swingMinProfit){ skipped.tooSmall++; continue; }
 
     out.push({ id, name:meta.name, exempt:meta.exempt, members:meta.members,
-               buy:q.low, sell:q.high, limit:meta.limit, dev, vol24,
+               buy:q.low, sell:q.high, limit:meta.limit, dev, dev24, devBase, vol24,
                flowFcast, plausibleQty, opportunity });
   }
   out.sort((a,b)=>b.opportunity-a.opportunity);    // biggest gp gaps first
@@ -1413,7 +1481,8 @@ async function doScan(){
     const pos = await loadPositions();
     const {cands, rej} = scoreAll(map, latest, h1, d24, m5, CFG, now, limitMap(pos.rows, map, now));
     const alloc = allocate(cands, CFG.bankroll, CFG.slots, CFG.maxFrac);
-    LAST = {cands, rej, alloc, t:now, slip:observedSlippage(cands)};
+    LAST = {cands, rej, alloc, t:now, slip:observedSlippage(cands),
+            raw:{latest, h1, d24}};
     expandedId = null;
     renderScan(); renderSlots();
     await journalScan(cands, alloc); await renderBook(); renderNext();
@@ -1421,21 +1490,7 @@ async function doScan(){
   }catch(e){
     console.error(e);
     const network = e instanceof TypeError || /load failed|failed to fetch|networkerror/i.test(e.message);
-    if (/timed out/.test(e.message)){
-      banner('The wiki API stopped responding mid-request. Tap Scan again, or turn on '
-           + 'Lite mode in Config to halve the data on a weak signal.');
-    } else if (network && isHostedOrigin()){
-      banner('Could not reach the wiki API after three tries. A scan pulls several '
-           + 'hundred KB, so a weak signal is the usual cause — try wifi, or turn on '
-           + 'Lite mode in Config to halve the data.');
-    } else if (network){
-      banner('Network blocked. This page is not running from a real web address, and a '
-           + 'sandboxed preview cannot reach the wiki API. Open it from your hosted URL instead.');
-    } else if (/HTTP 429/.test(e.message)){
-      banner('The wiki API asked us to slow down. Turn off auto-refresh and wait a minute.');
-    } else {
-      banner(`Scan failed: ${e.message}`);
-    }
+    banner(describeError(e));
     status('<span class="err">● error</span>');
   }finally{ btn.disabled=false; btn.textContent = label; }
 }
@@ -1451,6 +1506,7 @@ document.addEventListener('visibilitychange', ()=>{ // don't poll a backgrounded
 
 /* ---------------------------- swing --------------------------- */
 let SWING = {rows:[], t:0, checked:0};
+let SWING_BASE = null;
 
 async function runSwing(){
   const btn=$('btnSwing');
@@ -1460,19 +1516,37 @@ async function runSwing(){
   try{
     formToCfg(); await store.set('settings', CFG);
     const map = await loadMapping();
-    status('fetching prices…');
-    const [latest, d24] = await Promise.all([
-      getJSON(`${API}/latest`).then(r=>r.data),
-      getJSON(`${API}/24h`).then(r=>r.data),
-    ]);
-    let h1 = null;
-    try{ h1 = (await getJSON(`${API}/1h`)).data; }catch(e){ /* optional */ }
+    // Reuse a recent scan's payloads rather than pulling the same megabyte twice.
+    const fresh = LAST.raw && (Date.now()/1000 - LAST.t) < 300;
+    let latest, d24, h1 = null;
+    if (fresh){
+      status('reusing the last scan…');
+      ({latest, d24, h1} = LAST.raw);
+    } else {
+      status('fetching prices…');
+      latest = (await getJSON(`${API}/latest`)).data;
+      d24    = (await getJSON(`${API}/24h`)).data;
+      try{ h1 = (await getJSON(`${API}/1h`)).data; }catch(e){ /* optional */ }
+    }
+
+    let baseline = null;
+    if (!CFG.lite){
+      status('building multi-day baseline…');
+      try{ baseline = await fetchBaseline(); }catch(e){ /* degrade to 24h */ }
+    }
 
     const now = Date.now()/1000;
-    const universe = swingUniverse(map, latest, h1, d24, CFG, now);
+    const universe = swingUniverse(map, latest, h1, d24, CFG, now, baseline);
+    SWING_BASE = baseline;
     if (!universe.length){
-      $('swingEmpty').innerHTML = 'Nothing passed the filters. Lower the min price or '
-        + 'min 24h volume in Config.';
+      const sk = universe.skipped || {};
+      const cap = Math.floor(CFG.bankroll * CFG.maxFrac);
+      $('swingEmpty').innerHTML = 'Nothing passed the filters.'
+        + (sk.tooExpensive ? ` <b>${sk.tooExpensive} items cost more than ${gpTxt(cap)}</b>, `
+            + `which is your max item share of ${pct(CFG.maxFrac,0)}. Raise that in Config to `
+            + `let expensive gear through — it is where the big margins live.` : '')
+        + (sk.tooSmall ? ` ${sk.tooSmall} were below the ${gpTxt(CFG.swingMinProfit)} profit floor.` : '')
+        + (sk.notCheap ? ` ${sk.notCheap} are not trading below their own norm.` : '');
       $('swingEmpty').style.display='block'; $('swingTable').style.display='none';
       return;
     }
@@ -1491,11 +1565,12 @@ async function runSwing(){
       await new Promise(r=>setTimeout(r, 280));
     }
     rows.sort((a,b)=>b.swingExpected-a.swingExpected);
-    SWING = {rows, t:now, checked:depth, scanned:universe.length, gen:SCAN_GEN};
+    SWING = {rows, t:now, checked:depth, scanned:universe.length, gen:SCAN_GEN,
+             skipped:universe.skipped};
     renderSwing();
     status(`<span class="live">● swing</span> · ${rows.length} of ${depth} checked qualify`);
   }catch(e){
-    banner('Swing scan failed: '+e.message);
+    banner(describeError(e));
     status('<span class="err">● error</span>');
   }finally{ btn.disabled=false; btn.textContent=label; }
 }
@@ -1506,14 +1581,19 @@ function renderSwing(){
   $('swingTable').style.display = rows.length? '':'none';
   $('swingNote').style.display  = rows.length? '':'none';
   if (!rows.length){
+    const sk = SWING.skipped || {};
+    const capNote = sk.tooExpensive
+      ? ` Separately, ${sk.tooExpensive} items were skipped for costing more than your `
+        + `${pct(CFG.maxFrac,0)} max item share — that filter hides the priciest gear.` : '';
     $('swingEmpty').innerHTML = `Checked the ${checked} biggest gp opportunities of ${scanned} liquid items — `
       + `none qualified. Either nothing is genuinely oversold right now, or the ones that look `
-      + `cheap are in a downtrend, which is the case the gate exists to catch.`;
+      + `cheap are in a downtrend, which is the case the gate exists to catch.` + capNote;
     $('swingStrip').innerHTML=''; return;
   }
   $('swingStrip').innerHTML = `
     <span>qualify <b>${rows.length}/${checked}</b></span>
     <span>universe <b>${scanned.toLocaleString()}</b></span>
+    <span>baseline <b>${SWING_BASE ? SWING_BASE.days.join('/')+'d' : '24h only'}</b></span>
     <span>best <b>${gpTxt(Math.round(rows[0].swingExpected))}</b></span>
     <span>as of <b>${new Date(t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</b></span>`;
   $('swingBody').innerHTML = rows.map(r=>`
@@ -1526,6 +1606,7 @@ function renderSwing(){
       <td class="${r.riskReward>=2?'pos':''}">${r.riskReward===Infinity?'—':r.riskReward.toFixed(1)}</td>
       <td>${r.swingQty.toLocaleString()}</td>
       <td>${gpHtml(r.swingCapital)}</td>
+      <td>${gpHtml(r.swingMargin)}</td>
       <td>${gpHtml(Math.round(r.swingExpected))}</td>
       <td>${r.swingConfidence.toFixed(2)}${confBar(r.swingConfidence)}</td>
     </tr>
@@ -1535,8 +1616,11 @@ let SWING_OPEN=null;
 
 function swingDetail(r){
   const m=r.swing;
-  return `<tr class="detail"><td colspan="10">
+  return `<tr class="detail"><td colspan="11">
     <div class="dgrid">
+      <div><label>vs multi-day norm</label>${r.devBase==null?'—':
+        `<span class="${r.devBase<0?'neg':'pos'}">${pct(r.devBase,1)}</span>`}</div>
+      <div><label>vs 24h average</label><span class="${r.dev24<0?'neg':'pos'}">${pct(r.dev24,1)}</span></div>
       <div><label>30d range</label>${gpTxt(m.low)} – ${gpTxt(m.high)}</div>
       <div><label>30d median</label>${gpTxt(m.median)}</div>
       <div><label>z-score</label><span class="${m.z<-1?'pos':''}">${m.z.toFixed(2)}σ</span></div>
@@ -1546,11 +1630,15 @@ function swingDetail(r){
       <div><label>trend over window</label><span class="${m.driftPct<0?'neg':'pos'}">${
         pct(m.driftPct,0)}</span></div>
       <div><label>volatility</label>${pct(m.volatility,1)}</div>
-      <div><label>net per unit</label>${gpHtml(r.swingMargin)}</div>
-      <div><label>profit if it reverts</label>${gpHtml(r.swingProfit)}</div>
+      <div><label>net per unit</label>${gpHtml(r.swingMargin)} <span class="dimx">after tax</span></div>
+      <div><label>units</label>${r.swingQty.toLocaleString()} × ${gpTxt(r.buy)} = ${gpTxt(r.swingCapital)}</div>
+      <div><label>profit if all ${r.swingQty.toLocaleString()} revert</label>${gpHtml(r.swingProfit)}</div>
       <div><label>loss at the 30d low</label><span class="neg">${
-        gpHtml(Math.round(r.downside*r.swingCapital))}</span></div>
+        gpHtml(Math.round(r.downside*r.swingCapital))}</span> <span class="dimx">on the whole position</span></div>
       <div><label>reward to risk</label>${r.riskReward===Infinity?'—':r.riskReward.toFixed(2)+':1'}</div>
+      ${r.swingCapital > CFG.bankroll*0.5 ? `<div style="grid-column:1/-1"><span class="warn">
+        This one position is ${pct(r.swingCapital/CFG.bankroll,0)} of your bank.</span> Lower the max
+        item share in Config, or accept the concentration deliberately.</div>`:''}
       <div><label>windows checked</label>${m.n} x 6h</div>
     </div>
     <div class="rowbtns">
