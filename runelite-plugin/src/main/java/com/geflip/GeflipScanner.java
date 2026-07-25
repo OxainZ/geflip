@@ -290,11 +290,19 @@ class GeflipScanner
 			double trendPen = (mid1h != null && (midNow - mid1h) / mid1h < -0.03) ? 0.8 : 1.0;
 
 			double roi = (double) marginComp / bidComp;
-			// confidence = quality * stability * intra-hour-trend  (web scoreAll conf)
+			// adverse-selection guard: a margin far wider than its 24h norm is usually a
+			// transient spike that collapses before you sell — demote it (web scoreAll spikePen).
+			double spikePen = 1.0;
+			if (w24 != null && !w24.get("avgHighPrice").isJsonNull() && !w24.get("avgLowPrice").isJsonNull())
+			{
+				int m24 = netMargin(w24.get("avgLowPrice").getAsInt(), w24.get("avgHighPrice").getAsInt(), meta.exempt);
+				if (m24 > 0 && marginComp > 2.5 * m24) spikePen = 0.7;
+			}
+			// confidence = quality * stability * intra-hour-trend * spike-guard (web scoreAll conf)
 			double fresh = Math.exp(-age / TAU_S);
 			double volS = Math.sqrt(Math.min(1.0, vol1 / VOL_SAT));
 			double quality = Math.sqrt(fresh * volS);
-			double conf = Math.max(0, Math.min(1, quality * stab * trendPen));
+			double conf = Math.max(0, Math.min(1, quality * stab * trendPen * spikePen));
 			Double t90 = t90s.get(id);
 			double pen = trendPenalty(t90);   // long-term death-spiral, applied to expGph (like web applyTrends)
 

@@ -887,7 +887,14 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     const volS  = Math.sqrt(Math.min(1, vol1/cfg.volSat));
     const stab  = agree;
     const quality = Math.sqrt(fresh * volS);
-    const conf  = Math.max(0, Math.min(1, quality * stab * trendPen));
+    // adverse-selection guard: a margin far wider than its own 24h norm is usually a
+    // transient spike that collapses before you can sell — demote it (don't exclude).
+    let spikePen = 1;
+    if (w24 && w24.avgHighPrice!=null && w24.avgLowPrice!=null){
+      const m24 = netMargin(w24.avgLowPrice, w24.avgHighPrice, meta.exempt);
+      if (m24 > 0 && margin > 2.5*m24) spikePen = 0.7;
+    }
+    const conf  = Math.max(0, Math.min(1, quality * stab * trendPen * spikePen));
     // Return on the gold this position ties up, per hour, confidence weighted.
     // Independent of position size, so a 250k rune flip and a 10m plank flip
     // become directly comparable.
@@ -1198,10 +1205,13 @@ function swingUniverse(map, latest, h1, d24, cfg, now, baseline){
 
 /* ------------------------- allocation ------------------------- */
 const unitCap = c => Math.max(0, Math.min(c.limit, c.through));
-// Each candidate carries its own realisation period: a spread flip turns over
-// in one 4h buy-limit cycle, a swing hold does not. Dividing both by cycleH
-// silently inflated swings by the ratio between them.
-const cycleOf = c => (c.cycleHours && c.cycleHours>0) ? c.cycleHours : CFG.cycleH;
+// Each candidate carries its own realisation period: a swing hold uses its hold
+// time; a spread flip uses its REAL fill-aware cycle (max of the 4h buy-limit reset
+// and how long both legs take to fill). Using fillHours here makes the allocator
+// penalise slow-filling items automatically, so capital keeps cycling instead of
+// freezing in eight fat-margin flips that take days — fill-time diversification.
+const cycleOf = c => (c.cycleHours && c.cycleHours>0) ? c.cycleHours
+  : (c.fillHours && c.fillHours>0 ? c.fillHours : CFG.cycleH);
 const density = c => c.buy>0 ? (c.margin*c.confidence/cycleOf(c))/c.buy : 0;
 function fill(picks, bank, frac){
   const cap = Math.floor(bank*frac);
