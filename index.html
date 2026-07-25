@@ -2309,7 +2309,7 @@ async function bridgePoll(){
     LIVE_FILLS = Array.isArray(s.fills) ? s.fills : [];
     status('<span class="live">● RuneLite</span> · realized ' + gpTxt(sess.realized||0)
       + ' · ' + LIVE_FILLS.length + ' fills tracked');
-    renderLive(s.session, s.fills, 'local bridge');
+    renderLive(s.session, s.fills, 'local bridge', s.offers);
   }catch(e){ /* bridge went away — leave the last status */ }
 }
 async function bridgeInit(){
@@ -2336,7 +2336,7 @@ async function cloudPull(){
       CFG = {...CFG, ...blob.config}; CFG._cloudSeen = blob.updated; cfgToForm();
     }
     cloudStatus('<span class="live">● synced</span> · '+((blob.fills||[]).length)+' fills');
-    renderLive(blob.session, blob.fills, 'cloud');
+    renderLive(blob.session, blob.fills, 'cloud', blob.offers);
     return blob;
   }catch(e){ cloudStatus('<span class="warn">offline</span>'); return null; }
 }
@@ -2358,11 +2358,23 @@ $('btnCloudSync').onclick = async ()=>{ formToCfg(); await store.set('settings',
 // Renders the LIVE data the plugin pushes (session P&L + real fills) into the card at
 // the top of the scan view, so the phone/web mirrors what RuneLite sees. Names resolve
 // from the item mapping the app already holds.
-function renderLive(session, fills, source){
+function renderLive(session, fills, source, offers){
   const el = $('liveRl'); if (!el) return;
   const s = session || {}; const F = Array.isArray(fills) ? fills : [];
-  if (!session && !F.length){ el.style.display='none'; return; }
+  const O = Array.isArray(offers) ? offers : [];
+  if (!session && !F.length && !O.length){ el.style.display='none'; return; }
   const nameOf = id => (MAPPING && MAPPING.get && MAPPING.get(+id)?.name) || ('#'+id);
+  // Your live open GE offers (what you're buying/selling right now, with fill progress)
+  const liveOffers = O.map(o=>{
+    const buy = (o.state||'').includes('BUY');
+    const done = o.state==='BOUGHT' || o.state==='SOLD';
+    const pct = o.qtyTotal>0 ? Math.round(100*o.qtySold/o.qtyTotal) : 0;
+    return `<div style="display:flex;gap:6px;font-size:11px;line-height:1.7;align-items:center">
+      <span style="flex:1">${buy?'▼':'▲'} ${esc(o.name||nameOf(o.id))} <span style="color:var(--faint)">@${gpTxt(o.price||0)}</span></span>
+      <span style="width:56px;height:5px;background:#2a2f3a;border-radius:3px;overflow:hidden">
+        <span style="display:block;height:100%;width:${pct}%;background:${done?'var(--pos-c,#3fb950)':(buy?'#d29922':'#58a6ff')}"></span></span>
+      <span class="${done?'pos':''}">${o.qtySold}/${o.qtyTotal}</span></div>`;
+  }).join('');
   const recent = F.slice(-6).reverse().map(f=>{
     const sell = f.side==='SELL';
     return `<div style="display:flex;gap:6px;font-size:11px;line-height:1.7">
@@ -2372,7 +2384,8 @@ function renderLive(session, fills, source){
   }).join('');
   el.innerHTML = `<h3>● Live from RuneLite <span style="font-weight:400;color:var(--faint);font-size:10px">${source||''}</span></h3>
     <div style="font-size:12px;margin-bottom:6px">realized ${gpHtml(s.realized||0)} · deployed ${gpTxt(s.deployed||0)} · ${F.length} fills</div>
-    ${recent || '<div class="hint" style="margin:0">no fills yet — flip something in-game and it shows here</div>'}`;
+    ${O.length ? '<div style="font-size:10px;color:var(--faint);margin:4px 0 2px;letter-spacing:.04em">YOUR GE ('+O.length+')</div>'+liveOffers : ''}
+    ${F.length ? '<div style="font-size:10px;color:var(--faint);margin:6px 0 2px;letter-spacing:.04em">RECENT FILLS</div>'+recent : (O.length? '' : '<div class="hint" style="margin:0">no fills yet — flip something in-game and it shows here</div>')}`;
   el.style.display = '';
 }
 

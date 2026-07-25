@@ -44,7 +44,14 @@ class GeflipScanner
 	static final class Flip
 	{
 		int id; String name; int buy, sell, tax, margin, quantity, limit;
-		double roi, gph, expGph, confidence; Double t90, t180; boolean decliner;
+		double roi, gph, expGph, confidence, fillHours; Double t90, t180; boolean decliner;
+	}
+
+	/** Item name from the cached mapping (null if not loaded / unknown). */
+	String nameFor(int id)
+	{
+		Meta m = (mapping != null) ? mapping.get(id) : null;
+		return m != null ? m.name : null;
 	}
 
 	// --- tax (identical math to the app) -----------------------------------
@@ -190,7 +197,14 @@ class GeflipScanner
 			Flip f = new Flip();
 			f.id = id; f.name = meta.name; f.buy = lo; f.sell = hi;
 			f.tax = saleTax(hi, meta.exempt); f.margin = margin; f.quantity = qty; f.limit = limit;
-			f.roi = roi; f.gph = (double) margin * qty / cycleH; f.expGph = f.gph * conf;
+			// Honest cycle time: you can rebuy every 4h (buy-limit reset), BUT a thin item's
+			// offers can take LONGER than 4h to fill. Estimate fill hours from volume (both
+			// legs at ~25% participation) and divide profit by whichever is the real
+			// bottleneck — so an item that takes days to fill shows a LOW gp/h, not a fake one.
+			double estFillH = vol1 > 0 ? ((double) qty / (0.25 * vol1)) * 2.0 : 999.0;
+			double effCycleH = Math.max(estFillH, cycleH);
+			f.roi = roi; f.fillHours = estFillH;
+			f.gph = (double) margin * qty / effCycleH; f.expGph = f.gph * conf;
 			f.confidence = conf; f.t90 = t90; f.decliner = pen < 1.0;
 			out.add(f);
 		}

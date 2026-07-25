@@ -27,6 +27,7 @@ class GeflipPanel extends PluginPanel
 	private final JLabel status = new JLabel("idle");
 	private final JLabel session = new JLabel("session: —");
 	private final JPanel rows = new JPanel();
+	private final JPanel offersBox = new JPanel();   // "Your GE" — live open offers
 
 	GeflipPanel(Runnable onRefresh)
 	{
@@ -43,7 +44,16 @@ class GeflipPanel extends PluginPanel
 		meta.add(status);
 		meta.add(session);
 		top.add(meta, BorderLayout.SOUTH);
-		add(top, BorderLayout.NORTH);
+
+		// north = controls/meta, then the live "Your GE" offers box beneath it
+		JPanel north = new JPanel();
+		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
+		top.setAlignmentX(Component.LEFT_ALIGNMENT);
+		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
+		offersBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+		north.add(top);
+		north.add(offersBox);
+		add(north, BorderLayout.NORTH);
 
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
 		JScrollPane scroll = new JScrollPane(rows);
@@ -57,6 +67,48 @@ class GeflipPanel extends PluginPanel
 	{
 		SwingUtilities.invokeLater(() ->
 			session.setText("session: " + gp(realized) + " realized · " + gp(spent) + " deployed"));
+	}
+
+	/** Render your live open GE offers (buying/selling with fill progress). */
+	void setOffers(List<GeflipPlugin.Offer> offers)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			offersBox.removeAll();
+			if (offers != null && !offers.isEmpty())
+			{
+				JLabel hdr = new JLabel("Your GE");
+				hdr.setForeground(ColorScheme.BRAND_ORANGE);
+				hdr.setBorder(BorderFactory.createEmptyBorder(6, 1, 2, 1));
+				hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
+				offersBox.add(hdr);
+				for (GeflipPlugin.Offer o : offers) offersBox.add(offerRow(o));
+			}
+			offersBox.revalidate();
+			offersBox.repaint();
+		});
+	}
+
+	private JPanel offerRow(GeflipPlugin.Offer o)
+	{
+		JPanel p = new JPanel(new BorderLayout(6, 0));
+		p.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		boolean buy = o.state.contains("BUY");
+		boolean done = o.state.equals("BOUGHT") || o.state.equals("SOLD");
+		boolean cancelled = o.state.startsWith("CANCELLED");
+		String nm = o.name != null ? o.name : ("#" + o.id);
+		JLabel l = new JLabel((buy ? "▼ " : "▲ ") + nm + "  @" + gp(o.price));
+		l.setForeground(buy ? ColorScheme.PROGRESS_INPROGRESS_COLOR : ColorScheme.GRAND_EXCHANGE_PRICE);
+		JLabel r = new JLabel(o.qtySold + "/" + o.qtyTotal + (done ? " ✓" : cancelled ? " ✕" : ""));
+		r.setForeground(done ? ColorScheme.PROGRESS_COMPLETE_COLOR : ColorScheme.LIGHT_GRAY_COLOR);
+		r.setHorizontalAlignment(JLabel.RIGHT);
+		r.setFont(FontManager.getRunescapeSmallFont());
+		p.add(l, BorderLayout.CENTER);
+		p.add(r, BorderLayout.EAST);
+		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return p;
 	}
 
 	void setFlips(List<GeflipScanner.Flip> flips)
@@ -87,9 +139,11 @@ class GeflipPanel extends PluginPanel
 		top.add(name, BorderLayout.CENTER);
 		top.add(gph, BorderLayout.EAST);
 
-		// --- line 2: buy -> sell, margin/ea, qty (compact, dim, gp-formatted) ---
+		// --- line 2: buy -> sell, margin, qty, and the ESTIMATED FILL TIME so the
+		// gp/h rate isn't a mystery (a "~2d" item won't earn its hourly rate soon) ---
+		String ft = fillTxt(f.fillHours);
 		JLabel sub = new JLabel(gp(f.buy) + " → " + gp(f.sell)
-			+ "   +" + gp(f.margin) + "   ×" + f.quantity);
+			+ "   +" + gp(f.margin) + "   ×" + f.quantity + (ft.isEmpty() ? "" : "   " + ft));
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 
@@ -130,4 +184,11 @@ class GeflipPanel extends PluginPanel
 	}
 	private static String sign(long v) { return v < 0 ? "-" : ""; }
 	private static String pct(double v) { return String.format("%+.1f%%", v * 100); }
+	private static String fillTxt(double h)
+	{
+		if (h >= 900 || Double.isNaN(h)) return "";
+		if (h < 1) return "~" + Math.max(1, (int) Math.round(h * 60)) + "m";
+		if (h < 24) return "~" + (h < 9.5 ? String.format("%.1f", h) : "" + (int) Math.round(h)) + "h";
+		return "~" + String.format("%.1f", h / 24) + "d";
+	}
 }

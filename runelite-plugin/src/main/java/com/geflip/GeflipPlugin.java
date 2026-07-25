@@ -47,6 +47,8 @@ public class GeflipPlugin extends Plugin
 	// local bridge: serves the UI + these live fills to the web app on your network
 	private GeflipServer bridge;
 	private final java.util.List<Fill> fills = new java.util.concurrent.CopyOnWriteArrayList<>();
+	// the 8 GE slots as the client last reported them — your live open offers
+	private final GrandExchangeOffer[] slots = new GrandExchangeOffer[8];
 	// the last ranked flips, shared so the web app/phone shows exactly what the panel shows
 	private volatile java.util.List<GeflipScanner.Flip> lastFlips = java.util.Collections.emptyList();
 
@@ -58,10 +60,40 @@ public class GeflipPlugin extends Plugin
 		{ this.id = id; this.side = side; this.price = price; this.qty = qty; this.tax = tax; this.ts = ts; }
 	}
 	static final class Session { final long realized, deployed; Session(long r, long d) { realized = r; deployed = d; } }
+
+	/** One live GE slot (an open/finished offer). Progress = qtySold / qtyTotal. */
+	static final class Offer
+	{
+		final int slot, id; final String state; final int price, qtySold, qtyTotal; final long spent;
+		String name;
+		Offer(int slot, int id, String state, int price, int qtySold, int qtyTotal, long spent)
+		{ this.slot = slot; this.id = id; this.state = state; this.price = price;
+		  this.qtySold = qtySold; this.qtyTotal = qtyTotal; this.spent = spent; }
+	}
+
 	static final class State
 	{
 		final boolean ok = true; final long ts = System.currentTimeMillis() / 1000;
 		Session session; java.util.List<Fill> fills; java.util.List<GeflipScanner.Flip> flips;
+		java.util.List<Offer> offers;
+	}
+
+	/** Snapshot the 8 GE slots into DTOs, skipping empty ones and naming each item. */
+	private java.util.List<Offer> buildOffers()
+	{
+		java.util.List<Offer> out = new java.util.ArrayList<>();
+		for (int i = 0; i < slots.length; i++)
+		{
+			GrandExchangeOffer o = slots[i];
+			if (o == null) continue;
+			GrandExchangeOfferState st = o.getState();
+			if (st == null || st == GrandExchangeOfferState.EMPTY) continue;
+			Offer of = new Offer(i, o.getItemId(), st.name(), o.getPrice(),
+				o.getQuantitySold(), o.getTotalQuantity(), o.getSpent());
+			of.name = scanner.nameFor(o.getItemId());
+			out.add(of);
+		}
+		return out;
 	}
 
 	private State buildState()
@@ -70,6 +102,7 @@ public class GeflipPlugin extends Plugin
 		s.session = new Session(realizedProfit, spentBuying);
 		s.fills = fills;
 		s.flips = lastFlips;      // the phone/web shows the same ranked flips the panel does
+		s.offers = buildOffers(); // ...and your live open GE offers
 		return s;
 	}
 
@@ -87,6 +120,7 @@ public class GeflipPlugin extends Plugin
 			com.google.gson.JsonObject o = new com.google.gson.JsonObject();
 			o.add("fills", new com.google.gson.Gson().toJsonTree(fills));
 			o.add("flips", new com.google.gson.Gson().toJsonTree(lastFlips));
+			o.add("offers", new com.google.gson.Gson().toJsonTree(buildOffers()));
 			com.google.gson.JsonObject sess = new com.google.gson.JsonObject();
 			sess.addProperty("realized", realizedProfit);
 			sess.addProperty("deployed", spentBuying);
@@ -194,6 +228,9 @@ public class GeflipPlugin extends Plugin
 	{
 		GrandExchangeOffer o = ev.getOffer();
 		if (o == null) return;
+		// mirror EVERY slot change so the panel/web knows your live open offers, not just fills
+		if (ev.getSlot() >= 0 && ev.getSlot() < slots.length) slots[ev.getSlot()] = o;
+		if (panel != null) panel.setOffers(buildOffers());
 		GrandExchangeOfferState st = o.getState();
 		if (st != GrandExchangeOfferState.BOUGHT && st != GrandExchangeOfferState.SOLD) return;
 
