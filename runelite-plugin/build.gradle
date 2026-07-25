@@ -39,6 +39,15 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+// The sideloader reads runelite-plugin.properties FROM THE JAR to find the plugin
+// class (plugins=com.geflip.GeflipPlugin). It lives at the project root, so bundle
+// it into the jar root explicitly — without it, dev-mode RuneLite skips the plugin.
+jar {
+    from('.') {
+        include 'runelite-plugin.properties'
+    }
+}
+
 // Headless proof-of-life: runs the fetch+score pipeline against the live wiki API.
 // RuneLite is compileOnly, so add it to the run classpath here.
 tasks.register('runCli', JavaExec) {
