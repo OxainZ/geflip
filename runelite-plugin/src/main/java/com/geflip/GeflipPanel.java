@@ -14,6 +14,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
 import net.runelite.client.ui.ColorScheme;
+import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
 
 /**
@@ -71,32 +72,40 @@ class GeflipPanel extends PluginPanel
 
 	private JPanel rowFor(GeflipScanner.Flip f)
 	{
-		JPanel p = new JPanel(new BorderLayout());
-		p.setBorder(BorderFactory.createEmptyBorder(4, 2, 4, 2));
+		JPanel p = new JPanel(new BorderLayout(0, 2));
+		p.setBorder(BorderFactory.createEmptyBorder(5, 7, 5, 7));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
+		// --- line 1: item name (left, clips if long) + gp/hour headline (right) ---
+		JPanel top = new JPanel(new BorderLayout(6, 0));
+		top.setOpaque(false);
 		JLabel name = new JLabel((f.decliner ? "⚠ " : "") + f.name);
 		name.setForeground(f.decliner ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.TEXT_COLOR);
-		name.setToolTipText("Click to copy the name for the GE search"
-			+ (f.t90 != null ? " · 90d trend " + pct(f.t90) : ""));
+		JLabel gph = new JLabel(gp((long) f.expGph) + "/h");
+		gph.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		gph.setHorizontalAlignment(JLabel.RIGHT);
+		top.add(name, BorderLayout.CENTER);
+		top.add(gph, BorderLayout.EAST);
 
-		JLabel nums = new JLabel(gp(f.margin) + "/ea · " + gp((long) f.expGph) + "/h · x" + f.quantity);
-		nums.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		nums.setFont(nums.getFont().deriveFont(nums.getFont().getSize2D() - 1f));
+		// --- line 2: buy -> sell, margin/ea, qty (compact, dim, gp-formatted) ---
+		JLabel sub = new JLabel(gp(f.buy) + " → " + gp(f.sell)
+			+ "   +" + gp(f.margin) + "   ×" + f.quantity);
+		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		sub.setFont(FontManager.getRunescapeSmallFont());
 
-		JPanel txt = new JPanel();
-		txt.setLayout(new BoxLayout(txt, BoxLayout.Y_AXIS));
-		txt.setOpaque(false);
-		txt.add(name);
-		txt.add(nums);
-		p.add(txt, BorderLayout.CENTER);
+		JPanel col = new JPanel();
+		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+		col.setOpaque(false);
+		top.setAlignmentX(Component.LEFT_ALIGNMENT);
+		sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+		col.add(top);
+		col.add(sub);
+		p.add(col, BorderLayout.CENTER);
 
-		JLabel prices = new JLabel("<html>buy " + f.buy + "<br>sell " + f.sell + "</html>");
-		prices.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
-		prices.setHorizontalAlignment(JLabel.RIGHT);
-		p.add(prices, BorderLayout.EAST);
+		name.setToolTipText("Click to copy \"" + f.name + "\" for the GE search"
+			+ (f.t90 != null ? "   ·   90d " + pct(f.t90) : ""));
 
-		// click = copy the item name to paste into the GE search (no game input)
+		// click = copy the item name for the GE search (no game input)
 		p.addMouseListener(new java.awt.event.MouseAdapter()
 		{
 			@Override public void mouseClicked(java.awt.event.MouseEvent e)

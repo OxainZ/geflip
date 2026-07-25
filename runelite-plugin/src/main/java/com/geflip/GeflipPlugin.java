@@ -47,6 +47,8 @@ public class GeflipPlugin extends Plugin
 	// local bridge: serves the UI + these live fills to the web app on your network
 	private GeflipServer bridge;
 	private final java.util.List<Fill> fills = new java.util.concurrent.CopyOnWriteArrayList<>();
+	// the last ranked flips, shared so the web app/phone shows exactly what the panel shows
+	private volatile java.util.List<GeflipScanner.Flip> lastFlips = java.util.Collections.emptyList();
 
 	/** One real GE fill. Carries the item ID; the web app resolves the name from /mapping. */
 	static final class Fill
@@ -59,7 +61,7 @@ public class GeflipPlugin extends Plugin
 	static final class State
 	{
 		final boolean ok = true; final long ts = System.currentTimeMillis() / 1000;
-		Session session; java.util.List<Fill> fills;
+		Session session; java.util.List<Fill> fills; java.util.List<GeflipScanner.Flip> flips;
 	}
 
 	private State buildState()
@@ -67,6 +69,7 @@ public class GeflipPlugin extends Plugin
 		State s = new State();
 		s.session = new Session(realizedProfit, spentBuying);
 		s.fills = fills;
+		s.flips = lastFlips;      // the phone/web shows the same ranked flips the panel does
 		return s;
 	}
 
@@ -83,6 +86,7 @@ public class GeflipPlugin extends Plugin
 		{
 			com.google.gson.JsonObject o = new com.google.gson.JsonObject();
 			o.add("fills", new com.google.gson.Gson().toJsonTree(fills));
+			o.add("flips", new com.google.gson.Gson().toJsonTree(lastFlips));
 			com.google.gson.JsonObject sess = new com.google.gson.JsonObject();
 			sess.addProperty("realized", realizedProfit);
 			sess.addProperty("deployed", spentBuying);
@@ -167,6 +171,7 @@ public class GeflipPlugin extends Plugin
 			{
 				panel.setStatus("scanning…");
 				java.util.List<GeflipScanner.Flip> flips = scanner.scan(config);
+				lastFlips = flips;                       // share with the bridge/cloud
 				panel.setFlips(flips);
 				panel.setStatus(flips.size() + " flips · " + timeNow());
 			}
