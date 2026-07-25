@@ -58,6 +58,9 @@ public class GeflipPlugin extends Plugin
 	private final long[] slotSince = new long[8];
 	private final String[] slotKey = new String[8];
 	private int tickCounter;   // paces the periodic offer-age refresh
+	// per-item 4h buy-limit window: id -> [windowStartMs, unitsBoughtThisWindow]
+	private final java.util.Map<Integer, long[]> buyWindows = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final long BUY_WINDOW_MS = 4 * 60 * 60 * 1000L;
 	// the last ranked flips, shared so the web app/phone shows exactly what the panel shows
 	private volatile java.util.List<GeflipScanner.Flip> lastFlips = java.util.Collections.emptyList();
 	// immutable snapshot of your GE offers, built ONLY on the client thread and published
@@ -95,6 +98,31 @@ public class GeflipPlugin extends Plugin
 		java.util.List<Offer> offers;
 	}
 
+	/** Units still buyable this 4h window per item (only items with an active window). */
+	private java.util.Map<Integer, Integer> remainingLimits()
+	{
+		java.util.Map<Integer, Integer> out = new java.util.HashMap<>();
+		long nowMs = System.currentTimeMillis();
+		for (java.util.Map.Entry<Integer, long[]> en : buyWindows.entrySet())
+		{
+			long[] w = en.getValue();
+			if (nowMs - w[0] >= BUY_WINDOW_MS) continue;   // window expired → full limit, no cap
+			int lim = scanner.limitFor(en.getKey());
+			if (lim <= 0) continue;                        // unknown limit → don't cap
+			out.put(en.getKey(), (int) Math.max(0, lim - w[1]));
+		}
+		return out;
+	}
+
+	/** Minutes until an item's 4h buy window resets (−1 if none active). */
+	int limitResetMins(int id)
+	{
+		long[] w = buyWindows.get(id);
+		if (w == null) return -1;
+		long left = BUY_WINDOW_MS - (System.currentTimeMillis() - w[0]);
+		return left <= 0 ? -1 : (int) (left / 60000);
+	}
+
 	/** Lower-cased set of the "not a flip" item names from config. */
 	private java.util.Set<String> excludeLowered()
 	{
@@ -117,8 +145,12 @@ public class GeflipPlugin extends Plugin
 		if (panel != null) panel.setSession(ledger);
 	}
 
-	/** On-disk shape: the fill log, per-slot dedup markers, and offer-age clocks. */
-	private static final class Persist { java.util.List<Fill> fills; String[] slotSig, slotKey; long[] slotSince; }
+	/** On-disk shape: the fill log, per-slot dedup markers, offer-age clocks, buy windows. */
+	private static final class Persist
+	{
+		java.util.List<Fill> fills; String[] slotSig, slotKey; long[] slotSince;
+		java.util.Map<Integer, long[]> buyWindows;
+	}
 
 	private void loadFills()
 	{
@@ -136,12 +168,14 @@ public class GeflipPlugin extends Plugin
 				for (int i = 0; i < slotKey.length && i < p.slotKey.length; i++) slotKey[i] = p.slotKey[i];
 			if (p.slotSince != null)
 				for (int i = 0; i < slotSince.length && i < p.slotSince.length; i++) slotSince[i] = p.slotSince[i];
+			if (p.buyWindows != null) buyWindows.putAll(p.buyWindows);
 		}
 		catch (Exception e) { log.debug("geflip: could not load fills history", e); }
 	}
 
 	/** Persist a client-thread SNAPSHOT (never the live arrays/list) to avoid a data race. */
-	private synchronized void saveFills(java.util.List<Fill> fillSnap, String[] sig, String[] key, long[] since)
+	private synchronized void saveFills(java.util.List<Fill> fillSnap, String[] sig, String[] key, long[] since,
+		java.util.Map<Integer, long[]> windows)
 	{
 		try
 		{
@@ -155,6 +189,7 @@ public class GeflipPlugin extends Plugin
 			p.slotSig = sig;
 			p.slotKey = key;
 			p.slotSince = since;
+			p.buyWindows = windows;
 			java.nio.file.Files.write(fillsFile.toPath(),
 				new com.google.gson.Gson().toJson(p).getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		}
@@ -304,7 +339,8 @@ public class GeflipPlugin extends Plugin
 			try
 			{
 				if (p != null) p.setStatus("scanning…");
-				java.util.List<GeflipScanner.Flip> flips = scanner.scan(config);
+				java.util.List<GeflipScanner.Flip> flips = scanner.scan(config, remainingLimits());
+				for (GeflipScanner.Flip f : flips) f.resetMins = limitResetMins(f.id);   // buy-limit timer
 				lastFlips = flips;                       // share with the bridge/cloud
 				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " flips · " + timeNow()); }
 				recompute();   // mapping is loaded now → exclude list resolves, P&L reflows
@@ -380,6 +416,11 @@ public class GeflipPlugin extends Plugin
 		if (buy)
 		{
 			fills.add(new Fill(o.getItemId(), "BUY", unit, qty, 0, now));
+			// advance the item's rolling 4h buy-limit window
+			long nowMs = System.currentTimeMillis();
+			long[] w = buyWindows.get(o.getItemId());
+			if (w == null || nowMs - w[0] >= BUY_WINDOW_MS) buyWindows.put(o.getItemId(), new long[]{ nowMs, qty });
+			else w[1] += qty;
 		}
 		else // sell — record the 2% tax the GE takes on the sale (respecting tax-exempt items)
 		{
@@ -392,7 +433,8 @@ public class GeflipPlugin extends Plugin
 		java.util.List<Fill> fillSnap = new java.util.ArrayList<>(fills);
 		String[] sigSnap = slotSig.clone(), keySnap = slotKey.clone();
 		long[] sinceSnap = slotSince.clone();
-		executor.submit(() -> { saveFills(fillSnap, sigSnap, keySnap, sinceSnap); recompute(); });
+		java.util.Map<Integer, long[]> winSnap = new java.util.HashMap<>(buyWindows);
+		executor.submit(() -> { saveFills(fillSnap, sigSnap, keySnap, sinceSnap, winSnap); recompute(); });
 	}
 
 	/**

@@ -50,6 +50,7 @@ class GeflipScanner
 	{
 		int id; String name; int buy, sell, tax, margin, quantity, limit;
 		double roi, gph, expGph, confidence, fillHours; Double t90, t180; boolean decliner;
+		int resetMins = -1;   // minutes until this item's 4h buy window resets (−1 = none active)
 	}
 
 	/** Item name from the cached mapping (null if not loaded / unknown). */
@@ -148,8 +149,22 @@ class GeflipScanner
 		return out;
 	}
 
-	/** Full scan → ranked flips. Mirrors the app's filters + gp/h model. */
-	List<Flip> scan(GeflipConfig cfg) throws Exception
+	/** Buy limit for an item (−1 if unknown / mapping not loaded). */
+	int limitFor(int id)
+	{
+		Meta m = (mapping != null) ? mapping.get(id) : null;
+		return m != null ? m.limit : -1;
+	}
+
+	List<Flip> scan(GeflipConfig cfg) throws Exception { return scan(cfg, java.util.Collections.emptyMap()); }
+
+	/**
+	 * Full scan → ranked flips. `remaining` maps item id → units still buyable in the
+	 * current 4h window (only for items you've partly/fully bought); an item at 0 is
+	 * dropped, and quantity is capped by what's left — so it never recommends a flip you
+	 * can't act on right now.
+	 */
+	List<Flip> scan(GeflipConfig cfg, java.util.Map<Integer, Integer> remaining) throws Exception
 	{
 		Map<Integer, Meta> map = loadMapping();
 		JsonObject latest = new JsonParser().parse(httpGet(API + "/latest")).getAsJsonObject().getAsJsonObject("data");
@@ -256,6 +271,12 @@ class GeflipScanner
 			double flowFcast = hourly24 != null ? (vol1 + hourly24) / 2.0 : vol1;
 
 			int limit = meta.limit;
+			Integer rem = remaining.get(id);   // units still buyable this 4h window (null = full)
+			if (rem != null)
+			{
+				if (rem <= 0) continue;         // limit already spent — don't recommend it
+				limit = Math.min(limit, rem);
+			}
 			long afford = perItemCap / bidComp;
 			long through = (long) (PART * flowFcast * cycleH);
 			int qty = (int) Math.max(0, Math.min(limit, Math.min(afford, through)));

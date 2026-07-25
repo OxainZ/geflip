@@ -161,8 +161,9 @@ class GeflipPanel extends PluginPanel
 		// --- line 2: buy -> sell, margin, qty, and the ESTIMATED FILL TIME so the
 		// gp/h rate isn't a mystery (a "~2d" item won't earn its hourly rate soon) ---
 		String ft = fillTxt(f.fillHours);
+		String reset = f.resetMins > 0 ? "   ↻" + (f.resetMins >= 60 ? (f.resetMins / 60) + "h" : f.resetMins + "m") : "";
 		JLabel sub = new JLabel(gp(f.buy) + " → " + gp(f.sell)
-			+ "   +" + gp(f.margin) + "   ×" + f.quantity + (ft.isEmpty() ? "" : "   " + ft));
+			+ "   +" + gp(f.margin) + "   ×" + f.quantity + (ft.isEmpty() ? "" : "   " + ft) + reset);
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 
