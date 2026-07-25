@@ -164,6 +164,12 @@ public class JadPrayerPlugin extends Plugin
 		}
 	}
 
+	/** Snapshot of the live healers, for the overlay to highlight each one. */
+	public java.util.List<NPC> healerNpcs()
+	{
+		return new java.util.ArrayList<>(healers);
+	}
+
 	/** True for a short window right after Jad switches attack — drives the flash. */
 	public boolean flashing()
 	{

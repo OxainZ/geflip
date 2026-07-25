@@ -140,6 +140,9 @@ class GeflipScanner
 		Map<Integer, Meta> map = loadMapping();
 		JsonObject latest = new JsonParser().parse(httpGet(API + "/latest")).getAsJsonObject().getAsJsonObject("data");
 		JsonObject h1 = new JsonParser().parse(httpGet(API + "/1h")).getAsJsonObject().getAsJsonObject("data");
+		JsonObject m5 = null;
+		try { m5 = new JsonParser().parse(httpGet(API + "/5m")).getAsJsonObject().getAsJsonObject("data"); }
+		catch (Exception ignored) { /* optional — realistic-price guard */ }
 		JsonObject d24 = null;
 		try { d24 = new JsonParser().parse(httpGet(API + "/24h")).getAsJsonObject().getAsJsonObject("data"); }
 		catch (Exception ignored) { /* optional liquidity gate */ }
@@ -160,8 +163,8 @@ class GeflipScanner
 
 			JsonObject q = e.getValue().getAsJsonObject();
 			if (q.get("high").isJsonNull() || q.get("low").isJsonNull()) continue;
-			int hi = q.get("high").getAsInt(), lo = q.get("low").getAsInt();
-			if (lo <= 0) continue;
+			int hiInst = q.get("high").getAsInt(), loInst = q.get("low").getAsInt();
+			if (loInst <= 0) continue;
 			// newest quote timestamp — guard BOTH times (either can be json-null)
 			boolean hasHi = q.has("highTime") && !q.get("highTime").isJsonNull();
 			boolean hasLo = q.has("lowTime") && !q.get("lowTime").isJsonNull();
@@ -173,17 +176,30 @@ class GeflipScanner
 			long age = now - newest;
 			if (age > 3600) continue;
 
+			// REALISTIC fill prices. latest.high is the last INSTANT-BUY print (a buyer
+			// crossing the spread up) — placing a sell there often won't fill. Guard both
+			// legs with the 5m volume-weighted average so the SELL price is one buyers
+			// actually pay, and the BUY price one sellers actually accept.
+			int hi = hiInst, lo = loInst;
+			JsonObject w5 = (m5 != null && m5.has(e.getKey())) ? m5.getAsJsonObject(e.getKey()) : null;
+			if (w5 != null)
+			{
+				if (!w5.get("avgHighPrice").isJsonNull()) hi = Math.min(hiInst, w5.get("avgHighPrice").getAsInt());
+				if (!w5.get("avgLowPrice").isJsonNull())  lo = Math.max(loInst, w5.get("avgLowPrice").getAsInt());
+			}
+			if (hi <= lo) continue;   // no realistic spread once guarded
+
 			int instant = netMargin(lo, hi, meta.exempt);
 
 			JsonObject w1 = h1.has(e.getKey()) ? h1.getAsJsonObject(e.getKey()) : null;
 			Integer hourly = null;
-			int vol1 = 0;
+			int vh = 0, vl = 0;   // side-specific hourly volumes (high = instant-buys, low = instant-sells)
 			if (w1 != null && !w1.get("avgHighPrice").isJsonNull() && !w1.get("avgLowPrice").isJsonNull())
 			{
 				hourly = netMargin(w1.get("avgLowPrice").getAsInt(), w1.get("avgHighPrice").getAsInt(), meta.exempt);
-				int vh = w1.get("highPriceVolume").getAsInt(), vl = w1.get("lowPriceVolume").getAsInt();
-				vol1 = Math.min(vh, vl);
+				vh = w1.get("highPriceVolume").getAsInt(); vl = w1.get("lowPriceVolume").getAsInt();
 			}
+			int vol1 = Math.min(vh, vl);
 			if (vol1 < cfg.minVol1h()) continue;
 
 			int margin;
@@ -198,7 +214,7 @@ class GeflipScanner
 
 			int limit = meta.limit;
 			long afford = perItemCap / lo;
-			long through = (long) (0.25 * vol1 * cycleH);
+			long through = (long) (0.15 * vol1 * cycleH);   // ~15% of a side's flow is realistically ours
 			int qty = (int) Math.max(0, Math.min(limit, Math.min(afford, through)));
 			if (qty <= 0) continue;
 
@@ -214,13 +230,15 @@ class GeflipScanner
 			Flip f = new Flip();
 			f.id = id; f.name = meta.name; f.buy = lo; f.sell = hi;
 			f.tax = saleTax(hi, meta.exempt); f.margin = margin; f.quantity = qty; f.limit = limit;
-			// Honest cycle time: you can rebuy every 4h (buy-limit reset), BUT a thin item's
-			// offers can take LONGER than 4h to fill. Estimate fill hours from volume (both
-			// legs at ~25% participation) and divide profit by whichever is the real
-			// bottleneck — so an item that takes days to fill shows a LOW gp/h, not a fake one.
-			double estFillH = vol1 > 0 ? ((double) qty / (0.25 * vol1)) * 2.0 : 999.0;
-			double effCycleH = Math.max(estFillH, cycleH);
-			f.roi = roi; f.fillHours = estFillH;
+			// SIDE-SPECIFIC fill time: a BUY offer fills against instant-sells (low-side volume),
+			// a SELL offer against instant-buys (high-side volume); the two legs are sequential.
+			// Dividing by the correct side stops one-sided markets from faking a fast gp/h.
+			double part = 0.15;
+			double buyFillH = vl > 0 ? f.quantity / (part * vl) : 999.0;
+			double sellFillH = vh > 0 ? f.quantity / (part * vh) : 999.0;
+			double fillH = Math.min(999.0, buyFillH + sellFillH);
+			double effCycleH = Math.max(fillH, cycleH);   // floor at the 4h buy-limit reset
+			f.roi = roi; f.fillHours = fillH;
 			f.gph = (double) margin * qty / effCycleH; f.expGph = f.gph * conf;
 			f.confidence = conf; f.t90 = t90; f.decliner = pen < 1.0;
 			out.add(f);

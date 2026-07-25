@@ -6,6 +6,7 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
+import java.awt.Shape;
 import java.awt.Stroke;
 import java.awt.image.BufferedImage;
 import javax.inject.Inject;
@@ -18,14 +19,18 @@ import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
- * Draws the "pray this now" indicator: a big prayer icon in the centre of the screen
- * (impossible to miss during Jad) and/or a small one over Jad's head. Colour + flash
- * key off the plugin's current attack read. Pure drawing — no input.
+ * Draws the "pray this now" indicator as a prayer symbol ABOVE JAD'S HEAD, and outlines
+ * every healer as it spawns. Colours are colourblind-safe (blue mage / orange range —
+ * never blue-vs-green; magenta healers), and the type is double-encoded with text so it
+ * reads without colour. Pure drawing — no input.
  */
 public class JadPrayerOverlay extends Overlay
 {
-	private static final Color MAGE_COL = new Color(0x3B, 0x7B, 0xFF);   // blue
-	private static final Color RANGE_COL = new Color(0x2F, 0xD0, 0x6A);  // green
+	// colourblind-safe (IBM palette): blue vs orange survives red-green CVD; magenta is
+	// distinct from both. Never blue-vs-green (the deuteranopia/protanopia confusion).
+	private static final Color MAGE_COL = new Color(0x64, 0x8F, 0xFF);   // blue
+	private static final Color RANGE_COL = new Color(0xFE, 0x61, 0x00);  // orange
+	private static final Color HEAL_COL = new Color(0xDC, 0x26, 0x7F);   // magenta
 
 	private final Client client;
 	private final JadPrayerPlugin plugin;
@@ -41,15 +46,14 @@ public class JadPrayerOverlay extends Overlay
 		setLayer(OverlayLayer.ABOVE_SCENE);
 	}
 
-	private static final Color HEAL_COL = new Color(0xFF, 0x9A, 0x1F);   // orange
-
 	@Override
 	public Dimension render(Graphics2D g)
 	{
-		if (plugin.healersUp) drawHealerBanner(g);
+		// 1) highlight every healer as it comes (independent of the prayer state)
+		for (NPC h : plugin.healerNpcs()) drawHealer(g, h);
 
 		JadPrayerPlugin.Attack a = plugin.attack;
-		// test mode: with no live Jad, draw a sample so you can confirm/position the indicator
+		// test mode: no live Jad → draw a sample centre-screen so you can confirm it works
 		if (a == null && config.testShow())
 		{
 			int s = Math.max(1, config.scale());
@@ -66,20 +70,12 @@ public class JadPrayerOverlay extends Overlay
 		BufferedImage icon = mage ? plugin.mageSprite : plugin.rangeSprite;
 		Color col = mage ? MAGE_COL : RANGE_COL;
 		String label = mage ? "PRAY MAGE" : "PRAY RANGE";
-		int iw = icon != null ? icon.getWidth() : 34;
-		int ih = icon != null ? icon.getHeight() : 34;
-		int ticks = plugin.ticksToHit();   // -1 if no attack in flight
+		int s = Math.max(1, config.scale());
+		int w = (icon != null ? icon.getWidth() : 34) * s;
+		int h = (icon != null ? icon.getHeight() : 34) * s;
+		int ticks = plugin.ticksToHit();   // -1 if none in flight
 
-		if (config.center())
-		{
-			int s = Math.max(1, config.scale());
-			int w = iw * s, h = ih * s;
-			int cx = client.getViewportXOffset() + client.getViewportWidth() / 2 - w / 2;
-			int cy = client.getViewportYOffset() + client.getViewportHeight() / 2 - h / 2;
-			drawBadge(g, icon, label, col, cx, cy, w, h);
-			if (ticks >= 0) drawTicks(g, ticks, col, cx + w / 2, cy - 8);
-		}
-
+		// 2) PRIMARY: prayer symbol above Jad's head
 		if (config.overHead() && plugin.activeJad != null)
 		{
 			NPC jad = plugin.activeJad;
@@ -87,11 +83,51 @@ public class JadPrayerOverlay extends Overlay
 			if (lp != null)
 			{
 				net.runelite.api.Point p = Perspective.localToCanvas(
-					client, lp, client.getPlane(), jad.getLogicalHeight() + 40);
-				if (p != null) drawBadge(g, icon, null, col, p.getX() - iw / 2, p.getY() - ih, iw, ih);
+					client, lp, client.getPlane(), jad.getLogicalHeight() + 60);
+				if (p != null)
+				{
+					int x = p.getX() - w / 2, y = p.getY() - h;
+					drawBadge(g, icon, label, col, x, y, w, h);
+					if (ticks >= 0) drawTicks(g, ticks, col, x + w / 2, y - 8);
+				}
 			}
 		}
+
+		// optional secondary centre-screen indicator (off by default)
+		if (config.center())
+		{
+			int cx = client.getViewportXOffset() + client.getViewportWidth() / 2 - w / 2;
+			int cy = client.getViewportYOffset() + client.getViewportHeight() / 2 - h / 2;
+			drawBadge(g, icon, label, col, cx, cy, w, h);
+			if (ticks >= 0) drawTicks(g, ticks, col, cx + w / 2, cy - 8);
+		}
 		return null;
+	}
+
+	/** Outline a healer (magenta hull + "HEAL" tag) so you can find and re-aggro them. */
+	private void drawHealer(Graphics2D g, NPC npc)
+	{
+		if (npc == null) return;
+		Shape hull = npc.getConvexHull();
+		if (hull != null)
+		{
+			Stroke old = g.getStroke();
+			g.setStroke(new BasicStroke(2f));
+			g.setColor(HEAL_COL);
+			g.draw(hull);
+			g.setColor(new Color(HEAL_COL.getRed(), HEAL_COL.getGreen(), HEAL_COL.getBlue(), 40));
+			g.fill(hull);
+			g.setStroke(old);
+		}
+		net.runelite.api.Point tp = npc.getCanvasTextLocation(g, "HEAL", npc.getLogicalHeight() + 20);
+		if (tp != null)
+		{
+			g.setFont(g.getFont().deriveFont(Font.BOLD, 12f));
+			g.setColor(Color.BLACK);
+			g.drawString("HEAL", tp.getX() + 1, tp.getY() + 1);
+			g.setColor(HEAL_COL);
+			g.drawString("HEAL", tp.getX(), tp.getY());
+		}
 	}
 
 	/** Big tick countdown to the hit, centred above the icon. */
@@ -105,23 +141,6 @@ public class JadPrayerOverlay extends Overlay
 		g.drawString(t, tx + 2, baselineY + 2);
 		g.setColor(col);
 		g.drawString(t, tx, baselineY);
-	}
-
-	/** Banner reminding you to re-aggro the healers and hold your prayer. */
-	private void drawHealerBanner(Graphics2D g)
-	{
-		String msg = "HEALERS — re-aggro & keep praying";
-		g.setFont(g.getFont().deriveFont(Font.BOLD, 18f));
-		FontMetrics fm = g.getFontMetrics();
-		int w = fm.stringWidth(msg);
-		int cx = client.getViewportXOffset() + client.getViewportWidth() / 2;
-		int y = client.getViewportYOffset() + 60;
-		g.setColor(new Color(0, 0, 0, 150));
-		g.fillRect(cx - w / 2 - 10, y - fm.getAscent() - 6, w + 20, fm.getHeight() + 10);
-		g.setColor(Color.BLACK);
-		g.drawString(msg, cx - w / 2 + 1, y + 1);
-		g.setColor(HEAL_COL);
-		g.drawString(msg, cx - w / 2, y);
 	}
 
 	private void drawBadge(Graphics2D g, BufferedImage icon, String label, Color col,

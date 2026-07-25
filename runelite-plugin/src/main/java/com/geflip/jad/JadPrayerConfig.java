@@ -18,20 +18,20 @@ public interface JadPrayerConfig extends Config
 	default int scale() { return 3; }
 
 	@ConfigItem(
-		keyName = "center",
-		name = "Big icon in centre",
-		description = "Draw the large prayer icon in the middle of the screen — hardest to miss.",
+		keyName = "overHead",
+		name = "Symbol over Jad",
+		description = "Pop the prayer symbol above Jad's head — the primary indicator.",
 		position = 2
 	)
-	default boolean center() { return true; }
+	default boolean overHead() { return true; }
 
 	@ConfigItem(
-		keyName = "overHead",
-		name = "Icon over Jad",
-		description = "Also draw a small prayer icon above Jad's head.",
+		keyName = "center",
+		name = "Also show centre",
+		description = "Additionally draw the prayer icon in the middle of the screen.",
 		position = 3
 	)
-	default boolean overHead() { return true; }
+	default boolean center() { return false; }
 
 	@ConfigItem(
 		keyName = "flash",

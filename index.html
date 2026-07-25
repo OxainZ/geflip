@@ -765,13 +765,23 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     const age = Math.max(0, now - Math.min(q.highTime, q.lowTime));
     if (age > cfg.maxAgeS){ R('quote too stale'); continue; }
 
-    const buy  = cfg.slip>0 ? Math.ceil(q.low *(1+cfg.slip)) : q.low;
-    const sell = cfg.slip>0 ? Math.floor(q.high*(1-cfg.slip)) : q.high;
+    // REALISTIC fill prices: q.high is the last INSTANT-BUY print (a buyer crossing the
+    // spread up) — a sell offer placed there often won't fill. Guard both legs with the
+    // 5m volume-weighted average so the SELL price is one buyers actually pay.
+    const w5 = m5?.[idStr];
+    let rHigh = q.high, rLow = q.low;
+    if (w5){
+      if (w5.avgHighPrice!=null) rHigh = Math.min(q.high, w5.avgHighPrice);
+      if (w5.avgLowPrice!=null)  rLow  = Math.max(q.low,  w5.avgLowPrice);
+    }
+    const buy  = cfg.slip>0 ? Math.ceil(rLow *(1+cfg.slip)) : rLow;
+    const sell = cfg.slip>0 ? Math.floor(rHigh*(1-cfg.slip)) : rHigh;
+    if (sell <= buy){ R('no realistic spread'); continue; }
     if (buy < cfg.minPrice){ R('below min price'); continue; }
     if (cfg.maxPrice!=null && buy > cfg.maxPrice){ R('above max price'); continue; }
 
     const instant = netMargin(buy, sell, meta.exempt);
-    const w1 = h1[idStr], w24 = d24?.[idStr], w5 = m5?.[idStr];
+    const w1 = h1[idStr], w24 = d24?.[idStr];
     let hourly = null;
     if (w1 && w1.avgHighPrice!=null && w1.avgLowPrice!=null){
       const hb = cfg.slip>0?Math.ceil(w1.avgLowPrice*(1+cfg.slip)):w1.avgLowPrice;
@@ -871,16 +881,21 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     // Return on the gold this position ties up, per hour, confidence weighted.
     // Independent of position size, so a 250k rune flip and a 10m plank flip
     // become directly comparable.
-    const roiHr = (roi/cfg.cycleH)*conf;
+    // Honest cycle: fills can take far longer than the 4h buy-limit reset. Divide profit
+    // by the REAL bottleneck (both legs, sequential) floored at the 4h reset — so a thin
+    // item that takes days to fill shows a low gp/h, not a fake one.
+    const fillCycleH = (fillBuyMin + fillSellMin) / 60;
+    const effCycleH = Math.max(cfg.cycleH, isFinite(fillCycleH) ? fillCycleH : Infinity);
+    const roiHr = (roi/effCycleH)*conf;
     const gpPerMil = roiHr*1e6;   // gp/hour earned per 1m deployed
-    const cycleProfit = margin*qty, gph = cycleProfit/cfg.cycleH;
+    const cycleProfit = margin*qty, gph = cycleProfit/effCycleH;
 
     out.push({ id, name:meta.name, members:meta.members, exempt:meta.exempt,
       buy, sell, tax:saleTax(sell,meta.exempt), margin, instant, hourly, roi,
       limit, through, quantity:qty, capital:qty*buy, cycleProfit,
       gph, expGph:gph*conf, roiHr, gpPerMil, confidence:conf, fresh, volS, stab, trendPen,
       bidComp, askComp, marginComp, checkCost, tkB, tkS,
-      sellersHr, buyersHr, fillBuyMin, fillSellMin, bottleneck, flowSkew,
+      sellersHr, buyersHr, fillBuyMin, fillSellMin, fillHours:effCycleH, bottleneck, flowSkew,
       trend1h, trend24, activity, flowFcast, slipObs, limitResetAt, buy_limit_total:meta.limit,
       limitShared: !!(ls && ls.shared),
       age, vol1, vol24, vol5: w5?Math.min(w5.highPriceVolume||0,w5.lowPriceVolume||0):0,
