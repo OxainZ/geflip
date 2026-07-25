@@ -104,6 +104,20 @@ def main():
             print(f"[enrich]   {done}/{len(ids)} (failed {failed})")
         time.sleep(DELAY_S)
 
+    # SANITY FLOOR: never let an API outage overwrite a good trends.json with a near-empty
+    # one. If we got far fewer items than the existing file, abort WITHOUT writing (nonzero
+    # exit fails the Action) so the last good data stays committed.
+    prev_count = 0
+    if OUT.is_file():
+        try:
+            prev_count = len(json.loads(OUT.read_text()).get("items", {}))
+        except Exception:
+            prev_count = 0
+    if prev_count and len(items) < 0.8 * prev_count:
+        print(f"[enrich] ABORT: only {len(items)} items vs {prev_count} previously "
+              f"({failed} fetch failures) — refusing to overwrite good data")
+        return 1
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
     payload = {"generated": int(time.time()), "timestep": "24h",
                "universe": len(items), "note": "30/90/180d trend (fractional) + "

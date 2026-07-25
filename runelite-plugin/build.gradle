@@ -14,7 +14,9 @@ repositories {
     mavenCentral()
 }
 
-def runeLiteVersion = 'latest.release'
+// Pin an explicit client version — 'latest.release' made builds non-reproducible and let
+// an upstream release silently change the artifact. Bump this deliberately when needed.
+def runeLiteVersion = '1.12.33'
 
 dependencies {
     compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion

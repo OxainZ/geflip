@@ -118,7 +118,11 @@ class GeflipPanel extends PluginPanel
 			: o.stale ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.LIGHT_GRAY_COLOR);
 		r.setHorizontalAlignment(JLabel.RIGHT);
 		r.setFont(FontManager.getRunescapeSmallFont());
-		if (o.stale) l.setToolTipText("Unfilled for ~" + (o.ageSec / 3600) + "h — the price likely moved. Reprice it.");
+		if (o.stale)
+		{
+			String age = o.ageSec >= 3600 ? "~" + (o.ageSec / 3600) + "h" : "~" + Math.max(1, o.ageSec / 60) + "m";
+			l.setToolTipText("Unfilled for " + age + " — the price likely moved. Reprice it.");
+		}
 		p.add(l, BorderLayout.CENTER);
 		p.add(r, BorderLayout.EAST);
 		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));

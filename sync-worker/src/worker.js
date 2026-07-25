@@ -34,10 +34,18 @@ export default {
 			return json(v || '{}');
 		}
 		if (request.method === 'PUT' || request.method === 'POST') {
+			// reject oversized bodies BEFORE buffering them (Content-Length guard = DoS floor)
+			const clen = Number(request.headers.get('content-length') || 0);
+			if (clen > 1_000_000) return json({ error: 'blob too large (>1MB)' }, 413);
 			const body = await request.text();
 			if (body.length > 1_000_000) return json({ error: 'blob too large (>1MB)' }, 413);
 			let posted;
 			try { posted = JSON.parse(body); } catch (e) { return json({ error: 'body must be JSON' }, 400); }
+			// must be a plain object — a JSON array/string/number spread would corrupt the
+			// shared blob into {0:..,1:..} and mangle both writers' state.
+			if (typeof posted !== 'object' || posted === null || Array.isArray(posted)) {
+				return json({ error: 'body must be a JSON object' }, 400);
+			}
 			// SHALLOW-MERGE into the existing blob so the two writers don't clobber each
 			// other: the web app owns `config`, the plugin owns `fills`/`session`. Each
 			// PUTs only its slice; the other's keys survive.

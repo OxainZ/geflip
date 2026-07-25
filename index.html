@@ -750,6 +750,9 @@ function observedSlippage(cands, minVol=50){
 
 function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
   const rej = {}; const R = r => rej[r]=(rej[r]||0)+1;
+  // defend the divisor: a tampered/imported config with cycleH<=0 would make every gph
+  // Infinity and float junk rows to the top. Clamp to a sane floor for this run.
+  cfg = {...cfg, cycleH: Math.max(0.1, Number(cfg.cycleH)||4)};
   const natP = latest[NATURE_RUNE]?.high ?? null;
   const perItemCap = Math.floor(cfg.bankroll * cfg.maxFrac);
   const out = [];
@@ -2334,6 +2337,7 @@ async function cloudPull(){
     if (blob && Array.isArray(blob.fills)) LIVE_FILLS = blob.fills;  // real fills (plugin-sourced)
     if (blob && blob.config && blob.updated && blob.updated > (CFG._cloudSeen||0)){
       CFG = {...CFG, ...blob.config}; CFG._cloudSeen = blob.updated; cfgToForm();
+      await store.set('settings', CFG);   // persist pulled config so it survives reload
     }
     cloudStatus('<span class="live">● synced</span> · '+((blob.fills||[]).length)+' fills');
     renderLive(blob.session, blob.fills, 'cloud', blob.offers);
@@ -2344,7 +2348,10 @@ async function cloudPush(){
   if (!cloudReady()) return;
   try{
     const {cloudUrl, cloudId, _cloudSeen, ...cfg} = CFG;   // never sync the id/markers
-    const body = JSON.stringify({v:1, config:cfg, fills:LIVE_FILLS||[], updated:Math.floor(Date.now()/1000)});
+    // Push CONFIG ONLY. Fills/offers/session are owned by the plugin; the Worker shallow-
+    // merges, so omitting them preserves the plugin's newer data instead of clobbering it
+    // with a stale LIVE_FILLS snapshot (last-writer-wins race).
+    const body = JSON.stringify({v:1, config:cfg, updated:Math.floor(Date.now()/1000)});
     const r = await fetch(cloudUrl + '/?id=' + encodeURIComponent(cloudId), {method:'PUT', body});
     cloudStatus(r.ok ? '<span class="live">● pushed</span>' : '<span class="warn">push failed ('+r.status+')</span>');
   }catch(e){ cloudStatus('<span class="warn">offline</span>'); }
@@ -2366,24 +2373,28 @@ function renderLive(session, fills, source, offers){
   const nameOf = id => (MAPPING && MAPPING.get && MAPPING.get(+id)?.name) || ('#'+id);
   // Your live open GE offers (what you're buying/selling right now, with fill progress)
   const liveOffers = O.map(o=>{
+    // coerce every plugin-sourced number — this data can arrive from the shared cloud
+    // blob, so treat it as untrusted (a string here would be an innerHTML injection).
+    const sold = Number(o.qtySold)||0, tot = Number(o.qtyTotal)||0, age = Number(o.ageSec)||0;
     const buy = (o.state||'').includes('BUY');
     const done = o.state==='BOUGHT' || o.state==='SOLD';
     const stale = !!o.stale;
-    const pct = o.qtyTotal>0 ? Math.round(100*o.qtySold/o.qtyTotal) : 0;
+    const pct = tot>0 ? Math.min(100, Math.max(0, Math.round(100*sold/tot))) : 0;
     const mark = stale ? '⚠' : (buy?'▼':'▲');
     const bar = done ? '#3fb950' : stale ? '#e5534b' : (buy?'#d29922':'#58a6ff');
-    return `<div style="display:flex;gap:6px;font-size:11px;line-height:1.7;align-items:center"${stale?' title="unfilled for ~'+Math.floor((o.ageSec||0)/3600)+'h — reprice it"':''}>
-      <span style="flex:1${stale?';color:#e5534b':''}">${mark} ${esc(o.name||nameOf(o.id))} <span style="color:var(--faint)">@${gpTxt(o.price||0)}</span></span>
+    const ageTxt = age>=3600 ? '~'+Math.floor(age/3600)+'h' : '~'+Math.max(1,Math.round(age/60))+'m';
+    return `<div style="display:flex;gap:6px;font-size:11px;line-height:1.7;align-items:center"${stale?' title="unfilled for '+ageTxt+' — reprice it"':''}>
+      <span style="flex:1${stale?';color:#e5534b':''}">${mark} ${esc(o.name||nameOf(o.id))} <span style="color:var(--faint)">@${gpTxt(Number(o.price)||0)}</span></span>
       <span style="width:56px;height:5px;background:#2a2f3a;border-radius:3px;overflow:hidden">
         <span style="display:block;height:100%;width:${pct}%;background:${bar}"></span></span>
-      <span class="${done?'pos':''}"${stale?' style="color:#e5534b"':''}>${stale?'stale':o.qtySold+'/'+o.qtyTotal}</span></div>`;
+      <span class="${done?'pos':''}"${stale?' style="color:#e5534b"':''}>${stale?'stale':sold+'/'+tot}</span></div>`;
   }).join('');
   const recent = F.slice(-6).reverse().map(f=>{
     const sell = f.side==='SELL';
     return `<div style="display:flex;gap:6px;font-size:11px;line-height:1.7">
       <span style="flex:1">${esc(nameOf(f.id))}</span>
       <span class="${sell?'pos':'warn'}">${sell?'sold':'bought'}</span>
-      <span>${gpTxt(f.price||0)} ×${f.qty||0}</span></div>`;
+      <span>${gpTxt(Number(f.price)||0)} ×${Number(f.qty)||0}</span></div>`;
   }).join('');
   const held = s.deployed||0, kept = s.kept||0;
   el.innerHTML = `<h3>● Live from RuneLite <span style="font-weight:400;color:var(--faint);font-size:10px">${source||''}</span></h3>
@@ -2405,7 +2416,10 @@ function renderLive(session, fills, source, offers){
   cfgToForm(); await renderBook(); renderNext();
   status('ready');
   bridgeInit();          // light up RuneLite sync if we're served by the bridge
-  if (cloudReady()){ cloudStatus('pulling…'); cloudPull(); } else cloudStatus('not configured');
+  if (cloudReady()){
+    cloudStatus('pulling…'); cloudPull();
+    setInterval(()=>{ if (cloudReady() && !BRIDGE) cloudPull(); }, 12000);  // keep the phone live
+  } else cloudStatus('not configured');
 })();
 </script>
 </body>

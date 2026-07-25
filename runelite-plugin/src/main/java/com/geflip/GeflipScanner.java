@@ -29,9 +29,9 @@ class GeflipScanner
 	private static final String UA = "geflip-runelite (github.com/OxainZ/geflip)";
 	private static final int TAX_CAP = 5_000_000;
 
-	/** Item metadata from /mapping, cached for the session. */
-	private Map<Integer, Meta> mapping;
-	private long mappingAt = 0;
+	/** Item metadata from /mapping, cached for the session (read cross-thread → volatile). */
+	private volatile Map<Integer, Meta> mapping;
+	private volatile long mappingAt = 0;
 
 	static final class Meta
 	{
@@ -162,8 +162,15 @@ class GeflipScanner
 			if (q.get("high").isJsonNull() || q.get("low").isJsonNull()) continue;
 			int hi = q.get("high").getAsInt(), lo = q.get("low").getAsInt();
 			if (lo <= 0) continue;
-			long age = q.has("lowTime") && !q.get("lowTime").isJsonNull()
-				? now - Math.min(q.get("highTime").getAsLong(), q.get("lowTime").getAsLong()) : 0;
+			// newest quote timestamp — guard BOTH times (either can be json-null)
+			boolean hasHi = q.has("highTime") && !q.get("highTime").isJsonNull();
+			boolean hasLo = q.has("lowTime") && !q.get("lowTime").isJsonNull();
+			long newest;
+			if (hasHi && hasLo) newest = Math.min(q.get("highTime").getAsLong(), q.get("lowTime").getAsLong());
+			else if (hasHi) newest = q.get("highTime").getAsLong();
+			else if (hasLo) newest = q.get("lowTime").getAsLong();
+			else newest = now;
+			long age = now - newest;
 			if (age > 3600) continue;
 
 			int instant = netMargin(lo, hi, meta.exempt);

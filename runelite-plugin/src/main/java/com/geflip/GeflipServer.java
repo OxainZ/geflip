@@ -26,16 +26,25 @@ import java.util.function.Supplier;
  * Bound to all interfaces so your PHONE on the same wifi can open http://<pc-ip>:port.
  * A token (in the plugin config) gates it so nobody else on the wifi can read your book.
  * READ-ONLY toward the game: it exposes data, it never drives the client.
+ *
+ * Security: NO CORS header is sent — the API is same-origin with the UI it serves, so
+ * only the bridge's own page can read it; a random website you visit cannot fetch your
+ * LAN IP and steal your book (the old wildcard CORS allowed exactly that). The token is
+ * parsed from the `t` query param and compared in constant time. Request bodies are capped.
  */
 class GeflipServer
 {
+	private static final String UI_URL = "https://oxainz.github.io/geflip/index.html";
+	private static final int BODY_CAP = 1_000_000;   // 1 MB — refuse larger bodies (OOM guard)
+
 	private final HttpServer http;
+	private final java.util.concurrent.ExecutorService pool = Executors.newFixedThreadPool(2);
 	private final String token;
 	private final Gson gson = new Gson();
 
 	private volatile Supplier<Object> stateSupplier = () -> new Object();
 	private volatile Consumer<String> onPost = s -> {};
-	private volatile String ui = null;   // cached web UI, fetched on start
+	private volatile String ui = null;   // cached web UI, fetched lazily on first request
 
 	GeflipServer(int port, String token) throws IOException
 	{
@@ -44,40 +53,49 @@ class GeflipServer
 		http.createContext("/api/ping", this::ping);
 		http.createContext("/api/state", this::state);
 		http.createContext("/", this::root);
-		http.setExecutor(Executors.newFixedThreadPool(2));
+		http.setExecutor(pool);
 	}
 
 	GeflipServer withState(Supplier<Object> s) { this.stateSupplier = s; return this; }
 	GeflipServer onConfigPost(Consumer<String> c) { this.onPost = c; return this; }
 
-	void start()
-	{
-		// Serve the LATEST hosted UI over http locally so it never drifts from the site
-		// and same-origin sync just works. Fallback to a stub if offline.
-		try { ui = fetch("https://oxainz.github.io/geflip/index.html"); }
-		catch (Exception e) { ui = null; }
-		http.start();
-	}
+	// start() must NOT block: it's called from the client thread. The UI is fetched lazily
+	// on the first HTTP request (on a pool thread), never on the game thread.
+	void start() { http.start(); }
 
-	void stop() { http.stop(0); }
+	void stop() { http.stop(0); pool.shutdownNow(); }
 
 	private boolean authed(HttpExchange ex)
 	{
 		if (token.isEmpty()) return true;
-		String q = ex.getRequestURI().getQuery();
-		return q != null && q.contains("t=" + token);
+		String t = param(ex.getRequestURI().getQuery(), "t");
+		return t != null && java.security.MessageDigest.isEqual(
+			t.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8));
+	}
+
+	/** Value of a single query param, URL-decoded (null if absent). */
+	private static String param(String query, String key)
+	{
+		if (query == null) return null;
+		for (String p : query.split("&"))
+		{
+			int i = p.indexOf('=');
+			if (i > 0 && p.substring(0, i).equals(key))
+			{
+				try { return java.net.URLDecoder.decode(p.substring(i + 1), "UTF-8"); }
+				catch (Exception e) { return p.substring(i + 1); }
+			}
+		}
+		return null;
 	}
 
 	private void ping(HttpExchange ex) throws IOException
 	{
-		cors(ex);
 		respond(ex, 200, "{\"ok\":true,\"app\":\"geflip-bridge\",\"needsToken\":" + (!token.isEmpty()) + "}");
 	}
 
 	private void state(HttpExchange ex) throws IOException
 	{
-		cors(ex);
-		if (ex.getRequestMethod().equalsIgnoreCase("OPTIONS")) { respond(ex, 204, ""); return; }
 		if (!authed(ex)) { respond(ex, 401, "{\"ok\":false,\"error\":\"token\"}"); return; }
 		if (ex.getRequestMethod().equalsIgnoreCase("POST"))
 		{
@@ -91,18 +109,13 @@ class GeflipServer
 
 	private void root(HttpExchange ex) throws IOException
 	{
+		if (ui == null) { try { ui = fetch(UI_URL); } catch (Exception ignored) { /* retry next request */ } }
 		if (ui != null) respondHtml(ex, ui);
 		else respondHtml(ex, "<h3>geflip bridge is up</h3><p>Could not fetch the UI (offline?). "
 			+ "The API still works at <code>/api/state</code>.</p>");
 	}
 
 	// --- helpers ---------------------------------------------------------
-	private static void cors(HttpExchange ex)
-	{
-		ex.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-		ex.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-		ex.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
-	}
 	private static void respond(HttpExchange ex, int code, String json) throws IOException
 	{
 		byte[] b = json.getBytes(StandardCharsets.UTF_8);
@@ -120,8 +133,13 @@ class GeflipServer
 	private static String read(InputStream in) throws IOException
 	{
 		ByteArrayOutputStream bo = new ByteArrayOutputStream();
-		byte[] buf = new byte[4096]; int n;
-		while ((n = in.read(buf)) != -1) bo.write(buf, 0, n);
+		byte[] buf = new byte[4096]; int n, total = 0;
+		while ((n = in.read(buf)) != -1)
+		{
+			total += n;
+			if (total > BODY_CAP) throw new IOException("request body too large");
+			bo.write(buf, 0, n);
+		}
 		return bo.toString("UTF-8");
 	}
 	private static String fetch(String url) throws IOException
