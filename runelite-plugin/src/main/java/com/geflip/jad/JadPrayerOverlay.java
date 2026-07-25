@@ -53,15 +53,24 @@ public class JadPrayerOverlay extends Overlay
 		for (NPC h : plugin.healerNpcs()) drawHealer(g, h);
 
 		JadPrayerPlugin.Attack a = plugin.attack;
-		// test mode: no live Jad → draw a sample centre-screen so you can confirm it works
+		int s = Math.max(1, config.scale());
+
+		// TEST: no live Jad → preview the sprite over the NEAREST MONSTER'S head (never on
+		// you / never centre-screen), so you see exactly how it'll look mounted on Jad.
 		if (a == null && config.testShow())
 		{
-			int s = Math.max(1, config.scale());
 			int w = (plugin.mageSprite != null ? plugin.mageSprite.getWidth() : 34) * s;
 			int h = (plugin.mageSprite != null ? plugin.mageSprite.getHeight() : 34) * s;
-			int cx = client.getViewportXOffset() + client.getViewportWidth() / 2 - w / 2;
-			int cy = client.getViewportYOffset() + client.getViewportHeight() / 2 - h / 2;
-			drawBadge(g, plugin.mageSprite, "PRAY MAGE (test)", MAGE_COL, cx, cy, w, h);
+			NPC target = nearestNpc();
+			if (target != null) drawOverHead(g, target, plugin.mageSprite, MAGE_COL, "PRAY MAGE", w, h, -1);
+			else
+			{
+				// no monster around — just a tiny "armed" note so you know it loaded
+				int x = client.getViewportXOffset() + 8, y = client.getViewportYOffset() + 20;
+				g.setFont(g.getFont().deriveFont(Font.BOLD, 14f));
+				g.setColor(Color.BLACK); g.drawString("Jad Prayer Helper: armed (no target)", x + 1, y + 1);
+				g.setColor(Color.WHITE); g.drawString("Jad Prayer Helper: armed (no target)", x, y);
+			}
 			return null;
 		}
 		if (a == null) return null;
@@ -70,36 +79,13 @@ public class JadPrayerOverlay extends Overlay
 		BufferedImage icon = mage ? plugin.mageSprite : plugin.rangeSprite;
 		Color col = mage ? MAGE_COL : RANGE_COL;
 		String label = mage ? "PRAY MAGE" : "PRAY RANGE";
-		int s = Math.max(1, config.scale());
 		int w = (icon != null ? icon.getWidth() : 34) * s;
 		int h = (icon != null ? icon.getHeight() : 34) * s;
 		int ticks = plugin.ticksToHit();   // -1 if none in flight
 
-		// 2) PRIMARY: the actual protection-prayer SPRITE above Jad's head — just the icon,
-		// no coloured box or label. The sprite changing (magic <-> missiles) is the signal.
+		// PRIMARY: the actual protection-prayer sprite ONLY over Jad's head — never on you.
 		if (config.overHead() && plugin.activeJad != null)
-		{
-			NPC jad = plugin.activeJad;
-			LocalPoint lp = jad.getLocalLocation();
-			if (lp != null)
-			{
-				net.runelite.api.Point p = Perspective.localToCanvas(
-					client, lp, client.getPlane(), jad.getLogicalHeight() + 60);
-				if (p != null)
-				{
-					int x = p.getX() - w / 2, y = p.getY() - h;
-					if (icon != null)
-					{
-						// soft black drop-shadow so the icon reads on any background
-						g.setColor(new Color(0, 0, 0, 120));
-						g.fillOval(x - 3, y - 3, w + 6, h + 6);
-						g.drawImage(icon, x, y, w, h, null);
-					}
-					else drawBadge(g, icon, label, col, x, y, w, h);   // fallback if sprite not loaded yet
-					if (ticks >= 0) drawTicks(g, ticks, Color.WHITE, x + w / 2, y - 8);
-				}
-			}
-		}
+			drawOverHead(g, plugin.activeJad, icon, col, label, w, h, ticks);
 
 		// optional secondary centre-screen indicator (off by default)
 		if (config.center())
@@ -110,6 +96,43 @@ public class JadPrayerOverlay extends Overlay
 			if (ticks >= 0) drawTicks(g, ticks, col, cx + w / 2, cy - 8);
 		}
 		return null;
+	}
+
+	/** Draw just the prayer sprite above an NPC's head (drop-shadow + white tick countdown). */
+	private void drawOverHead(Graphics2D g, NPC npc, BufferedImage icon, Color fallbackCol,
+		String fallbackLabel, int w, int h, int ticks)
+	{
+		LocalPoint lp = npc.getLocalLocation();
+		if (lp == null) return;
+		net.runelite.api.Point p = Perspective.localToCanvas(
+			client, lp, client.getPlane(), npc.getLogicalHeight() + 60);
+		if (p == null) return;
+		int x = p.getX() - w / 2, y = p.getY() - h;
+		if (icon != null)
+		{
+			g.setColor(new Color(0, 0, 0, 120));   // soft shadow so it reads on any background
+			g.fillOval(x - 3, y - 3, w + 6, h + 6);
+			g.drawImage(icon, x, y, w, h, null);
+		}
+		else drawBadge(g, icon, fallbackLabel, fallbackCol, x, y, w, h);   // fallback if sprite not loaded
+		if (ticks >= 0) drawTicks(g, ticks, Color.WHITE, x + w / 2, y - 8);
+	}
+
+	/** Nearest NPC to you — used only to preview the indicator in test mode. */
+	private NPC nearestNpc()
+	{
+		net.runelite.api.Player me = client.getLocalPlayer();
+		if (me == null || me.getLocalLocation() == null) return null;
+		LocalPoint ml = me.getLocalLocation();
+		NPC best = null;
+		int bestD = Integer.MAX_VALUE;
+		for (NPC n : client.getNpcs())
+		{
+			if (n == null || n.getLocalLocation() == null) continue;
+			int d = ml.distanceTo(n.getLocalLocation());
+			if (d < bestD) { bestD = d; best = n; }
+		}
+		return best;
 	}
 
 	/** Outline a healer (magenta hull + "HEAL" tag) so you can find and re-aggro them. */
