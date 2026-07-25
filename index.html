@@ -2382,8 +2382,9 @@ function renderLive(session, fills, source, offers){
       <span class="${sell?'pos':'warn'}">${sell?'sold':'bought'}</span>
       <span>${gpTxt(f.price||0)} ×${f.qty||0}</span></div>`;
   }).join('');
+  const held = s.deployed||0, kept = s.kept||0;
   el.innerHTML = `<h3>● Live from RuneLite <span style="font-weight:400;color:var(--faint);font-size:10px">${source||''}</span></h3>
-    <div style="font-size:12px;margin-bottom:6px">realized ${gpHtml(s.realized||0)} · deployed ${gpTxt(s.deployed||0)} · ${F.length} fills</div>
+    <div style="font-size:12px;margin-bottom:6px">flip ${gpHtml(s.realized||0)}${held?' · held '+gpTxt(held):''}${kept?' · kept '+gpTxt(kept):''} · ${F.length} fills</div>
     ${O.length ? '<div style="font-size:10px;color:var(--faint);margin:4px 0 2px;letter-spacing:.04em">YOUR GE ('+O.length+')</div>'+liveOffers : ''}
     ${F.length ? '<div style="font-size:10px;color:var(--faint);margin:6px 0 2px;letter-spacing:.04em">RECENT FILLS</div>'+recent : (O.length? '' : '<div class="hint" style="margin:0">no fills yet — flip something in-game and it shows here</div>')}`;
   el.style.display = '';

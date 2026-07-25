@@ -63,10 +63,20 @@ class GeflipPanel extends PluginPanel
 
 	void setStatus(String s) { SwingUtilities.invokeLater(() -> status.setText(s)); }
 
-	void setSession(long realized, long spent)
+	void setSession(GeflipLedger l)
 	{
 		SwingUtilities.invokeLater(() ->
-			session.setText("session: " + gp(realized) + " realized · " + gp(spent) + " deployed"));
+		{
+			String txt = "flip " + gp(l.realizedFlip);
+			if (l.openUnits > 0) txt += " · held " + gp(l.inventoryCost);
+			if (l.keptNet != 0) txt += " · kept " + gp(l.keptNet);
+			session.setText(txt);
+			session.setForeground(l.realizedFlip >= 0
+				? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.PROGRESS_ERROR_COLOR);
+			session.setToolTipText("flip = profit from matched buy→sell round-trips (net of tax)   ·   "
+				+ "held = cost of bought-but-unsold flip items   ·   "
+				+ "kept = net spent on your \"not a flip\" items");
+		});
 	}
 
 	/** Render your live open GE offers (buying/selling with fill progress). */

@@ -40,15 +40,20 @@ public class GeflipPlugin extends Plugin
 	private NavigationButton navButton;
 	private ScheduledFuture<?> refresh;
 
-	// running session totals from real fills
-	private long realizedProfit = 0;
-	private long spentBuying = 0;
+	// honest flip P&L: recomputed by matching buys->sells (never a drifting running total)
+	private volatile GeflipLedger ledger = new GeflipLedger();
+	// persisted fill log, so history survives restarts and accumulates across sessions
+	private final java.io.File fillsFile =
+		new java.io.File(net.runelite.client.RuneLite.RUNELITE_DIR, "geflip/fills.json");
 
 	// local bridge: serves the UI + these live fills to the web app on your network
 	private GeflipServer bridge;
 	private final java.util.List<Fill> fills = new java.util.concurrent.CopyOnWriteArrayList<>();
 	// the 8 GE slots as the client last reported them — your live open offers
 	private final GrandExchangeOffer[] slots = new GrandExchangeOffer[8];
+	// last completed-offer signature per slot, so a login-replayed BOUGHT/SOLD isn't
+	// logged twice; cleared when the slot empties. Persisted with the fills.
+	private final String[] slotSig = new String[8];
 	// the last ranked flips, shared so the web app/phone shows exactly what the panel shows
 	private volatile java.util.List<GeflipScanner.Flip> lastFlips = java.util.Collections.emptyList();
 
@@ -59,7 +64,12 @@ public class GeflipPlugin extends Plugin
 		Fill(int id, String side, int price, int qty, int tax, long ts)
 		{ this.id = id; this.side = side; this.price = price; this.qty = qty; this.tax = tax; this.ts = ts; }
 	}
-	static final class Session { final long realized, deployed; Session(long r, long d) { realized = r; deployed = d; } }
+	static final class Session
+	{
+		final long realized, deployed, kept; final int flips, held;
+		Session(long realized, long deployed, long kept, int flips, int held)
+		{ this.realized = realized; this.deployed = deployed; this.kept = kept; this.flips = flips; this.held = held; }
+	}
 
 	/** One live GE slot (an open/finished offer). Progress = qtySold / qtyTotal. */
 	static final class Offer
@@ -76,6 +86,65 @@ public class GeflipPlugin extends Plugin
 		final boolean ok = true; final long ts = System.currentTimeMillis() / 1000;
 		Session session; java.util.List<Fill> fills; java.util.List<GeflipScanner.Flip> flips;
 		java.util.List<Offer> offers;
+	}
+
+	/** Lower-cased set of the "not a flip" item names from config. */
+	private java.util.Set<String> excludeLowered()
+	{
+		java.util.Set<String> out = new java.util.HashSet<>();
+		String s = config.excludeItems();
+		if (s != null)
+			for (String part : s.split(","))
+			{
+				String t = part.trim().toLowerCase();
+				if (!t.isEmpty()) out.add(t);
+			}
+		return out;
+	}
+
+	/** Rebuild the flip ledger from the raw fills + current exclude list, and refresh the panel. */
+	private void recompute()
+	{
+		java.util.Set<Integer> excluded = scanner.idsForNames(excludeLowered());
+		ledger = GeflipLedger.compute(fills, excluded);
+		if (panel != null) panel.setSession(ledger);
+	}
+
+	/** On-disk shape: the fill log plus the per-slot dedup markers. */
+	private static final class Persist { java.util.List<Fill> fills; String[] slotSig; }
+
+	private void loadFills()
+	{
+		try
+		{
+			if (!fillsFile.isFile()) return;
+			String json = new String(java.nio.file.Files.readAllBytes(fillsFile.toPath()),
+				java.nio.charset.StandardCharsets.UTF_8);
+			Persist p = new com.google.gson.Gson().fromJson(json, Persist.class);
+			if (p == null) return;
+			if (p.fills != null) for (Fill f : p.fills) if (f != null) fills.add(f);
+			if (p.slotSig != null)
+				for (int i = 0; i < slotSig.length && i < p.slotSig.length; i++) slotSig[i] = p.slotSig[i];
+		}
+		catch (Exception e) { log.debug("geflip: could not load fills history", e); }
+	}
+
+	private void saveFills()
+	{
+		try
+		{
+			java.io.File dir = fillsFile.getParentFile();
+			if (dir != null && !dir.isDirectory()) dir.mkdirs();
+			Persist p = new Persist();
+			// keep the log bounded — the most recent 3000 fills
+			p.fills = fills.size() > 3000
+				? new java.util.ArrayList<>(fills.subList(fills.size() - 3000, fills.size()))
+				: new java.util.ArrayList<>(fills);
+			p.slotSig = slotSig;
+			java.nio.file.Files.write(fillsFile.toPath(),
+				new com.google.gson.Gson().toJson(p).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		}
+		catch (Exception e) { log.debug("geflip: could not save fills history", e); }
 	}
 
 	/** Snapshot the 8 GE slots into DTOs, skipping empty ones and naming each item. */
@@ -99,7 +168,8 @@ public class GeflipPlugin extends Plugin
 	private State buildState()
 	{
 		State s = new State();
-		s.session = new Session(realizedProfit, spentBuying);
+		GeflipLedger l = ledger;
+		s.session = new Session(l.realizedFlip, l.inventoryCost, l.keptNet, l.matchedUnits, l.openUnits);
 		s.fills = fills;
 		s.flips = lastFlips;      // the phone/web shows the same ranked flips the panel does
 		s.offers = buildOffers(); // ...and your live open GE offers
@@ -121,9 +191,13 @@ public class GeflipPlugin extends Plugin
 			o.add("fills", new com.google.gson.Gson().toJsonTree(fills));
 			o.add("flips", new com.google.gson.Gson().toJsonTree(lastFlips));
 			o.add("offers", new com.google.gson.Gson().toJsonTree(buildOffers()));
+			GeflipLedger l = ledger;
 			com.google.gson.JsonObject sess = new com.google.gson.JsonObject();
-			sess.addProperty("realized", realizedProfit);
-			sess.addProperty("deployed", spentBuying);
+			sess.addProperty("realized", l.realizedFlip);
+			sess.addProperty("deployed", l.inventoryCost);
+			sess.addProperty("kept", l.keptNet);
+			sess.addProperty("flips", l.matchedUnits);
+			sess.addProperty("held", l.openUnits);
 			o.add("session", sess);
 			o.addProperty("updated", System.currentTimeMillis() / 1000);
 			byte[] body = o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -162,6 +236,8 @@ public class GeflipPlugin extends Plugin
 			.panel(panel)
 			.build();
 		clientToolbar.addNavigation(navButton);
+		loadFills();     // restore the persisted fill history
+		recompute();     // show flip P&L from it immediately (reflows once mapping loads)
 		scheduleRefresh();
 		triggerScan();
 
@@ -208,6 +284,7 @@ public class GeflipPlugin extends Plugin
 				lastFlips = flips;                       // share with the bridge/cloud
 				panel.setFlips(flips);
 				panel.setStatus(flips.size() + " flips · " + timeNow());
+				recompute();   // mapping is loaded now → exclude list resolves, P&L reflows
 			}
 			catch (Exception e)
 			{
@@ -228,31 +305,46 @@ public class GeflipPlugin extends Plugin
 	{
 		GrandExchangeOffer o = ev.getOffer();
 		if (o == null) return;
+		int slot = ev.getSlot();
 		// mirror EVERY slot change so the panel/web knows your live open offers, not just fills
-		if (ev.getSlot() >= 0 && ev.getSlot() < slots.length) slots[ev.getSlot()] = o;
+		if (slot >= 0 && slot < slots.length) slots[slot] = o;
 		if (panel != null) panel.setOffers(buildOffers());
+
 		GrandExchangeOfferState st = o.getState();
+		// a freed slot (collected/cancelled/empty) clears its dedup marker so the NEXT
+		// offer in that slot is recorded even if it looks identical to the last one
+		if (slot >= 0 && slot < slotSig.length
+			&& st != GrandExchangeOfferState.BOUGHT && st != GrandExchangeOfferState.SOLD)
+		{
+			slotSig[slot] = null;
+		}
 		if (st != GrandExchangeOfferState.BOUGHT && st != GrandExchangeOfferState.SOLD) return;
 
 		long spent = o.getSpent();          // gp moved so far on this offer
 		int qty = o.getQuantitySold();      // filled units
 		int unit = qty > 0 ? (int) (spent / qty) : o.getPrice();
-		long now = System.currentTimeMillis() / 1000;
 
+		// dedup: a completed offer re-fires with identical numbers on login replay
+		String sig = st.name() + ":" + o.getItemId() + ":" + qty + ":" + spent;
+		if (slot >= 0 && slot < slotSig.length)
+		{
+			if (sig.equals(slotSig[slot])) return;   // already recorded this completion
+			slotSig[slot] = sig;
+		}
+
+		long now = System.currentTimeMillis() / 1000;
 		if (st == GrandExchangeOfferState.BOUGHT)
 		{
-			spentBuying += spent;
-			realizedProfit -= spent;
 			fills.add(new Fill(o.getItemId(), "BUY", unit, qty, 0, now));
 		}
-		else // SOLD — subtract the 2% tax the GE takes on the sale
+		else // SOLD — record the 2% tax the GE takes on the sale
 		{
 			int tax = GeflipScanner.saleTax(unit, false) * qty;
-			realizedProfit += (spent - tax);
 			fills.add(new Fill(o.getItemId(), "SELL", unit, qty, tax, now));
 		}
-		if (fills.size() > 500) fills.remove(0);   // keep it bounded
-		if (panel != null) panel.setSession(realizedProfit, spentBuying);
+		if (fills.size() > 3000) fills.remove(0);   // keep it bounded
+		saveFills();     // persist history across restarts
+		recompute();     // rematch buys->sells → honest flip P&L
 	}
 
 	private static String timeNow()

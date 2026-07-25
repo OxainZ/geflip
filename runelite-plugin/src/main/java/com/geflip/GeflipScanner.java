@@ -54,6 +54,16 @@ class GeflipScanner
 		return m != null ? m.name : null;
 	}
 
+	/** Resolve a set of lower-cased item names to their IDs (empty until mapping loads). */
+	java.util.Set<Integer> idsForNames(java.util.Set<String> loweredNames)
+	{
+		java.util.Set<Integer> out = new java.util.HashSet<>();
+		if (mapping == null || loweredNames == null || loweredNames.isEmpty()) return out;
+		for (Meta m : mapping.values())
+			if (loweredNames.contains(m.name.trim().toLowerCase())) out.add(m.id);
+		return out;
+	}
+
 	// --- tax (identical math to the app) -----------------------------------
 	static int saleTax(int sell, boolean exempt)
 	{

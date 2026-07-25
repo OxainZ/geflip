@@ -68,6 +68,16 @@ public interface GeflipConfig extends Config
 	default int refreshSec() { return 120; }
 
 	@ConfigItem(
+		keyName = "excludeItems",
+		name = "Not-a-flip items",
+		description = "Comma-separated item names you BUY to use, not to resell (e.g. "
+			+ "\"Prayer potion(4), Nature rune, Cannonball\"). Their buys are kept out of "
+			+ "your flip P&L so a bulk purchase you need doesn't look like a loss.",
+		position = 8
+	)
+	default String excludeItems() { return ""; }
+
+	@ConfigItem(
 		keyName = "bridgeEnabled",
 		name = "Local bridge (sync)",
 		description = "Serve the geflip web UI + your live fills on your network. Open "
