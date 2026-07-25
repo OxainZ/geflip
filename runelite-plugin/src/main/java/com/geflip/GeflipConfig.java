@@ -93,4 +93,21 @@ public interface GeflipConfig extends Config
 		position = 12
 	)
 	default String bridgeToken() { return ""; }
+
+	@ConfigItem(
+		keyName = "cloudUrl",
+		name = "Cloud sync URL",
+		description = "Your geflip-sync Worker URL (blank = off). Pushes your fills so the "
+			+ "web app syncs anywhere, even on mobile data.",
+		position = 13
+	)
+	default String cloudUrl() { return ""; }
+
+	@ConfigItem(
+		keyName = "cloudId",
+		name = "Cloud sync id",
+		description = "The SAME sync-id you set in the web app. It's the only secret — keep it private.",
+		position = 14
+	)
+	default String cloudId() { return ""; }
 }

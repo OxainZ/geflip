@@ -70,6 +70,42 @@ public class GeflipPlugin extends Plugin
 		return s;
 	}
 
+	/**
+	 * Push our slice (fills + session) to the cloud sync Worker. The Worker shallow-
+	 * merges, so we never clobber the web app's `config`. Best-effort, off the client
+	 * thread (called from the scan executor). READ-ONLY toward the game.
+	 */
+	private void cloudPush()
+	{
+		String url = config.cloudUrl(), id = config.cloudId();
+		if (url == null || url.isEmpty() || id == null || id.length() < 16) return;
+		try
+		{
+			com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+			o.add("fills", new com.google.gson.Gson().toJsonTree(fills));
+			com.google.gson.JsonObject sess = new com.google.gson.JsonObject();
+			sess.addProperty("realized", realizedProfit);
+			sess.addProperty("deployed", spentBuying);
+			o.add("session", sess);
+			o.addProperty("updated", System.currentTimeMillis() / 1000);
+			byte[] body = o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+			String full = url.replaceAll("/+$", "") + "/?id="
+				+ java.net.URLEncoder.encode(id, "UTF-8");
+			java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(full).openConnection();
+			c.setRequestMethod("PUT");
+			c.setDoOutput(true);
+			c.setRequestProperty("Content-Type", "application/json");
+			c.setConnectTimeout(10000);
+			c.setReadTimeout(15000);
+			try (java.io.OutputStream os = c.getOutputStream()) { os.write(body); }
+			int code = c.getResponseCode();
+			c.disconnect();
+			if (code >= 300) log.debug("geflip cloud push http {}", code);
+		}
+		catch (Exception e) { log.debug("geflip cloud push failed", e); }
+	}
+
 	@Provides
 	GeflipConfig provideConfig(net.runelite.client.config.ConfigManager cm)
 	{
@@ -139,6 +175,7 @@ public class GeflipPlugin extends Plugin
 				log.warn("geflip scan failed", e);
 				panel.setStatus("scan failed — check connection");
 			}
+			cloudPush();   // push fills/session to the cloud store (no-op if not configured)
 		});
 	}
 

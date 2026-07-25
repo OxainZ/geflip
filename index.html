@@ -371,6 +371,20 @@
     <p class="hint">Slippage 0 assumes fills at last-traded prices — optimistic. Journal for a few days, hit Verify, then set slippage to about half of (predicted − realized) ROI. Participation caps how much hourly volume you assume you can capture; 10% is a guess until your fills say otherwise.</p>
   </div>
   <div class="scanbar"><button class="primary" id="btnSave">Save config</button></div>
+  <div class="panel"><h3>Cloud sync <span style="font-weight:400;color:var(--faint);font-size:11px">phone, anywhere</span></h3>
+    <p class="hint" style="margin-top:0">Sync your config + fills across devices through a free
+      Cloudflare Worker you deploy once (see <code>sync-worker/README</code>). The <b>sync-id is the
+      only secret</b> — anyone with it can read your book, so keep it private.</p>
+    <div class="dgrid" style="grid-template-columns:1fr;margin-bottom:0">
+      <div><label>Worker URL</label><input id="cfg-cloudurl" placeholder="https://geflip-sync.you.workers.dev" inputmode="url"></div>
+      <div><label>Sync id</label><input id="cfg-cloudid" placeholder="16–64 url-safe chars"></div>
+    </div>
+    <div class="scanbar" style="margin-top:8px">
+      <button class="ghost" id="btnGenId">Generate id</button>
+      <button class="ghost" id="btnCloudSync">Sync now</button>
+    </div>
+    <p class="hint" id="cloudStatus" style="margin-top:6px">not configured</p>
+  </div>
   <div class="panel"><h3>Backup</h3>
     <p class="hint" style="margin-top:0">Your journal and positions live only in this browser.
       Clearing Safari data, private browsing or a new phone loses them, and that history is the
@@ -574,7 +588,8 @@ const DEF_CFG = { bankroll:50_000_000, slots:8, members:true, minVol:20, minVol2
   maxAgeS:3600, minMargin:1, minPrice:1, maxPrice:null, slip:0, part:0.25, maxFrac:0.25,
   lite:false, swingMinPrice:500, swingMinVol24:200, swingDepth:20, swingHoldHours:48,
   swingMinRR:1.0, swingMinProfit:50000, calibratedN:0,
-  horizon:8, journal:true, tauS:1200, volSat:200, haircut:0.5, cycleH:4 };
+  horizon:8, journal:true, tauS:1200, volSat:200, haircut:0.5, cycleH:4,
+  cloudUrl:'', cloudId:'' };
 let CFG = {...DEF_CFG};
 
 const $ = id => document.getElementById(id);
@@ -594,6 +609,8 @@ function cfgToForm(){
   $('cfg-swhold').value = CFG.swingHoldHours;
   $('cfg-swrr').value = CFG.swingMinRR;
   $('cfg-swmin').value = gpTxt(CFG.swingMinProfit);
+  $('cfg-cloudurl').value = CFG.cloudUrl || '';
+  $('cfg-cloudid').value = CFG.cloudId || '';
 }
 function formToCfg(){
   const n=(v,d)=>{const x=parseFloat(v);return Number.isFinite(x)?x:d;};
@@ -619,7 +636,9 @@ function formToCfg(){
     swingDepth: Math.max(1, Math.min(30, n($('cfg-swdepth').value,14)|0)),
     swingHoldHours: Math.max(1, n($('cfg-swhold').value,48)),
     swingMinRR: Math.max(0, n($('cfg-swrr').value,1)),
-    swingMinProfit: Number.isFinite(parseGp($('cfg-swmin').value))?parseGp($('cfg-swmin').value):50000 };
+    swingMinProfit: Number.isFinite(parseGp($('cfg-swmin').value))?parseGp($('cfg-swmin').value):50000,
+    cloudUrl: $('cfg-cloudurl').value.trim().replace(/\/+$/,''),
+    cloudId: $('cfg-cloudid').value.trim() };
 }
 
 /* ---------------------------- fetch ---------------------------- */
@@ -2259,6 +2278,7 @@ $('fileImport').addEventListener('change', async e=>{
 $('btnSave').onclick = async ()=>{
   formToCfg(); await store.set('settings', CFG); cfgToForm();
   $('btnSave').textContent='Saved ✓'; setTimeout(()=>$('btnSave').textContent='Save config',1200);
+  cloudPush();          // config changed — push it to the cloud store if configured
 };
 /* ---------------- local bridge (RuneLite sync) ---------------- *
  * When this page is SERVED BY the plugin's bridge it is same-origin http, so these
@@ -2297,6 +2317,41 @@ async function bridgeInit(){
   setInterval(bridgePoll, 12000);
 }
 
+/* ---------------- cloud sync (Cloudflare Worker) ---------------- *
+ * A free Worker (see sync-worker/) stores one JSON blob per sync-id in KV. This app AND
+ * the RuneLite plugin read/write it over https, so config + fills sync anywhere — phone
+ * on mobile data included. The sync-id is the only secret. Optional; blank = off.     */
+function cloudReady(){ return !!(CFG.cloudUrl && /^[A-Za-z0-9_-]{16,64}$/.test(CFG.cloudId||'')); }
+function cloudStatus(m){ const el=$('cloudStatus'); if(el) el.innerHTML = m; }
+async function cloudPull(){
+  if (!cloudReady()) return null;
+  try{
+    const r = await fetch(CFG.cloudUrl + '/?id=' + encodeURIComponent(CFG.cloudId), {cache:'no-store'});
+    if (!r.ok){ cloudStatus('<span class="warn">pull failed ('+r.status+')</span>'); return null; }
+    const blob = await r.json();
+    if (blob && Array.isArray(blob.fills)) LIVE_FILLS = blob.fills;  // real fills (plugin-sourced)
+    if (blob && blob.config && blob.updated && blob.updated > (CFG._cloudSeen||0)){
+      CFG = {...CFG, ...blob.config}; CFG._cloudSeen = blob.updated; cfgToForm();
+    }
+    cloudStatus('<span class="live">● synced</span> · '+((blob.fills||[]).length)+' fills');
+    return blob;
+  }catch(e){ cloudStatus('<span class="warn">offline</span>'); return null; }
+}
+async function cloudPush(){
+  if (!cloudReady()) return;
+  try{
+    const {cloudUrl, cloudId, _cloudSeen, ...cfg} = CFG;   // never sync the id/markers
+    const body = JSON.stringify({v:1, config:cfg, fills:LIVE_FILLS||[], updated:Math.floor(Date.now()/1000)});
+    const r = await fetch(cloudUrl + '/?id=' + encodeURIComponent(cloudId), {method:'PUT', body});
+    cloudStatus(r.ok ? '<span class="live">● pushed</span>' : '<span class="warn">push failed ('+r.status+')</span>');
+  }catch(e){ cloudStatus('<span class="warn">offline</span>'); }
+}
+$('btnGenId').onclick = ()=>{
+  const a = new Uint8Array(24); crypto.getRandomValues(a);
+  $('cfg-cloudid').value = btoa(String.fromCharCode(...a)).replace(/[+/=]/g,'').slice(0,32);
+};
+$('btnCloudSync').onclick = async ()=>{ formToCfg(); await store.set('settings',CFG); await cloudPush(); await cloudPull(); };
+
 (async function boot(){
   detectBackend();
   $('storeMode').innerHTML = {
@@ -2309,6 +2364,7 @@ async function bridgeInit(){
   cfgToForm(); await renderBook(); renderNext();
   status('ready');
   bridgeInit();          // light up RuneLite sync if we're served by the bridge
+  if (cloudReady()){ cloudStatus('pulling…'); cloudPull(); } else cloudStatus('not configured');
 })();
 </script>
 </body>
