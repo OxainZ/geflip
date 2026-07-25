@@ -2368,12 +2368,15 @@ function renderLive(session, fills, source, offers){
   const liveOffers = O.map(o=>{
     const buy = (o.state||'').includes('BUY');
     const done = o.state==='BOUGHT' || o.state==='SOLD';
+    const stale = !!o.stale;
     const pct = o.qtyTotal>0 ? Math.round(100*o.qtySold/o.qtyTotal) : 0;
-    return `<div style="display:flex;gap:6px;font-size:11px;line-height:1.7;align-items:center">
-      <span style="flex:1">${buy?'▼':'▲'} ${esc(o.name||nameOf(o.id))} <span style="color:var(--faint)">@${gpTxt(o.price||0)}</span></span>
+    const mark = stale ? '⚠' : (buy?'▼':'▲');
+    const bar = done ? '#3fb950' : stale ? '#e5534b' : (buy?'#d29922':'#58a6ff');
+    return `<div style="display:flex;gap:6px;font-size:11px;line-height:1.7;align-items:center"${stale?' title="unfilled for ~'+Math.floor((o.ageSec||0)/3600)+'h — reprice it"':''}>
+      <span style="flex:1${stale?';color:#e5534b':''}">${mark} ${esc(o.name||nameOf(o.id))} <span style="color:var(--faint)">@${gpTxt(o.price||0)}</span></span>
       <span style="width:56px;height:5px;background:#2a2f3a;border-radius:3px;overflow:hidden">
-        <span style="display:block;height:100%;width:${pct}%;background:${done?'var(--pos-c,#3fb950)':(buy?'#d29922':'#58a6ff')}"></span></span>
-      <span class="${done?'pos':''}">${o.qtySold}/${o.qtyTotal}</span></div>`;
+        <span style="display:block;height:100%;width:${pct}%;background:${bar}"></span></span>
+      <span class="${done?'pos':''}"${stale?' style="color:#e5534b"':''}>${stale?'stale':o.qtySold+'/'+o.qtyTotal}</span></div>`;
   }).join('');
   const recent = F.slice(-6).reverse().map(f=>{
     const sell = f.side==='SELL';

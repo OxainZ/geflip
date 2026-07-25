@@ -108,12 +108,17 @@ class GeflipPanel extends PluginPanel
 		boolean done = o.state.equals("BOUGHT") || o.state.equals("SOLD");
 		boolean cancelled = o.state.startsWith("CANCELLED");
 		String nm = o.name != null ? o.name : ("#" + o.id);
-		JLabel l = new JLabel((buy ? "▼ " : "▲ ") + nm + "  @" + gp(o.price));
-		l.setForeground(buy ? ColorScheme.PROGRESS_INPROGRESS_COLOR : ColorScheme.GRAND_EXCHANGE_PRICE);
-		JLabel r = new JLabel(o.qtySold + "/" + o.qtyTotal + (done ? " ✓" : cancelled ? " ✕" : ""));
-		r.setForeground(done ? ColorScheme.PROGRESS_COMPLETE_COLOR : ColorScheme.LIGHT_GRAY_COLOR);
+		JLabel l = new JLabel((o.stale ? "⚠ " : buy ? "▼ " : "▲ ") + nm + "  @" + gp(o.price));
+		l.setForeground(o.stale ? ColorScheme.PROGRESS_ERROR_COLOR
+			: buy ? ColorScheme.PROGRESS_INPROGRESS_COLOR : ColorScheme.GRAND_EXCHANGE_PRICE);
+		String tail = o.qtySold + "/" + o.qtyTotal
+			+ (done ? " ✓" : cancelled ? " ✕" : o.stale ? " stale" : "");
+		JLabel r = new JLabel(tail);
+		r.setForeground(done ? ColorScheme.PROGRESS_COMPLETE_COLOR
+			: o.stale ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.LIGHT_GRAY_COLOR);
 		r.setHorizontalAlignment(JLabel.RIGHT);
 		r.setFont(FontManager.getRunescapeSmallFont());
+		if (o.stale) l.setToolTipText("Unfilled for ~" + (o.ageSec / 3600) + "h — the price likely moved. Reprice it.");
 		p.add(l, BorderLayout.CENTER);
 		p.add(r, BorderLayout.EAST);
 		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));

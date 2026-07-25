@@ -77,6 +77,16 @@ public interface GeflipConfig extends Config
 	)
 	default String excludeItems() { return ""; }
 
+	@Range(min = 1, max = 48)
+	@ConfigItem(
+		keyName = "staleHours",
+		name = "Stale offer (h)",
+		description = "Flag an open buy/sell offer as stale once it's gone this many hours "
+			+ "without filling — a sign the price moved and you should reprice.",
+		position = 9
+	)
+	default int staleHours() { return 4; }
+
 	@ConfigItem(
 		keyName = "bridgeEnabled",
 		name = "Local bridge (sync)",

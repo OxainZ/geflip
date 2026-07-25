@@ -41,9 +41,13 @@ public class JadPrayerOverlay extends Overlay
 		setLayer(OverlayLayer.ABOVE_SCENE);
 	}
 
+	private static final Color HEAL_COL = new Color(0xFF, 0x9A, 0x1F);   // orange
+
 	@Override
 	public Dimension render(Graphics2D g)
 	{
+		if (plugin.healersUp) drawHealerBanner(g);
+
 		JadPrayerPlugin.Attack a = plugin.attack;
 		if (a == null) return null;
 
@@ -53,6 +57,7 @@ public class JadPrayerOverlay extends Overlay
 		String label = mage ? "PRAY MAGE" : "PRAY RANGE";
 		int iw = icon != null ? icon.getWidth() : 34;
 		int ih = icon != null ? icon.getHeight() : 34;
+		int ticks = plugin.ticksToHit();   // -1 if no attack in flight
 
 		if (config.center())
 		{
@@ -61,6 +66,7 @@ public class JadPrayerOverlay extends Overlay
 			int cx = client.getViewportXOffset() + client.getViewportWidth() / 2 - w / 2;
 			int cy = client.getViewportYOffset() + client.getViewportHeight() / 2 - h / 2;
 			drawBadge(g, icon, label, col, cx, cy, w, h);
+			if (ticks >= 0) drawTicks(g, ticks, col, cx + w / 2, cy - 8);
 		}
 
 		if (config.overHead() && plugin.activeJad != null)
@@ -75,6 +81,36 @@ public class JadPrayerOverlay extends Overlay
 			}
 		}
 		return null;
+	}
+
+	/** Big tick countdown to the hit, centred above the icon. */
+	private void drawTicks(Graphics2D g, int ticks, Color col, int cx, int baselineY)
+	{
+		String t = String.valueOf(ticks);
+		g.setFont(g.getFont().deriveFont(Font.BOLD, 28f));
+		FontMetrics fm = g.getFontMetrics();
+		int tx = cx - fm.stringWidth(t) / 2;
+		g.setColor(Color.BLACK);
+		g.drawString(t, tx + 2, baselineY + 2);
+		g.setColor(col);
+		g.drawString(t, tx, baselineY);
+	}
+
+	/** Banner reminding you to re-aggro the healers and hold your prayer. */
+	private void drawHealerBanner(Graphics2D g)
+	{
+		String msg = "HEALERS — re-aggro & keep praying";
+		g.setFont(g.getFont().deriveFont(Font.BOLD, 18f));
+		FontMetrics fm = g.getFontMetrics();
+		int w = fm.stringWidth(msg);
+		int cx = client.getViewportXOffset() + client.getViewportWidth() / 2;
+		int y = client.getViewportYOffset() + 60;
+		g.setColor(new Color(0, 0, 0, 150));
+		g.fillRect(cx - w / 2 - 10, y - fm.getAscent() - 6, w + 20, fm.getHeight() + 10);
+		g.setColor(Color.BLACK);
+		g.drawString(msg, cx - w / 2 + 1, y + 1);
+		g.setColor(HEAL_COL);
+		g.drawString(msg, cx - w / 2, y);
 	}
 
 	private void drawBadge(Graphics2D g, BufferedImage icon, String label, Color col,

@@ -54,6 +54,9 @@ public class GeflipPlugin extends Plugin
 	// last completed-offer signature per slot, so a login-replayed BOUGHT/SOLD isn't
 	// logged twice; cleared when the slot empties. Persisted with the fills.
 	private final String[] slotSig = new String[8];
+	// when the CURRENT offer in each slot was first seen (ms), to flag stale unfilled offers
+	private final long[] slotSince = new long[8];
+	private final String[] slotKey = new String[8];
 	// the last ranked flips, shared so the web app/phone shows exactly what the panel shows
 	private volatile java.util.List<GeflipScanner.Flip> lastFlips = java.util.Collections.emptyList();
 
@@ -75,7 +78,7 @@ public class GeflipPlugin extends Plugin
 	static final class Offer
 	{
 		final int slot, id; final String state; final int price, qtySold, qtyTotal; final long spent;
-		String name;
+		String name; long ageSec; boolean stale;
 		Offer(int slot, int id, String state, int price, int qtySold, int qtyTotal, long spent)
 		{ this.slot = slot; this.id = id; this.state = state; this.price = price;
 		  this.qtySold = qtySold; this.qtyTotal = qtyTotal; this.spent = spent; }
@@ -160,6 +163,12 @@ public class GeflipPlugin extends Plugin
 			Offer of = new Offer(i, o.getItemId(), st.name(), o.getPrice(),
 				o.getQuantitySold(), o.getTotalQuantity(), o.getSpent());
 			of.name = scanner.nameFor(o.getItemId());
+			// age + staleness: an in-progress offer that hasn't filled after staleHours
+			// has almost certainly been priced out — reprice it instead of waiting days
+			boolean inProgress = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.SELLING;
+			if (slotSince[i] > 0) of.ageSec = (System.currentTimeMillis() - slotSince[i]) / 1000;
+			of.stale = inProgress && o.getQuantitySold() < o.getTotalQuantity()
+				&& of.ageSec >= Math.max(1, config.staleHours()) * 3600L;
 			out.add(of);
 		}
 		return out;
@@ -306,11 +315,22 @@ public class GeflipPlugin extends Plugin
 		GrandExchangeOffer o = ev.getOffer();
 		if (o == null) return;
 		int slot = ev.getSlot();
+		GrandExchangeOfferState st = o.getState();
 		// mirror EVERY slot change so the panel/web knows your live open offers, not just fills
 		if (slot >= 0 && slot < slots.length) slots[slot] = o;
+		// stamp when THIS offer began (item+price+total), so we can age it. A new/changed
+		// offer resets the clock; an empty slot clears it. Login-replay keeps the same key.
+		if (slot >= 0 && slot < slotSince.length)
+		{
+			if (st == GrandExchangeOfferState.EMPTY) { slotSince[slot] = 0; slotKey[slot] = null; }
+			else
+			{
+				String key = o.getItemId() + ":" + o.getPrice() + ":" + o.getTotalQuantity();
+				if (!key.equals(slotKey[slot])) { slotKey[slot] = key; slotSince[slot] = System.currentTimeMillis(); }
+			}
+		}
 		if (panel != null) panel.setOffers(buildOffers());
 
-		GrandExchangeOfferState st = o.getState();
 		// a freed slot (collected/cancelled/empty) clears its dedup marker so the NEXT
 		// offer in that slot is recorded even if it looks identical to the last one
 		if (slot >= 0 && slot < slotSig.length
