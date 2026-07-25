@@ -7,12 +7,11 @@ import java.util.Set;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.NPC;
-import net.runelite.api.Projectile;
 import net.runelite.api.SpriteID;
 import net.runelite.api.events.AnimationChanged;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.NpcSpawned;
-import net.runelite.api.events.ProjectileMoved;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.SpriteManager;
@@ -26,8 +25,13 @@ import net.runelite.client.ui.overlay.OverlayManager;
  * player watches for — and flashes "PRAY MAGE" or "PRAY RANGE".
  *
  * READ-ONLY by construction: it only draws an indicator. It never clicks a prayer or
- * sends any input — auto-praying would be macroing (a ban). You still flick the prayer
- * yourself; this just makes the tell impossible to miss.
+ * sends any input — auto-praying would be macroing. You still flick the prayer yourself.
+ *
+ * RULES NOTE: Jagex's Third-Party Client Guidelines classify "prayer switching indicators"
+ * and "next-attack prediction" as disallowed — which is why official RuneLite removed its
+ * Fight Cave plugin and the plugin-hub won't host one (the equivalent lives only in the
+ * OpenOSRS fork). This is a private/local build; running a prayer-caller is against those
+ * guidelines and is the user's own risk. Detection is animation-based (verified IDs).
  */
 @Slf4j
 @PluginDescriptor(
@@ -37,16 +41,16 @@ import net.runelite.client.ui.overlay.OverlayManager;
 )
 public class JadPrayerPlugin extends Plugin
 {
-	// TzTok-Jad (Fight Caves) attack animations
+	// Attack animations — VERIFIED against RuneLite/OpenOSRS AnimationID.java. Every real
+	// plugin detects Jad's style from the animation (there is no reliable projectile tell).
 	private static final int TZTOK_JAD_MAGE = 2656;
 	private static final int TZTOK_JAD_RANGE = 2652;
-	// JalTok-Jad (Inferno) attack animations (best-effort; verify with the debug toggle)
 	private static final int JALTOK_JAD_MAGE = 7592;
 	private static final int JALTOK_JAD_RANGE = 7593;
-	// TzTok-Jad projectiles — the precise tell (also gives a tick countdown to the hit)
-	private static final int TZTOK_JAD_MAGE_PROJ = 448;
-	private static final int TZTOK_JAD_RANGE_PROJ = 449;
-	private static final int CYCLES_PER_TICK = 30;   // 1 game tick = 600ms = 30 client cycles
+	// Reaction window: the prayer must be up by animation-tick + this many ticks for the
+	// hit to be blocked (matches the maintained community plugins). Counted down per tick.
+	private static final int TZTOK_JAD_HIT_TICKS = 2;   // Fight Caves
+	private static final int JALTOK_JAD_HIT_TICKS = 3;  // Inferno
 
 	public enum Attack { MAGE, RANGE }
 
@@ -60,7 +64,7 @@ public class JadPrayerPlugin extends Plugin
 	public volatile Attack attack;             // the prayer you should be on right now (null = none)
 	public volatile NPC activeJad;             // a live Jad to draw over, if any
 	public volatile long switchedAtMs;         // when the attack last changed (for the flash)
-	public volatile Projectile activeProjectile; // the in-flight Jad attack, for the tick countdown
+	public volatile int hitTicks;              // ticks until the current attack lands (0 = landed)
 	public volatile boolean healersUp;         // Yt-HurKot / Jal-MejRah healers are alive
 
 	public BufferedImage mageSprite, rangeSprite;
@@ -84,7 +88,7 @@ public class JadPrayerPlugin extends Plugin
 		healers.clear();
 		attack = null;
 		activeJad = null;
-		activeProjectile = null;
+		hitTicks = 0;
 		healersUp = false;
 	}
 
@@ -117,36 +121,23 @@ public class JadPrayerPlugin extends Plugin
 	{
 		if (jads.remove(e.getNpc()))
 		{
-			if (jads.isEmpty()) { attack = null; activeJad = null; activeProjectile = null; }
+			if (jads.isEmpty()) { attack = null; activeJad = null; hitTicks = 0; }
 			else if (e.getNpc() == activeJad) activeJad = jads.iterator().next();
 		}
 		if (healers.remove(e.getNpc())) healersUp = !healers.isEmpty();
 	}
 
+	// count the reaction window down each game tick (600ms); floor at 0
 	@Subscribe
-	public void onProjectileMoved(ProjectileMoved e)
+	public void onGameTick(GameTick e)
 	{
-		Projectile pr = e.getProjectile();
-		if (pr == null) return;
-		int id = pr.getId();
-		Attack a = null;
-		if (id == TZTOK_JAD_MAGE_PROJ) a = Attack.MAGE;
-		else if (id == TZTOK_JAD_RANGE_PROJ) a = Attack.RANGE;
-		if (a == null) return;
-		if (config.debug()) log.info("Jad projectile id={} remainingCycles={}", id, pr.getRemainingCycles());
-		if (a != attack) switchedAtMs = System.currentTimeMillis();
-		attack = a;
-		activeProjectile = pr;
+		if (hitTicks > 0) hitTicks--;
 	}
 
-	/** Game ticks until the in-flight attack lands (-1 if none / already landed). */
+	/** Ticks until the current attack lands (-1 once it's landed / no attack) — for the countdown. */
 	public int ticksToHit()
 	{
-		Projectile pr = activeProjectile;
-		if (pr == null) return -1;
-		int rc = pr.getRemainingCycles();
-		if (rc <= 0) { activeProjectile = null; return -1; }
-		return (int) Math.ceil(rc / (double) CYCLES_PER_TICK);
+		return (attack != null && hitTicks > 0) ? hitTicks : -1;
 	}
 
 	@Subscribe
@@ -159,13 +150,17 @@ public class JadPrayerPlugin extends Plugin
 		if (config.debug()) log.info("Jad id={} animation={}", npc.getId(), anim);
 
 		Attack a = null;
-		if (anim == TZTOK_JAD_MAGE || anim == JALTOK_JAD_MAGE) a = Attack.MAGE;
-		else if (anim == TZTOK_JAD_RANGE || anim == JALTOK_JAD_RANGE) a = Attack.RANGE;
+		boolean inferno = false;
+		if (anim == TZTOK_JAD_MAGE) a = Attack.MAGE;
+		else if (anim == TZTOK_JAD_RANGE) a = Attack.RANGE;
+		else if (anim == JALTOK_JAD_MAGE) { a = Attack.MAGE; inferno = true; }
+		else if (anim == JALTOK_JAD_RANGE) { a = Attack.RANGE; inferno = true; }
 		if (a != null)
 		{
 			attack = a;
 			activeJad = npc;
 			switchedAtMs = System.currentTimeMillis();
+			hitTicks = inferno ? JALTOK_JAD_HIT_TICKS : TZTOK_JAD_HIT_TICKS;   // reaction window
 		}
 	}
 

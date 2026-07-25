@@ -49,6 +49,17 @@ public class JadPrayerOverlay extends Overlay
 		if (plugin.healersUp) drawHealerBanner(g);
 
 		JadPrayerPlugin.Attack a = plugin.attack;
+		// test mode: with no live Jad, draw a sample so you can confirm/position the indicator
+		if (a == null && config.testShow())
+		{
+			int s = Math.max(1, config.scale());
+			int w = (plugin.mageSprite != null ? plugin.mageSprite.getWidth() : 34) * s;
+			int h = (plugin.mageSprite != null ? plugin.mageSprite.getHeight() : 34) * s;
+			int cx = client.getViewportXOffset() + client.getViewportWidth() / 2 - w / 2;
+			int cy = client.getViewportYOffset() + client.getViewportHeight() / 2 - h / 2;
+			drawBadge(g, plugin.mageSprite, "PRAY MAGE (test)", MAGE_COL, cx, cy, w, h);
+			return null;
+		}
 		if (a == null) return null;
 
 		boolean mage = a == JadPrayerPlugin.Attack.MAGE;

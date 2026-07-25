@@ -42,6 +42,15 @@ public interface JadPrayerConfig extends Config
 	default boolean flash() { return true; }
 
 	@ConfigItem(
+		keyName = "testShow",
+		name = "Test — always show",
+		description = "Draw a sample indicator even when no Jad is present, so you can confirm "
+			+ "it works and position it. Turn OFF before your real run.",
+		position = 8
+	)
+	default boolean testShow() { return false; }
+
+	@ConfigItem(
 		keyName = "debug",
 		name = "Log Jad animations",
 		description = "Print every Jad animation id to the log. Turn on ONLY if the indicator "
