@@ -363,7 +363,7 @@
   <div class="panel"><h3>Realism</h3>
     <div class="form">
       <div><label>Slippage (%)</label><input id="cfg-slip" value="0" inputmode="decimal"></div>
-      <div><label>Participation (%)</label><input id="cfg-part" value="25" inputmode="decimal"></div>
+      <div><label>Participation (%)</label><input id="cfg-part" value="15" inputmode="decimal"></div>
       <div><label>Max item share of bank (%)</label><input id="cfg-maxfrac" value="25" inputmode="decimal"></div>
       <div><label>Verify horizon (h)</label><input id="cfg-horizon" value="8" inputmode="decimal"></div>
       <div class="full toggle"><input type="checkbox" id="cfg-journal" checked><span>Journal every scan’s top picks</span></div>
@@ -586,7 +586,7 @@ const store = {
 
 /* --------------------------- config --------------------------- */
 const DEF_CFG = { bankroll:50_000_000, slots:8, members:true, minVol:20, minVol24:500,
-  maxAgeS:3600, minMargin:1, minPrice:1, maxPrice:null, slip:0, part:0.25, maxFrac:0.25,
+  maxAgeS:3600, minMargin:1, minPrice:1, maxPrice:null, slip:0, part:0.15, maxFrac:0.25,
   lite:false, swingMinPrice:500, swingMinVol24:200, swingDepth:20, swingHoldHours:48,
   swingMinRR:1.0, swingMinProfit:50000, calibratedN:0,
   horizon:8, journal:true, tauS:1200, volSat:200, haircut:0.5, cycleH:4,

@@ -28,6 +28,11 @@ class GeflipScanner
 	private static final String TRENDS = "https://oxainz.github.io/geflip/data/trends.json";
 	private static final String UA = "geflip-runelite (github.com/OxainZ/geflip)";
 	private static final int TAX_CAP = 5_000_000;
+	// scoring constants — kept identical to the web app's DEF_CFG so the panel and site agree
+	private static final int MIN_VOL24 = 500;    // 24h liquidity gate
+	private static final double PART = 0.15;      // share of a side's flow we realistically capture
+	private static final double TAU_S = 1200.0;   // staleness decay
+	private static final double VOL_SAT = 200.0;  // volume-quality saturation
 
 	/** Item metadata from /mapping, cached for the session (read cross-thread → volatile). */
 	private volatile Map<Integer, Meta> mapping;
@@ -217,20 +222,23 @@ class GeflipScanner
 			int vol1 = Math.min(vh, vl);
 			if (vol1 < cfg.minVol1h()) continue;
 
+			// margin blend + stability — mirrors the web's stability()/margin logic exactly
+			// (stability returns the haircut 0.5 when there's no hourly to corroborate).
 			int margin;
-			if (hourly == null) margin = (int) Math.floor(instant * 0.5);
+			double stab;
+			if (hourly == null) { margin = (int) Math.floor(instant * 0.5); stab = 0.5; }
 			else
 			{
 				double sc = Math.max(Math.max(Math.abs(instant), Math.abs(hourly)), 1);
 				double agree = Math.max(0, 1 - Math.abs(instant - hourly) / sc);
 				margin = agree >= 0.7 ? Math.round((instant + hourly) / 2f) : Math.min(instant, hourly);
+				stab = agree;
 			}
 			if (margin < cfg.minMargin()) continue;
 
 			// FILLABLE prices: a resting offer at the touch (buy=lo / sell=hi) sits at the BACK
 			// of the queue and often never fills — the "it won't sell for the listed price" bug.
-			// Undercut one tick each side (bid up / ask down) and rank on THAT margin, which is
-			// what a flip actually earns once it completes.
+			// Undercut one tick each side and rank on THAT margin, what a flip actually earns.
 			int tkB = tickSize(lo), tkS = tickSize(hi);
 			int bidComp = lo + tkB;
 			int askComp = Math.max(bidComp + 1, hi - tkS);
@@ -238,38 +246,58 @@ class GeflipScanner
 			int marginComp = (askComp - saleTax(askComp, meta.exempt) - bidComp) - haircutDelta;
 			if (marginComp < Math.max(1, cfg.minMargin())) continue;     // no achievable margin after undercut
 
+			// 24h liquidity gate + flow forecast shrinkage (web: minVol24 + flowFcast)
+			JsonObject w24 = (d24 != null && d24.has(e.getKey())) ? d24.getAsJsonObject(e.getKey()) : null;
+			int vol24 = 0;
+			if (w24 != null && !w24.get("highPriceVolume").isJsonNull() && !w24.get("lowPriceVolume").isJsonNull())
+				vol24 = Math.min(w24.get("highPriceVolume").getAsInt(), w24.get("lowPriceVolume").getAsInt());
+			if (d24 != null && vol24 < MIN_VOL24) continue;
+			Double hourly24 = vol24 > 0 ? vol24 / 24.0 : null;
+			double flowFcast = hourly24 != null ? (vol1 + hourly24) / 2.0 : vol1;
+
 			int limit = meta.limit;
 			long afford = perItemCap / bidComp;
-			long through = (long) (0.15 * vol1 * cycleH);   // ~15% of a side's flow is realistically ours
+			long through = (long) (PART * flowFcast * cycleH);
 			int qty = (int) Math.max(0, Math.min(limit, Math.min(afford, through)));
 			if (qty <= 0) continue;
 
+			// intra-hour trend (falling-knife) penalty — matches the web's trendPen
+			double midNow = (lo + hi) / 2.0;
+			Double mid1h = null;
+			if (w1 != null && !w1.get("avgHighPrice").isJsonNull() && !w1.get("avgLowPrice").isJsonNull())
+				mid1h = (w1.get("avgLowPrice").getAsInt() + w1.get("avgHighPrice").getAsInt()) / 2.0;
+			double trendPen = (mid1h != null && (midNow - mid1h) / mid1h < -0.03) ? 0.8 : 1.0;
+
 			double roi = (double) marginComp / bidComp;
-			// staleness + volume quality (app's fresh*volS), confidence-weighted
-			double fresh = Math.exp(-age / 1200.0);
-			double volS = Math.sqrt(Math.min(1.0, vol1 / 200.0));
-			double conf = Math.sqrt(fresh * volS);
+			// confidence = quality * stability * intra-hour-trend  (web scoreAll conf)
+			double fresh = Math.exp(-age / TAU_S);
+			double volS = Math.sqrt(Math.min(1.0, vol1 / VOL_SAT));
+			double quality = Math.sqrt(fresh * volS);
+			double conf = Math.max(0, Math.min(1, quality * stab * trendPen));
 			Double t90 = t90s.get(id);
-			double pen = trendPenalty(t90);
-			conf = Math.max(0, Math.min(1, conf * pen));
+			double pen = trendPenalty(t90);   // long-term death-spiral, applied to expGph (like web applyTrends)
 
 			Flip f = new Flip();
 			f.id = id; f.name = meta.name; f.buy = bidComp; f.sell = askComp;
 			f.tax = saleTax(askComp, meta.exempt); f.margin = marginComp; f.quantity = qty; f.limit = limit;
-			// SIDE-SPECIFIC fill time: a BUY offer fills against instant-sells (low-side volume),
-			// a SELL offer against instant-buys (high-side volume); the two legs are sequential.
-			// Dividing by the correct side stops one-sided markets from faking a fast gp/h.
-			double part = 0.15;
-			double buyFillH = vl > 0 ? f.quantity / (part * vl) : 999.0;
-			double sellFillH = vh > 0 ? f.quantity / (part * vh) : 999.0;
+			// SIDE-SPECIFIC fill time with flow shrinkage: BUY fills against low-side volume,
+			// SELL against high-side volume; the two legs are sequential.
+			double shrink = (hourly24 != null && vol1 > 0) ? flowFcast / vol1 : 1.0;
+			double sellersFc = vl * shrink, buyersFc = vh * shrink;
+			double buyFillH = sellersFc > 0 ? f.quantity / (PART * sellersFc) : 999.0;
+			double sellFillH = buyersFc > 0 ? f.quantity / (PART * buyersFc) : 999.0;
 			double fillH = Math.min(999.0, buyFillH + sellFillH);
 			double effCycleH = Math.max(fillH, cycleH);   // floor at the 4h buy-limit reset
 			f.roi = roi; f.fillHours = fillH;
-			f.gph = (double) marginComp * qty / effCycleH; f.expGph = f.gph * conf;
-			f.confidence = conf; f.t90 = t90; f.decliner = pen < 1.0;
+			f.gph = (double) marginComp * qty / effCycleH;
+			f.expGph = f.gph * conf * pen;   // short-term confidence x long-term trend penalty
+			f.confidence = conf * pen; f.t90 = t90; f.decliner = pen < 1.0;
 			out.add(f);
 		}
-		out.sort(Comparator.<Flip>comparingDouble(x -> -x.expGph).thenComparing(x -> x.name));
+		// same tiebreak order as the web: expGph desc, confidence desc, name asc
+		out.sort(Comparator.<Flip>comparingDouble(x -> -x.expGph)
+			.thenComparing(Comparator.comparingDouble((Flip x) -> -x.confidence))
+			.thenComparing(x -> x.name));
 		int rows = Math.max(5, cfg.rows());
 		return out.size() > rows ? new ArrayList<>(out.subList(0, rows)) : out;
 	}
