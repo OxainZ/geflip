@@ -92,10 +92,17 @@ class GeflipPanel extends PluginPanel
 			{
 				double h = l.avgHoldHours();
 				String hold = h >= 24 ? String.format("%.1fd", h / 24) : h >= 1 ? Math.round(h) + "h" : Math.max(1, (int) Math.round(h * 60)) + "m";
-				calib.setText("your record: " + l.flips + " flips · " + Math.round(l.winRate() * 100) + "% win · ~" + hold + " avg hold");
-				calib.setToolTipText("Measured from your own completed round-trips — use it to sanity-check the gp/h estimates above the list.");
+				long perDay = l.realizedPerDay();
+				String rate = perDay != 0 ? " · " + gp(perDay) + "/day" : "";
+				calib.setText("record: " + gp(l.realizedFlip) + " over " + l.flips + " flips · "
+					+ Math.round(l.winRate() * 100) + "% win · ~" + hold + " hold" + rate);
+				calib.setForeground(l.realizedFlip >= 0 ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.PROGRESS_ERROR_COLOR);
+				calib.setToolTipText("Your REAL results from completed round-trips: total realized profit, flip count, "
+					+ "win-rate, average hold, and realized gp/day over the "
+					+ (l.spanDays() >= 1 ? String.format("%.1f", l.spanDays()) + " days" : "time")
+					+ " your log spans. This is the honest profitability number — use it over any estimate.");
 			}
-			else calib.setText("your record: no completed flips yet");
+			else calib.setText("record: no completed flips yet — it fills in as you flip");
 		});
 	}
 

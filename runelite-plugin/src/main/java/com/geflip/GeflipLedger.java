@@ -26,11 +26,16 @@ final class GeflipLedger
 	int  flips;              // completed round-trips (sell events that closed >=1 unit) — CALIBRATION
 	int  wins;               // of those flips, the profitable ones
 	long holdSecSum;         // unit-weighted hold time (secs), for the average
+	long firstTs, lastTs;    // span of the fill log (secs), for the realized gp/day rate
 
 	/** Your ACTUAL win-rate on completed flips (0..1). */
 	double winRate() { return flips > 0 ? (double) wins / flips : 0; }
 	/** Your ACTUAL average hold time, in hours, across completed round-trips. */
 	double avgHoldHours() { return matchedUnits > 0 ? holdSecSum / (double) matchedUnits / 3600.0 : 0; }
+	/** Calendar days the fill log spans (0 if <2 fills / no timestamps). */
+	double spanDays() { return (firstTs > 0 && lastTs > firstTs) ? (lastTs - firstTs) / 86400.0 : 0; }
+	/** Realized flip profit per day over that span (0 until the span is at least ~1h). */
+	long realizedPerDay() { double d = spanDays(); return d >= (1.0 / 24) ? Math.round(realizedFlip / d) : 0; }
 
 	static GeflipLedger compute(List<GeflipPlugin.Fill> fills, Set<Integer> excluded)
 	{
@@ -40,6 +45,7 @@ final class GeflipLedger
 		for (GeflipPlugin.Fill f : fills)
 		{
 			if (f == null) continue;
+			if (f.ts > 0) { if (l.firstTs == 0 || f.ts < l.firstTs) l.firstTs = f.ts; if (f.ts > l.lastTs) l.lastTs = f.ts; }
 			boolean skip = excluded != null && excluded.contains(f.id);
 			if ("BUY".equals(f.side))
 			{

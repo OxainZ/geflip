@@ -2444,9 +2444,10 @@ function renderLive(session, fills, source, offers){
       <span>${gpTxt(Number(f.price)||0)} ×${Number(f.qty)||0}</span></div>`;
   }).join('');
   const held = s.deployed||0, kept = s.kept||0;
-  const rt = Number(s.roundTrips)||0, holdH = Number(s.holdH)||0;
+  const rt = Number(s.roundTrips)||0, holdH = Number(s.holdH)||0, perDay = Number(s.perDay)||0;
   const holdTxt = holdH>=24 ? (holdH/24).toFixed(1)+'d' : holdH>=1 ? Math.round(holdH)+'h' : Math.max(1,Math.round(holdH*60))+'m';
-  const record = rt>0 ? `<div style="font-size:11px;color:var(--faint);margin-bottom:6px">your record: ${rt} flips · ${Number(s.winPct)||0}% win · ~${holdTxt} avg hold</div>` : '';
+  const rateTxt = perDay!==0 ? ' · '+gpTxt(perDay)+'/day' : '';
+  const record = rt>0 ? `<div style="font-size:11px;color:var(--faint);margin-bottom:6px">record: ${gpTxt(s.realized||0)} over ${rt} flips · ${Number(s.winPct)||0}% win · ~${holdTxt} hold${rateTxt}</div>` : '';
   el.innerHTML = `<h3>● Live from RuneLite <span style="font-weight:400;color:var(--faint);font-size:10px">${source||''}</span></h3>
     <div style="font-size:12px;margin-bottom:6px">flip ${gpHtml(s.realized||0)}${held?' · held '+gpTxt(held):''}${kept?' · kept '+gpTxt(kept):''} · ${F.length} fills</div>
     ${record}
