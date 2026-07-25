@@ -63,3 +63,14 @@ tasks.register('runBridge', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath
     mainClass = 'com.geflip.GeflipServer'
 }
+
+// THE way to run a custom external plugin in RuneLite: launch the real client with the
+// plugin registered via loadBuiltin (GeflipPluginTest). Uses the test classpath, which
+// carries the runelite-client at runtime. Auth comes from .runelite/credentials.properties.
+tasks.register('run', JavaExec) {
+    group = 'application'
+    description = 'Launch RuneLite with the Geflip plugin loaded'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.geflip.GeflipPluginTest'
+    jvmArgs = ['-ea']   // RuneLite's loadBuiltin() refuses to run without assertions
+}

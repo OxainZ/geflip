@@ -84,7 +84,7 @@ class GeflipScanner
 	{
 		if (mapping != null && System.currentTimeMillis() - mappingAt < 86_400_000L) return mapping;
 		Map<Integer, Meta> m = new HashMap<>();
-		for (JsonElement e : JsonParser.parseString(httpGet(API + "/mapping")).getAsJsonArray())
+		for (JsonElement e : new JsonParser().parse(httpGet(API + "/mapping")).getAsJsonArray())
 		{
 			JsonObject o = e.getAsJsonObject();
 			if (!o.has("id") || !o.has("name")) continue;
@@ -105,7 +105,7 @@ class GeflipScanner
 		if (!useTrends) return out;
 		try
 		{
-			JsonObject items = JsonParser.parseString(httpGet(TRENDS)).getAsJsonObject().getAsJsonObject("items");
+			JsonObject items = new JsonParser().parse(httpGet(TRENDS)).getAsJsonObject().getAsJsonObject("items");
 			for (Map.Entry<String, JsonElement> en : items.entrySet())
 			{
 				JsonObject t = en.getValue().getAsJsonObject();
@@ -121,10 +121,10 @@ class GeflipScanner
 	List<Flip> scan(GeflipConfig cfg) throws Exception
 	{
 		Map<Integer, Meta> map = loadMapping();
-		JsonObject latest = JsonParser.parseString(httpGet(API + "/latest")).getAsJsonObject().getAsJsonObject("data");
-		JsonObject h1 = JsonParser.parseString(httpGet(API + "/1h")).getAsJsonObject().getAsJsonObject("data");
+		JsonObject latest = new JsonParser().parse(httpGet(API + "/latest")).getAsJsonObject().getAsJsonObject("data");
+		JsonObject h1 = new JsonParser().parse(httpGet(API + "/1h")).getAsJsonObject().getAsJsonObject("data");
 		JsonObject d24 = null;
-		try { d24 = JsonParser.parseString(httpGet(API + "/24h")).getAsJsonObject().getAsJsonObject("data"); }
+		try { d24 = new JsonParser().parse(httpGet(API + "/24h")).getAsJsonObject().getAsJsonObject("data"); }
 		catch (Exception ignored) { /* optional liquidity gate */ }
 		Map<Integer, Double> t90s = loadT90(cfg.useTrends());
 
