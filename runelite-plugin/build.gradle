@@ -72,5 +72,9 @@ tasks.register('run', JavaExec) {
     description = 'Launch RuneLite with the Geflip plugin loaded'
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'com.geflip.GeflipPluginTest'
-    jvmArgs = ['-ea']   // RuneLite's loadBuiltin() refuses to run without assertions
+    // -ea: RuneLite's loadBuiltin() refuses to run without assertions.
+    // --add-opens: RuneLite's own ReflectUtil reflects on a JDK-11 internal to read
+    // annotations; its normal launcher opens this package, so do the same here to
+    // silence the harmless "illegal reflective access" WARNING and keep the log clean.
+    jvmArgs = ['-ea', '--add-opens=java.base/java.lang.reflect=ALL-UNNAMED']
 }
