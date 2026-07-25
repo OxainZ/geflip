@@ -1377,6 +1377,7 @@ function detailRow(c){
         first, and ties go to whoever offered earliest — so a tick is what buys you
         priority. Costs ${gpTxt(c.tkB+c.tkS)}/ea against a much faster fill.</div>
       <div class="rowbtns">
+        <button class="ghost" data-copy="${esc(c.name)}">⧉ ${esc(c.name)}</button>
         <button class="ghost" data-copy="${c.bidComp}">Copy buy ${c.bidComp.toLocaleString()}</button>
         <button class="ghost" data-copy="${c.askComp}">Copy sell ${c.askComp.toLocaleString()}</button>
         <button class="ghost" data-chart="${c.id}" data-name="${esc(c.name)}">Chart →</button>
