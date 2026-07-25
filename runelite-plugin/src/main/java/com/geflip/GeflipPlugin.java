@@ -253,6 +253,9 @@ public class GeflipPlugin extends Plugin
 			sess.addProperty("kept", l.keptNet);
 			sess.addProperty("flips", l.matchedUnits);
 			sess.addProperty("held", l.openUnits);
+			sess.addProperty("roundTrips", l.flips);           // your record: completed flips
+			sess.addProperty("winPct", (int) Math.round(l.winRate() * 100));
+			sess.addProperty("holdH", l.avgHoldHours());
 			o.add("session", sess);
 			o.addProperty("updated", System.currentTimeMillis() / 1000);
 			byte[] body = o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);

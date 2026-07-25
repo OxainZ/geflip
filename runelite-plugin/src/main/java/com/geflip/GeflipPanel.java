@@ -26,6 +26,8 @@ class GeflipPanel extends PluginPanel
 {
 	private final JLabel status = new JLabel("idle");
 	private final JLabel session = new JLabel("session: —");
+	private final JLabel calib = new JLabel(" ");      // your ACTUAL results (win% / hold)
+	private final JLabel legend = new JLabel(" ");     // what the row symbols mean
 	private final JPanel rows = new JPanel();
 	private final JPanel offersBox = new JPanel();   // "Your GE" — live open offers
 
@@ -40,9 +42,17 @@ class GeflipPanel extends PluginPanel
 		top.add(refresh, BorderLayout.NORTH);
 		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		session.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
-		JPanel meta = new JPanel(new GridLayout(2, 1));
+		calib.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		calib.setFont(FontManager.getRunescapeSmallFont());
+		legend.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		legend.setFont(FontManager.getRunescapeSmallFont());
+		// one-glance key so every symbol on a row is understandable
+		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · 🔥dip · ⚠falling</span></html>");
+		JPanel meta = new JPanel(new GridLayout(4, 1));
 		meta.add(status);
 		meta.add(session);
+		meta.add(calib);
+		meta.add(legend);
 		top.add(meta, BorderLayout.SOUTH);
 
 		// north = controls/meta, then the live "Your GE" offers box beneath it
@@ -76,6 +86,16 @@ class GeflipPanel extends PluginPanel
 			session.setToolTipText("flip = profit from matched buy→sell round-trips (net of tax)   ·   "
 				+ "held = cost of bought-but-unsold flip items   ·   "
 				+ "kept = net spent on your \"not a flip\" items");
+
+			// CALIBRATION: your ACTUAL track record, so you can trust (or discount) the gp/h estimates
+			if (l.flips > 0)
+			{
+				double h = l.avgHoldHours();
+				String hold = h >= 24 ? String.format("%.1fd", h / 24) : h >= 1 ? Math.round(h) + "h" : Math.max(1, (int) Math.round(h * 60)) + "m";
+				calib.setText("your record: " + l.flips + " flips · " + Math.round(l.winRate() * 100) + "% win · ~" + hold + " avg hold");
+				calib.setToolTipText("Measured from your own completed round-trips — use it to sanity-check the gp/h estimates above the list.");
+			}
+			else calib.setText("your record: no completed flips yet");
 		});
 	}
 
@@ -150,8 +170,10 @@ class GeflipPanel extends PluginPanel
 		// --- line 1: item name (left, clips if long) + gp/hour headline (right) ---
 		JPanel top = new JPanel(new BorderLayout(6, 0));
 		top.setOpaque(false);
-		JLabel name = new JLabel((f.decliner ? "⚠ " : "") + f.name);
-		name.setForeground(f.decliner ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.TEXT_COLOR);
+		String tag = (f.dumping ? "🔥 " : "") + (f.decliner ? "⚠ " : "");
+		JLabel name = new JLabel(tag + f.name);
+		name.setForeground(f.decliner ? ColorScheme.PROGRESS_ERROR_COLOR
+			: f.dumping ? ColorScheme.BRAND_ORANGE : ColorScheme.TEXT_COLOR);
 		JLabel gph = new JLabel(gp((long) f.expGph) + "/h");
 		gph.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
 		gph.setHorizontalAlignment(JLabel.RIGHT);
@@ -176,8 +198,20 @@ class GeflipPanel extends PluginPanel
 		col.add(sub);
 		p.add(col, BorderLayout.CENTER);
 
-		name.setToolTipText("Click to copy \"" + f.name + "\" for the GE search"
-			+ (f.t90 != null ? "   ·   90d " + pct(f.t90) : ""));
+		// full plain-English explanation of this row on hover
+		StringBuilder tip = new StringBuilder("<html><b>").append(f.name).append("</b><br>");
+		tip.append("Buy at ").append(gp(f.buy)).append(", sell at ").append(gp(f.sell))
+			.append(" → ").append(gp(f.margin)).append(" profit each after tax<br>");
+		tip.append("Buy up to ").append(f.quantity).append(" (bankroll/limit/volume capped)<br>");
+		tip.append("Est. ").append(gp((long) f.expGph)).append("/hr — profit ÷ how long both offers take to fill<br>");
+		if (f.fillHours < 900) tip.append("Fills in ~").append(fillTxt(f.fillHours).replace("~", "")).append("<br>");
+		if (f.resetMins > 0) tip.append("↻ your 4h buy limit resets in ~")
+			.append(f.resetMins >= 60 ? (f.resetMins / 60) + "h" : f.resetMins + "m").append("<br>");
+		if (f.dumping) tip.append("🔥 cheap right now vs its recent norm — a dip<br>");
+		if (f.decliner) tip.append("⚠ in a long-term decline — risky<br>");
+		if (f.t90 != null) tip.append("90-day trend ").append(pct(f.t90)).append("<br>");
+		tip.append("<i>Click to copy the name for the GE search</i></html>");
+		name.setToolTipText(tip.toString());
 
 		// click = copy the item name for the GE search (no game input)
 		p.addMouseListener(new java.awt.event.MouseAdapter()

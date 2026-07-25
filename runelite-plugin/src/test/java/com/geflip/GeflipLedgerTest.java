@@ -77,6 +77,24 @@ public class GeflipLedgerTest
 	}
 
 	@Test
+	public void tracksCompletedFlipsWinRateAndHold()
+	{
+		List<GeflipPlugin.Fill> fs = new ArrayList<>();
+		// win: buy 10 @100 at t=0, sell 10 @150 two hours later
+		fs.add(new GeflipPlugin.Fill(1, "BUY", 100, 10, 0, 0));
+		fs.add(new GeflipPlugin.Fill(1, "SELL", 150, 10, GeflipScanner.saleTax(150, false) * 10, 7200));
+		// loss: buy 5 @200, sell 5 @180 one hour later
+		fs.add(new GeflipPlugin.Fill(2, "BUY", 200, 5, 0, 0));
+		fs.add(new GeflipPlugin.Fill(2, "SELL", 180, 5, GeflipScanner.saleTax(180, false) * 5, 3600));
+		GeflipLedger l = GeflipLedger.compute(fs, null);
+		assertEquals(2, l.flips);
+		assertEquals(1, l.wins);
+		assertEquals(0.5, l.winRate(), 1e-9);
+		// unit-weighted hold: (10 units * 2h + 5 units * 1h) / 15 units = 1.667h
+		assertEquals((10 * 2.0 + 5 * 1.0) / 15.0, l.avgHoldHours(), 1e-6);
+	}
+
+	@Test
 	public void fifoMatchesOldestLotsFirst()
 	{
 		// two buy lots, one sell that spans both — cost basis is FIFO (30 @100, then 20 @120).

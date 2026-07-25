@@ -51,6 +51,7 @@ class GeflipScanner
 		int id; String name; int buy, sell, tax, margin, quantity, limit;
 		double roi, gph, expGph, confidence, fillHours; Double t90, t180; boolean decliner;
 		int resetMins = -1;   // minutes until this item's 4h buy window resets (−1 = none active)
+		boolean dumping;      // cheap right now vs its recent norm — a dip/buy signal
 	}
 
 	/** Item name from the cached mapping (null if not loaded / unknown). */
@@ -215,14 +216,21 @@ class GeflipScanner
 			JsonObject w5 = (m5 != null && m5.has(e.getKey())) ? m5.getAsJsonObject(e.getKey()) : null;
 			JsonObject guard = w5;
 			if (guard == null && h1.has(e.getKey())) guard = h1.getAsJsonObject(e.getKey());
+			int guardLow = 0;
 			if (guard != null)
 			{
 				if (guard.has("avgHighPrice") && !guard.get("avgHighPrice").isJsonNull())
 					hi = Math.min(hiInst, guard.get("avgHighPrice").getAsInt());
 				if (guard.has("avgLowPrice") && !guard.get("avgLowPrice").isJsonNull())
-					lo = Math.max(loInst, guard.get("avgLowPrice").getAsInt());
+				{
+					guardLow = guard.get("avgLowPrice").getAsInt();
+					lo = Math.max(loInst, guardLow);
+				}
 			}
 			if (hi <= lo) continue;   // no realistic spread once guarded
+			// DUMP signal: the instant-sell price is well below the recent norm = someone's
+			// dumping, so you can buy cheap right now (a dip; per the swing research these revert).
+			boolean dumping = guardLow > 0 && loInst < guardLow * 0.95;
 
 			int instant = netMargin(lo, hi, meta.exempt);
 
@@ -320,7 +328,7 @@ class GeflipScanner
 			f.roi = roi; f.fillHours = fillH;
 			f.gph = (double) marginComp * qty / effCycleH;
 			f.expGph = f.gph * conf * pen;   // short-term confidence x long-term trend penalty
-			f.confidence = conf * pen; f.t90 = t90; f.decliner = pen < 1.0;
+			f.confidence = conf * pen; f.t90 = t90; f.decliner = pen < 1.0; f.dumping = dumping;
 			out.add(f);
 		}
 		// same tiebreak order as the web: expGph desc, confidence desc, name asc
