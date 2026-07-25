@@ -75,7 +75,8 @@ public class JadPrayerOverlay extends Overlay
 		int h = (icon != null ? icon.getHeight() : 34) * s;
 		int ticks = plugin.ticksToHit();   // -1 if none in flight
 
-		// 2) PRIMARY: prayer symbol above Jad's head
+		// 2) PRIMARY: the actual protection-prayer SPRITE above Jad's head — just the icon,
+		// no coloured box or label. The sprite changing (magic <-> missiles) is the signal.
 		if (config.overHead() && plugin.activeJad != null)
 		{
 			NPC jad = plugin.activeJad;
@@ -87,8 +88,15 @@ public class JadPrayerOverlay extends Overlay
 				if (p != null)
 				{
 					int x = p.getX() - w / 2, y = p.getY() - h;
-					drawBadge(g, icon, label, col, x, y, w, h);
-					if (ticks >= 0) drawTicks(g, ticks, col, x + w / 2, y - 8);
+					if (icon != null)
+					{
+						// soft black drop-shadow so the icon reads on any background
+						g.setColor(new Color(0, 0, 0, 120));
+						g.fillOval(x - 3, y - 3, w + 6, h + 6);
+						g.drawImage(icon, x, y, w, h, null);
+					}
+					else drawBadge(g, icon, label, col, x, y, w, h);   // fallback if sprite not loaded yet
+					if (ticks >= 0) drawTicks(g, ticks, Color.WHITE, x + w / 2, y - 8);
 				}
 			}
 		}
