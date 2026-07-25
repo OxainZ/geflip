@@ -869,6 +869,49 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
   return {cands:out, rej};
 }
 
+/* ---------------- long-horizon trend enrichment ---------------- *
+ * The wiki's short windows cannot tell a dip INSIDE an uptrend (buy) from a
+ * structural death-spiral (trap). The one API that gives 30/90/180d trends
+ * directly — Jagex's — sends no CORS header, so the browser cannot fetch it. A
+ * daily GitHub Action (scripts/enrich_trends.py) computes those trends SERVER-side
+ * from the wiki /timeseries and commits data/trends.json; we read it SAME-origin.
+ * Optional by construction: no file (first run, or a sandbox with no real origin)
+ * = the app scores exactly as it did before.                                     */
+let TRENDS = null, TRENDS_TRIED = false;
+async function loadTrends(force=false){
+  if (TRENDS_TRIED && !force) return TRENDS;
+  TRENDS_TRIED = true;
+  try{
+    const r = await fetch('data/trends.json', {headers:{'Accept':'application/json'}});
+    if (r.ok){ const j = await r.json(); if (j && j.items) TRENDS = j; }
+  }catch(e){ /* optional; score as before */ }
+  return TRENDS;
+}
+// Structural-decline haircut. A fat 4h spread on something bleeding out over months
+// is a value trap — your SELL leg lands into a falling market. Scale confidence down
+// as the 90d trend deepens past -15%, floored at 0.6 so a decliner is demoted, never
+// hidden. Mild (flipping is short-horizon) and it ONLY reduces a score, so it can
+// never invent one — safe to layer on top of the untouched core model.
+function trendPenalty(t90){
+  if (t90 == null || t90 >= -0.15) return 1;
+  return Math.max(0.6, 1 + (t90 + 0.15) * 1.6);   // -15%→1.0, -40%→0.6
+}
+function applyTrends(cands, trends){
+  if (!trends || !trends.items) return cands;
+  for (const c of cands){
+    const t = trends.items[c.id]; if (!t) continue;
+    c.t30 = t.t30; c.t90 = t.t90; c.t180 = t.t180; c.tvol = t.vol;
+    const pen = trendPenalty(t.t90);
+    if (pen < 1){
+      c.structPen  = pen;
+      c.confidence = +(c.confidence * pen).toFixed(4);
+      c.expGph *= pen; c.roiHr *= pen; c.gpPerMil *= pen;
+    }
+  }
+  cands.sort((a,b)=> b.expGph-a.expGph || b.confidence-a.confidence || a.name.localeCompare(b.name));
+  return cands;
+}
+
 /* --------------------------- deep scan --------------------------- *
  * The fast scan compares one instant against one hour. That cannot tell a
  * durable spread from one that opened ninety seconds ago. This pulls the hourly
@@ -1352,6 +1395,9 @@ function detailRow(c){
       <div><label>median margin 48h</label>${gpHtml(c.deep.medianMargin)}</div>
       <div><label>price volatility</label>${pct(c.deep.volatility,1)}</div>`:''}
         <div><label>price vs 1h / 24h avg</label>${trendTxt(c.trend1h)} / ${trendTxt(c.trend24)}</div>
+        ${c.t180!=null||c.t90!=null||c.t30!=null? `<div><label>trend 30 / 90 / 180d${
+          c.structPen? ' <span class="warn">decliner</span>':''}</label>${
+          trendTxt(c.t30)} / ${trendTxt(c.t90)} / ${trendTxt(c.t180)}</div>`:''}
         <div><label>margin check costs</label>${gpHtml(c.checkCost)} for 1 unit</div>
       <div><label>this item's slippage</label>${c.slipObs==null?'—':
         `<span class="${c.slipObs>0.01?'warn':''}">${pct(c.slipObs,2)}</span>`}</div>
@@ -1491,6 +1537,7 @@ async function doScan(){
     status('scoring…');
     const pos = await loadPositions();
     const {cands, rej} = scoreAll(map, latest, h1, d24, m5, CFG, now, limitMap(pos.rows, map, now));
+    applyTrends(cands, await loadTrends());    // death-spiral haircut (optional, same-origin)
     const alloc = allocate(cands, CFG.bankroll, CFG.slots, CFG.maxFrac);
     LAST = {cands, rej, alloc, t:now, slip:observedSlippage(cands),
             raw:{latest, h1, d24}};

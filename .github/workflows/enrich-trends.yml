@@ -1,0 +1,41 @@
+name: enrich-trends
+
+# Builds data/trends.json server-side (where CORS does not apply) and commits it, so
+# the client-side app can read long-horizon trends it cannot fetch itself. Runs daily;
+# trends move slowly, so once a day is plenty. Trigger by hand from the Actions tab too.
+on:
+  schedule:
+    - cron: '17 6 * * *'   # 06:17 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: write           # to commit the refreshed data file
+
+concurrency:
+  group: enrich-trends
+  cancel-in-progress: false
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build trends.json
+        env:
+          UNIVERSE: '700'
+        run: python scripts/enrich_trends.py
+      - name: Commit if changed
+        run: |
+          git config user.name  "geflip-enrich[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/trends.json
+          if git diff --staged --quiet; then
+            echo "no change"
+          else
+            git commit -m "data: refresh 30/90/180d trends ($(date -u +%Y-%m-%d))"
+            git push
+          fi
