@@ -1086,12 +1086,23 @@ function swingScore(cand, m, cfg){
   const target = Math.round(m.median);            // revert to the middle, not the top
   const net = netMargin(cand.buy, target, cand.exempt);
   if (net <= 0) return null;
+  // minimum viable swing: must clear ~5% net (after the 2% tax) — below that, days of
+  // capital lock + crash risk aren't worth it vs same-day flipping (research-backed floor).
+  if (cand.buy>0 && net/cand.buy < 0.05) return null;
 
   const dip  = clamp01(-m.z / 2);                 // 2 sigma below mean scores 1
   const over = m.rsi==null ? 0 : clamp01((45 - m.rsi) / 30);
   // Hard gate. Buying a structural decline is how swing traders lose money.
   const structural = m.driftPct >= SWING_DECLINE_LIMIT ? 1 : 0;
-  const conf = Math.sqrt(dip * over) * structural;
+  // VOLUME SIGNATURE (the evidence-backed falling-knife filter): OSRS dips revert when
+  // they're a SUPPLY DUMP — buy limits stop buyers absorbing it fast, so it overshoots
+  // down then retraces. A dump shows ELEVATED current volume vs the daily norm. A quiet
+  // grind down on normal/low volume is a regime change (real re-pricing) — skip it.
+  const hourlyAvg = cand.vol24>0 ? cand.vol24/24 : 0;
+  const volRatio  = hourlyAvg>0 ? (cand.vol1||0)/hourlyAvg : 1;
+  if (volRatio < 0.5) return null;                // no seller pressure behind the dip = knife
+  const volSig = clamp01((volRatio - 0.7) / (1.8 - 0.7));   // 0 at 0.7x norm, 1 at >=1.8x (dump)
+  const conf = Math.sqrt(dip * over) * structural * (0.4 + 0.6*volSig);
   if (conf <= 0) return null;
 
   // Downside is not a stop-loss, it is the plausible adverse case: this item
@@ -1196,7 +1207,7 @@ function swingUniverse(map, latest, h1, d24, cfg, now, baseline){
     if (opportunity < cfg.swingMinProfit){ skipped.tooSmall++; continue; }
 
     out.push({ id, name:meta.name, exempt:meta.exempt, members:meta.members,
-               buy:q.low, sell:q.high, limit:meta.limit, dev, dev24, devBase, vol24,
+               buy:q.low, sell:q.high, limit:meta.limit, dev, dev24, devBase, vol24, vol1,
                flowFcast, plausibleQty, opportunity });
   }
   out.sort((a,b)=>b.opportunity-a.opportunity);    // biggest gp gaps first
