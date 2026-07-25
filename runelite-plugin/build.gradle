@@ -47,3 +47,10 @@ tasks.register('runCli', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath
     mainClass = 'com.geflip.GeflipCli'
 }
+
+tasks.register('runBridge', JavaExec) {
+    group = 'verification'
+    description = 'Start the local bridge server with mock state (no game needed)'
+    classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath
+    mainClass = 'com.geflip.GeflipServer'
+}

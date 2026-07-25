@@ -44,6 +44,32 @@ public class GeflipPlugin extends Plugin
 	private long realizedProfit = 0;
 	private long spentBuying = 0;
 
+	// local bridge: serves the UI + these live fills to the web app on your network
+	private GeflipServer bridge;
+	private final java.util.List<Fill> fills = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+	/** One real GE fill. Carries the item ID; the web app resolves the name from /mapping. */
+	static final class Fill
+	{
+		final int id; final String side; final int price, qty, tax; final long ts;
+		Fill(int id, String side, int price, int qty, int tax, long ts)
+		{ this.id = id; this.side = side; this.price = price; this.qty = qty; this.tax = tax; this.ts = ts; }
+	}
+	static final class Session { final long realized, deployed; Session(long r, long d) { realized = r; deployed = d; } }
+	static final class State
+	{
+		final boolean ok = true; final long ts = System.currentTimeMillis() / 1000;
+		Session session; java.util.List<Fill> fills;
+	}
+
+	private State buildState()
+	{
+		State s = new State();
+		s.session = new Session(realizedProfit, spentBuying);
+		s.fills = fills;
+		return s;
+	}
+
 	@Provides
 	GeflipConfig provideConfig(net.runelite.client.config.ConfigManager cm)
 	{
@@ -64,12 +90,27 @@ public class GeflipPlugin extends Plugin
 		clientToolbar.addNavigation(navButton);
 		scheduleRefresh();
 		triggerScan();
+
+		if (config.bridgeEnabled())
+		{
+			try
+			{
+				bridge = new GeflipServer(config.bridgePort(), config.bridgeToken())
+					.withState(this::buildState)
+					.onConfigPost(body -> log.debug("bridge config: {}", body));
+				bridge.start();
+				log.info("geflip bridge on port {} — open http://<pc-ip>:{} on your phone",
+					config.bridgePort(), config.bridgePort());
+			}
+			catch (Exception e) { log.warn("geflip bridge failed to start", e); }
+		}
 	}
 
 	@Override
 	protected void shutDown()
 	{
 		if (refresh != null) refresh.cancel(true);
+		if (bridge != null) { bridge.stop(); bridge = null; }
 		clientToolbar.removeNavigation(navButton);
 		panel = null;
 	}
@@ -112,23 +153,27 @@ public class GeflipPlugin extends Plugin
 		GrandExchangeOffer o = ev.getOffer();
 		if (o == null) return;
 		GrandExchangeOfferState st = o.getState();
-		if (st == GrandExchangeOfferState.BOUGHT || st == GrandExchangeOfferState.SOLD)
+		if (st != GrandExchangeOfferState.BOUGHT && st != GrandExchangeOfferState.SOLD) return;
+
+		long spent = o.getSpent();          // gp moved so far on this offer
+		int qty = o.getQuantitySold();      // filled units
+		int unit = qty > 0 ? (int) (spent / qty) : o.getPrice();
+		long now = System.currentTimeMillis() / 1000;
+
+		if (st == GrandExchangeOfferState.BOUGHT)
 		{
-			long spent = o.getSpent();          // gp moved so far on this offer
-			int qty = o.getQuantitySold();      // filled units
-			if (st == GrandExchangeOfferState.BOUGHT)
-			{
-				spentBuying += spent;
-				realizedProfit -= spent;
-			}
-			else // SOLD — subtract the 2% tax the GE takes on the sale
-			{
-				int unit = qty > 0 ? (int) (spent / qty) : 0;
-				long tax = (long) GeflipScanner.saleTax(unit, false) * qty;
-				realizedProfit += (spent - tax);
-			}
-			if (panel != null) panel.setSession(realizedProfit, spentBuying);
+			spentBuying += spent;
+			realizedProfit -= spent;
+			fills.add(new Fill(o.getItemId(), "BUY", unit, qty, 0, now));
 		}
+		else // SOLD — subtract the 2% tax the GE takes on the sale
+		{
+			int tax = GeflipScanner.saleTax(unit, false) * qty;
+			realizedProfit += (spent - tax);
+			fills.add(new Fill(o.getItemId(), "SELL", unit, qty, tax, now));
+		}
+		if (fills.size() > 500) fills.remove(0);   // keep it bounded
+		if (panel != null) panel.setSession(realizedProfit, spentBuying);
 	}
 
 	private static String timeNow()

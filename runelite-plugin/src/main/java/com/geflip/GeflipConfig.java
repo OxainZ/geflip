@@ -66,4 +66,31 @@ public interface GeflipConfig extends Config
 		position = 7
 	)
 	default int refreshSec() { return 120; }
+
+	@ConfigItem(
+		keyName = "bridgeEnabled",
+		name = "Local bridge (sync)",
+		description = "Serve the geflip web UI + your live fills on your network. Open "
+			+ "http://<this-pc-ip>:<port> on your phone (same wifi) for a synced, live UI.",
+		position = 10
+	)
+	default boolean bridgeEnabled() { return false; }
+
+	@Range(min = 1024, max = 65535)
+	@ConfigItem(
+		keyName = "bridgePort",
+		name = "Bridge port",
+		description = "TCP port for the local bridge.",
+		position = 11
+	)
+	default int bridgePort() { return 7777; }
+
+	@ConfigItem(
+		keyName = "bridgeToken",
+		name = "Bridge token",
+		description = "Optional shared secret. If set, the phone URL needs ?t=<token>. "
+			+ "Leave blank to allow anyone on your wifi (fine at home).",
+		position = 12
+	)
+	default String bridgeToken() { return ""; }
 }
