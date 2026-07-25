@@ -774,8 +774,8 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
       if (w5.avgHighPrice!=null) rHigh = Math.min(q.high, w5.avgHighPrice);
       if (w5.avgLowPrice!=null)  rLow  = Math.max(q.low,  w5.avgLowPrice);
     }
-    const buy  = cfg.slip>0 ? Math.ceil(rLow *(1+cfg.slip)) : rLow;
-    const sell = cfg.slip>0 ? Math.floor(rHigh*(1-cfg.slip)) : rHigh;
+    let buy  = cfg.slip>0 ? Math.ceil(rLow *(1+cfg.slip)) : rLow;   // reassigned to the undercut price below
+    let sell = cfg.slip>0 ? Math.floor(rHigh*(1-cfg.slip)) : rHigh;
     if (sell <= buy){ R('no realistic spread'); continue; }
     if (buy < cfg.minPrice){ R('below min price'); continue; }
     if (cfg.maxPrice!=null && buy > cfg.maxPrice){ R('above max price'); continue; }
@@ -800,7 +800,7 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
       margin = Math.min(instant, hourly);                // they disagree: floor it
     }
     if (margin < cfg.minMargin){ R('margin below floor'); continue; }
-    const roi = buy>0 ? margin/buy : 0;
+    let roi = buy>0 ? margin/buy : 0;
 
     const vol1 = w1 ? Math.min(w1.highPriceVolume||0, w1.lowPriceVolume||0) : 0;
     if (vol1 < cfg.minVol){ R('1h volume too thin'); continue; }
@@ -873,6 +873,16 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     // Cost of verifying the spread in-game: buy 1 at the ask, dump 1 at the bid.
     const checkCost = q.high - q.low + saleTax(q.low, meta.exempt);
 
+    // *** THE FILLABLE-PRICE FIX ***
+    // A resting offer at the touch price (buy=low / sell=high) sits at the BACK of the
+    // queue and often never fills — the exact "it won't sell for the listed price" bug.
+    // Promote the undercut prices (one tick inside the touch) to the ACTUAL buy/sell, and
+    // rank on the margin they earn. Keep the touch values for reference in the detail view.
+    const touchBuy = buy, touchSell = sell, touchMargin = margin;
+    buy = bidComp; sell = askComp; margin = marginComp;
+    roi = buy>0 ? margin/buy : 0;
+    if (margin < 1){ R('undercut kills the margin'); continue; }
+
     const fresh = Math.exp(-age/cfg.tauS);
     const volS  = Math.sqrt(Math.min(1, vol1/cfg.volSat));
     const stab  = agree;
@@ -892,6 +902,7 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
 
     out.push({ id, name:meta.name, members:meta.members, exempt:meta.exempt,
       buy, sell, tax:saleTax(sell,meta.exempt), margin, instant, hourly, roi,
+      touchBuy, touchSell, touchMargin,
       limit, through, quantity:qty, capital:qty*buy, cycleProfit,
       gph, expGph:gph*conf, roiHr, gpPerMil, confidence:conf, fresh, volS, stab, trendPen,
       bidComp, askComp, marginComp, checkCost, tkB, tkS,

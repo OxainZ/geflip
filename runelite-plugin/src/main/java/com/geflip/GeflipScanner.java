@@ -54,6 +54,13 @@ class GeflipScanner
 		return m != null ? m.name : null;
 	}
 
+	/** Whether an item is GE-tax-exempt (bonds/starter tools) — for the fill recorder. */
+	boolean isExempt(int id)
+	{
+		Meta m = (mapping != null) ? mapping.get(id) : null;
+		return m != null && m.exempt;
+	}
+
 	/** Resolve a set of lower-cased item names to their IDs (empty until mapping loads). */
 	java.util.Set<Integer> idsForNames(java.util.Set<String> loweredNames)
 	{
@@ -71,6 +78,8 @@ class GeflipScanner
 		return Math.min((int) Math.floor(sell * 2L / 100.0), TAX_CAP);
 	}
 	static int netMargin(int buy, int sell, boolean exempt) { return sell - saleTax(sell, exempt) - buy; }
+	/** The undercut step (~0.05% of price, min 1gp) used to jump the GE queue. */
+	static int tickSize(int p) { return Math.max(1, (int) Math.round(p * 0.0005)); }
 
 	/** Structural-decline haircut: 90d < -15% scales confidence down, floored 0.6. */
 	static double trendPenalty(Double t90)
@@ -181,11 +190,17 @@ class GeflipScanner
 			// legs with the 5m volume-weighted average so the SELL price is one buyers
 			// actually pay, and the BUY price one sellers actually accept.
 			int hi = hiInst, lo = loInst;
+			// prefer the 5m VWAP; fall back to the 1h VWAP so an illiquid item with no 5m
+			// print doesn't revert to a lone, up-to-1h-stale instant price.
 			JsonObject w5 = (m5 != null && m5.has(e.getKey())) ? m5.getAsJsonObject(e.getKey()) : null;
-			if (w5 != null)
+			JsonObject guard = w5;
+			if (guard == null && h1.has(e.getKey())) guard = h1.getAsJsonObject(e.getKey());
+			if (guard != null)
 			{
-				if (!w5.get("avgHighPrice").isJsonNull()) hi = Math.min(hiInst, w5.get("avgHighPrice").getAsInt());
-				if (!w5.get("avgLowPrice").isJsonNull())  lo = Math.max(loInst, w5.get("avgLowPrice").getAsInt());
+				if (guard.has("avgHighPrice") && !guard.get("avgHighPrice").isJsonNull())
+					hi = Math.min(hiInst, guard.get("avgHighPrice").getAsInt());
+				if (guard.has("avgLowPrice") && !guard.get("avgLowPrice").isJsonNull())
+					lo = Math.max(loInst, guard.get("avgLowPrice").getAsInt());
 			}
 			if (hi <= lo) continue;   // no realistic spread once guarded
 
@@ -212,13 +227,24 @@ class GeflipScanner
 			}
 			if (margin < cfg.minMargin()) continue;
 
+			// FILLABLE prices: a resting offer at the touch (buy=lo / sell=hi) sits at the BACK
+			// of the queue and often never fills — the "it won't sell for the listed price" bug.
+			// Undercut one tick each side (bid up / ask down) and rank on THAT margin, which is
+			// what a flip actually earns once it completes.
+			int tkB = tickSize(lo), tkS = tickSize(hi);
+			int bidComp = lo + tkB;
+			int askComp = Math.max(bidComp + 1, hi - tkS);
+			int haircutDelta = instant - margin;                         // keep the corroboration pessimism
+			int marginComp = (askComp - saleTax(askComp, meta.exempt) - bidComp) - haircutDelta;
+			if (marginComp < Math.max(1, cfg.minMargin())) continue;     // no achievable margin after undercut
+
 			int limit = meta.limit;
-			long afford = perItemCap / lo;
+			long afford = perItemCap / bidComp;
 			long through = (long) (0.15 * vol1 * cycleH);   // ~15% of a side's flow is realistically ours
 			int qty = (int) Math.max(0, Math.min(limit, Math.min(afford, through)));
 			if (qty <= 0) continue;
 
-			double roi = (double) margin / lo;
+			double roi = (double) marginComp / bidComp;
 			// staleness + volume quality (app's fresh*volS), confidence-weighted
 			double fresh = Math.exp(-age / 1200.0);
 			double volS = Math.sqrt(Math.min(1.0, vol1 / 200.0));
@@ -228,8 +254,8 @@ class GeflipScanner
 			conf = Math.max(0, Math.min(1, conf * pen));
 
 			Flip f = new Flip();
-			f.id = id; f.name = meta.name; f.buy = lo; f.sell = hi;
-			f.tax = saleTax(hi, meta.exempt); f.margin = margin; f.quantity = qty; f.limit = limit;
+			f.id = id; f.name = meta.name; f.buy = bidComp; f.sell = askComp;
+			f.tax = saleTax(askComp, meta.exempt); f.margin = marginComp; f.quantity = qty; f.limit = limit;
 			// SIDE-SPECIFIC fill time: a BUY offer fills against instant-sells (low-side volume),
 			// a SELL offer against instant-buys (high-side volume); the two legs are sequential.
 			// Dividing by the correct side stops one-sided markets from faking a fast gp/h.
@@ -239,7 +265,7 @@ class GeflipScanner
 			double fillH = Math.min(999.0, buyFillH + sellFillH);
 			double effCycleH = Math.max(fillH, cycleH);   // floor at the 4h buy-limit reset
 			f.roi = roi; f.fillHours = fillH;
-			f.gph = (double) margin * qty / effCycleH; f.expGph = f.gph * conf;
+			f.gph = (double) marginComp * qty / effCycleH; f.expGph = f.gph * conf;
 			f.confidence = conf; f.t90 = t90; f.decliner = pen < 1.0;
 			out.add(f);
 		}

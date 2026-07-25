@@ -57,6 +57,7 @@ public class GeflipPlugin extends Plugin
 	// when the CURRENT offer in each slot was first seen (ms), to flag stale unfilled offers
 	private final long[] slotSince = new long[8];
 	private final String[] slotKey = new String[8];
+	private int tickCounter;   // paces the periodic offer-age refresh
 	// the last ranked flips, shared so the web app/phone shows exactly what the panel shows
 	private volatile java.util.List<GeflipScanner.Flip> lastFlips = java.util.Collections.emptyList();
 	// immutable snapshot of your GE offers, built ONLY on the client thread and published
@@ -139,7 +140,8 @@ public class GeflipPlugin extends Plugin
 		catch (Exception e) { log.debug("geflip: could not load fills history", e); }
 	}
 
-	private synchronized void saveFills()
+	/** Persist a client-thread SNAPSHOT (never the live arrays/list) to avoid a data race. */
+	private synchronized void saveFills(java.util.List<Fill> fillSnap, String[] sig, String[] key, long[] since)
 	{
 		try
 		{
@@ -147,12 +149,12 @@ public class GeflipPlugin extends Plugin
 			if (dir != null && !dir.isDirectory()) dir.mkdirs();
 			Persist p = new Persist();
 			// keep the log bounded — the most recent 3000 fills
-			p.fills = fills.size() > 3000
-				? new java.util.ArrayList<>(fills.subList(fills.size() - 3000, fills.size()))
-				: new java.util.ArrayList<>(fills);
-			p.slotSig = slotSig;
-			p.slotKey = slotKey;
-			p.slotSince = slotSince;
+			p.fills = fillSnap.size() > 3000
+				? new java.util.ArrayList<>(fillSnap.subList(fillSnap.size() - 3000, fillSnap.size()))
+				: fillSnap;
+			p.slotSig = sig;
+			p.slotKey = key;
+			p.slotSince = since;
 			java.nio.file.Files.write(fillsFile.toPath(),
 				new com.google.gson.Gson().toJson(p).getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		}
@@ -379,14 +381,32 @@ public class GeflipPlugin extends Plugin
 		{
 			fills.add(new Fill(o.getItemId(), "BUY", unit, qty, 0, now));
 		}
-		else // sell — record the 2% tax the GE takes on the sale
+		else // sell — record the 2% tax the GE takes on the sale (respecting tax-exempt items)
 		{
-			int tax = GeflipScanner.saleTax(unit, false) * qty;
+			int tax = GeflipScanner.saleTax(unit, scanner.isExempt(o.getItemId())) * qty;
 			fills.add(new Fill(o.getItemId(), "SELL", unit, qty, tax, now));
 		}
 		if (fills.size() > 3000) fills.remove(0);   // keep it bounded
-		// persistence + full re-match are blocking work — do them OFF the client thread
-		executor.submit(() -> { saveFills(); recompute(); });
+		// snapshot the mutable state HERE (client thread), then persist + re-match off-thread
+		// so the executor never serialises arrays/list the client thread is mutating.
+		java.util.List<Fill> fillSnap = new java.util.ArrayList<>(fills);
+		String[] sigSnap = slotSig.clone(), keySnap = slotKey.clone();
+		long[] sinceSnap = slotSince.clone();
+		executor.submit(() -> { saveFills(fillSnap, sigSnap, keySnap, sinceSnap); recompute(); });
+	}
+
+	/**
+	 * Rebuild the offer snapshot on a clock (every ~6s) so an offer's age — and the stale
+	 * flag — advances even when NO GE event fires (a priced-out offer that never fills emits
+	 * no further events). Runs on the client thread, so reading live slots[] is safe.
+	 */
+	@Subscribe
+	public void onGameTick(net.runelite.api.events.GameTick ev)
+	{
+		if (++tickCounter % 10 != 0) return;   // ~6s at 600ms/tick
+		java.util.List<Offer> snap = buildOffers();
+		offerSnapshot = snap;
+		if (panel != null) panel.setOffers(snap);
 	}
 
 	private static String timeNow()

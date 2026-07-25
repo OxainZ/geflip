@@ -49,8 +49,8 @@ public class JadPrayerOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D g)
 	{
-		// 1) highlight every healer as it comes (independent of the prayer state)
-		for (NPC h : plugin.healerNpcs()) drawHealer(g, h);
+		// 1) highlight every healer as it comes (skip the list copy when none are up)
+		if (plugin.healersUp) for (NPC h : plugin.healerNpcs()) drawHealer(g, h);
 
 		JadPrayerPlugin.Attack a = plugin.attack;
 		int s = Math.max(1, config.scale());
