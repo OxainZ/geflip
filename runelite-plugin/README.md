@@ -10,16 +10,28 @@ session P&L — so you stop copy-pasting between the web app and the game.
 > and must never, do that. Clicking a row only copies the item name to your
 > clipboard (to paste into the GE search yourself).
 
-## Status — this is a scaffold to build & test against the live client
+## Status — compiles clean against RuneLite 1.12.33; live pipeline verified
 
-The pricing/scoring logic is a faithful port of the web app and is **unit-tested**
-(`./gradlew test` runs `GeflipScannerTest` — tax, margin, and trend-penalty are
-locked to the same numbers the site uses, cross-checked equal to the JS). The
-RuneLite wiring (panel, nav button, `onGrandExchangeOfferChanged` fill tracking) is
-written to the standard external-plugin API but has **not been compiled against a
-live RuneLite build here** — expect to adjust a signature or two for your RuneLite
-version, then verify the panel + session P&L in-game. It is a real starting point,
-not a finished hub plugin.
+What's **proven** (built + run here, not just written):
+- **Compiles against the real RuneLite API** — `./gradlew build` resolves
+  `net.runelite:client:1.12.33` and compiles every class, including the
+  RuneLite-dependent `GeflipPlugin` (offer tracking) and `GeflipPanel`. So the API
+  signatures (`GrandExchangeOffer`, `@Subscribe`, `PluginPanel`, `@ConfigItem`, …)
+  are correct, not guessed.
+- **Unit tests pass** — `./gradlew test` (`GeflipScannerTest`: tax, margin,
+  trend-penalty locked to the web app's numbers).
+- **The full data pipeline runs live** — `./gradlew runCli` hits the real wiki API +
+  the published `data/trends.json` and prints a ranked flip list with the
+  death-spiral filter firing on real decliners. That's fetch → parse → score → rank
+  end-to-end, in real Java, verified.
+
+What still needs **the game running** (genuinely can't be tested headless):
+- The Swing **panel rendering** in the client sidebar.
+- **Live fill tracking** — the `onGrandExchangeOfferChanged` accounting only fires
+  when you actually place/complete GE offers.
+
+So: everything except the in-client GUI + live offer events is proven. Sideload it
+(below), open the GE, and confirm the panel + session P&L.
 
 ## What it does
 

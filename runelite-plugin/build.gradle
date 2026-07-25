@@ -38,3 +38,12 @@ java {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
+
+// Headless proof-of-life: runs the fetch+score pipeline against the live wiki API.
+// RuneLite is compileOnly, so add it to the run classpath here.
+tasks.register('runCli', JavaExec) {
+    group = 'verification'
+    description = 'Run GeflipCli against the live wiki API (no game needed)'
+    classpath = sourceSets.main.runtimeClasspath + configurations.compileClasspath
+    mainClass = 'com.geflip.GeflipCli'
+}
