@@ -189,6 +189,7 @@
 
 <!-- ============ SCAN ============ -->
 <section id="v-scan" class="view on">
+  <div id="liveRl" class="panel" style="display:none;margin-top:8px"></div>
   <div class="scanbar">
     <button class="primary" id="btnScan">Scan market</button>
     <button class="ghost" id="btnDeep" title="Check the shortlist against 48h of history">deep</button>
@@ -2308,6 +2309,7 @@ async function bridgePoll(){
     LIVE_FILLS = Array.isArray(s.fills) ? s.fills : [];
     status('<span class="live">● RuneLite</span> · realized ' + gpTxt(sess.realized||0)
       + ' · ' + LIVE_FILLS.length + ' fills tracked');
+    renderLive(s.session, s.fills, 'local bridge');
   }catch(e){ /* bridge went away — leave the last status */ }
 }
 async function bridgeInit(){
@@ -2334,6 +2336,7 @@ async function cloudPull(){
       CFG = {...CFG, ...blob.config}; CFG._cloudSeen = blob.updated; cfgToForm();
     }
     cloudStatus('<span class="live">● synced</span> · '+((blob.fills||[]).length)+' fills');
+    renderLive(blob.session, blob.fills, 'cloud');
     return blob;
   }catch(e){ cloudStatus('<span class="warn">offline</span>'); return null; }
 }
@@ -2351,6 +2354,27 @@ $('btnGenId').onclick = ()=>{
   $('cfg-cloudid').value = btoa(String.fromCharCode(...a)).replace(/[+/=]/g,'').slice(0,32);
 };
 $('btnCloudSync').onclick = async ()=>{ formToCfg(); await store.set('settings',CFG); await cloudPush(); await cloudPull(); };
+
+// Renders the LIVE data the plugin pushes (session P&L + real fills) into the card at
+// the top of the scan view, so the phone/web mirrors what RuneLite sees. Names resolve
+// from the item mapping the app already holds.
+function renderLive(session, fills, source){
+  const el = $('liveRl'); if (!el) return;
+  const s = session || {}; const F = Array.isArray(fills) ? fills : [];
+  if (!session && !F.length){ el.style.display='none'; return; }
+  const nameOf = id => (MAPPING && MAPPING.get && MAPPING.get(+id)?.name) || ('#'+id);
+  const recent = F.slice(-6).reverse().map(f=>{
+    const sell = f.side==='SELL';
+    return `<div style="display:flex;gap:6px;font-size:11px;line-height:1.7">
+      <span style="flex:1">${esc(nameOf(f.id))}</span>
+      <span class="${sell?'pos':'warn'}">${sell?'sold':'bought'}</span>
+      <span>${gpTxt(f.price||0)} ×${f.qty||0}</span></div>`;
+  }).join('');
+  el.innerHTML = `<h3>● Live from RuneLite <span style="font-weight:400;color:var(--faint);font-size:10px">${source||''}</span></h3>
+    <div style="font-size:12px;margin-bottom:6px">realized ${gpHtml(s.realized||0)} · deployed ${gpTxt(s.deployed||0)} · ${F.length} fills</div>
+    ${recent || '<div class="hint" style="margin:0">no fills yet — flip something in-game and it shows here</div>'}`;
+  el.style.display = '';
+}
 
 (async function boot(){
   detectBackend();
