@@ -19,19 +19,11 @@ public interface JadPrayerConfig extends Config
 
 	@ConfigItem(
 		keyName = "overHead",
-		name = "Symbol over Jad",
-		description = "Pop the prayer symbol above Jad's head — the primary indicator.",
+		name = "Symbols over monsters",
+		description = "Pop the correct prayer symbol above each monster's head (Jad updates live).",
 		position = 2
 	)
 	default boolean overHead() { return true; }
-
-	@ConfigItem(
-		keyName = "center",
-		name = "Also show centre",
-		description = "Additionally draw the prayer icon in the middle of the screen.",
-		position = 3
-	)
-	default boolean center() { return false; }
 
 	@ConfigItem(
 		keyName = "flash",
