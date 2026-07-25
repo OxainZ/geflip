@@ -2260,6 +2260,43 @@ $('btnSave').onclick = async ()=>{
   formToCfg(); await store.set('settings', CFG); cfgToForm();
   $('btnSave').textContent='Saved ✓'; setTimeout(()=>$('btnSave').textContent='Save config',1200);
 };
+/* ---------------- local bridge (RuneLite sync) ---------------- *
+ * When this page is SERVED BY the plugin's bridge it is same-origin http, so these
+ * relative fetches just work — no CORS, no mixed-content. It surfaces your LIVE game
+ * data (real fills + session P&L) straight from RuneLite. On the hosted site the ping
+ * fails and nothing changes. Additive only — never touches the scan/scoring.        */
+let BRIDGE = false, LIVE_FILLS = [];
+const BRIDGE_TOK = new URLSearchParams(location.search).get('t') || '';
+async function bridgePing(){
+  try{
+    const r = await fetch('api/ping', {cache:'no-store'});
+    if (!r.ok) return false;
+    const j = await r.json();
+    return !!(j && j.app === 'geflip-bridge');
+  }catch(e){ return false; }
+}
+async function bridgePoll(){
+  try{
+    const url = BRIDGE_TOK ? ('api/state?t=' + encodeURIComponent(BRIDGE_TOK)) : 'api/state';
+    const r = await fetch(url, {cache:'no-store'});
+    if (!r.ok){
+      status('<span class="warn">● RuneLite: ' + (r.status===401?'add ?t=token to the URL':'error') + '</span>');
+      return;
+    }
+    const s = await r.json();
+    const sess = s.session || {};
+    LIVE_FILLS = Array.isArray(s.fills) ? s.fills : [];
+    status('<span class="live">● RuneLite</span> · realized ' + gpTxt(sess.realized||0)
+      + ' · ' + LIVE_FILLS.length + ' fills tracked');
+  }catch(e){ /* bridge went away — leave the last status */ }
+}
+async function bridgeInit(){
+  BRIDGE = await bridgePing();
+  if (!BRIDGE) return;
+  await bridgePoll();
+  setInterval(bridgePoll, 12000);
+}
+
 (async function boot(){
   detectBackend();
   $('storeMode').innerHTML = {
@@ -2271,6 +2308,7 @@ $('btnSave').onclick = async ()=>{
   if (saved) CFG = {...DEF_CFG, ...saved};
   cfgToForm(); await renderBook(); renderNext();
   status('ready');
+  bridgeInit();          // light up RuneLite sync if we're served by the bridge
 })();
 </script>
 </body>
