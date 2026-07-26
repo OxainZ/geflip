@@ -41,14 +41,16 @@ final class CoachFarm
 	{
 		String herb = bare(HERBS, farmingLevel), tree = bare(TREES, farmingLevel),
 			fruit = bare(FRUIT, farmingLevel), bush = bare(BUSH, farmingLevel);
-		boolean guild = farmingLevel >= 45;   // Farming Guild opens at 45 (mid tier)
+		// Farming Guild is TIERED: 45 = bush/flower/allotment/cactus only; 65 = herb + tree;
+		// 85 = fruit tree. The valuable herb/tree stop isn't available until 65.
+		boolean guildBush = farmingLevel >= 45, guildHerbTree = farmingLevel >= 65, guildFruit = farmingLevel >= 85;
 		List<String> o = new ArrayList<>();
 
 		o.add("FARM RUN — Farming " + farmingLevel + " (herbs + trees + fruit trees)");
 		o.add("Herb=" + herb + " · Tree=" + tree + " · Fruit=" + fruit + " · Bush=" + bush);
 		o.add("");
 		o.add("BRING:");
-		o.add("• " + (guild ? 6 : 5) + "x " + herb + " (herb) seeds");
+		o.add("• " + (guildHerbTree ? 6 : 5) + "x " + herb + " (herb) seeds");
 		o.add("• 5x " + tree + " saplings  +  4x " + fruit + " saplings");
 		o.add("• Ultracompost (or a Bottomless bucket) — one per herb/allotment patch");
 		o.add("• Rake (skip if you have any diary that clears weeds), spade, seed dibber, secateurs");
@@ -56,8 +58,8 @@ final class CoachFarm
 		o.add("• GEAR: Magic secateurs (+10% herb yield), full Farmer's outfit (XP), Ectophial/teleports");
 		o.add("");
 		o.add("TELEPORTS to carry: Ardougne cloak, Camelot tab, Explorer's ring, Ring of wealth,");
-		o.add("  Xeric's talisman, Varrock tab, Home tele" + (guild ? ", Skills necklace" : "")
-			+ ", Spirit tree / Royal seed pod, Icy basalt (Weiss), Quetzal whistle (Varlamore).");
+		o.add("  Xeric's talisman, Varrock tab, Home tele" + (guildHerbTree ? ", Skills necklace" : "")
+			+ ", Spirit tree / Royal seed pod, Ectophial (Morytania), Icy basalt (Weiss), Quetzal whistle (Varlamore).");
 		o.add("");
 		o.add("STEPS — each stop: HARVEST → clear → ULTRACOMPOST → PLANT → PAY to protect:");
 		int n = 1;
@@ -67,13 +69,17 @@ final class CoachFarm
 		o.add(n++ + ") Camelot tab → CATHERBY: herb + fruit tree + allotment.");
 		o.add(n++ + ") Ardougne cloak → ARDOUGNE: herb + allotment + flower.");
 		o.add(n++ + ") Xeric's talisman (Glade) → run S to HOSIDIUS: herb + allotment.");
-		if (guild) o.add(n++ + ") Skills necklace → FARMING GUILD: herb + tree + fruit tree + bush (one-stop!).");
+		if (guildHerbTree)
+			o.add(n++ + ") Skills necklace → FARMING GUILD: herb + tree" + (guildFruit ? " + fruit tree" : "") + " (needs 65 Farm).");
 		o.add(n++ + ") Spirit tree / Royal seed pod → GNOME STRONGHOLD: fruit tree + tree.");
 		o.add(n++ + ") Spirit tree → TREE GNOME VILLAGE: fruit tree.");
+		o.add(n++ + ") Ectophial → CANIFIS (Morytania): herb — needs Nature Spirit (disease-free w/ Morytania Hard diary).");
+		o.add(n++ + ") Digsite pendant → FOSSIL ISLAND: herb — needs Bone Voyage.");
 		o.add(n++ + ") Icy basalt → WEISS: herb (disease-free) — needs Making Friends with My Arm.");
 		o.add(n++ + ") Quetzal whistle → CIVITAS ILLA FORTIS (Varlamore): herb — needs Varlamore access.");
 		o.add("");
-		if (!guild) o.add("LOCKED FOR YOU: Farming Guild (needs 45 Farming) — your next big convenience unlock.");
+		if (!guildBush) o.add("LOCKED: Farming Guild low tier (45 Farm = bush/allotments).");
+		else if (!guildHerbTree) o.add("NEXT UNLOCK: 65 Farming = Farming Guild herb + tree patches (a big one-stop).");
 		o.add("SKIP any stop you can't reach yet (Weiss/Varlamore/gnome = quest/access gated) — the rest still pays.");
 		o.add("TIPS: ultracompost + Ardougne Medium diary = disease-free herbs. Resurrect Crops (78 Magic,");
 		o.add("  Arceuus) revives a dead herb. NEVER skip paying a tree/fruit gardener — a dead sapling is a big loss.");

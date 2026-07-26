@@ -59,16 +59,17 @@ public class CoachEngineTest
 		assertEquals(CoachEngine.Status.READY, by.get("Void ranged set").status);
 		// Zulrah: blowpipe + Regicide + 84 ranged → READY now.
 		assertEquals(CoachEngine.Status.READY, by.get("Zulrah (money boss)").status);
-		// Dizana's: 84 ranged but Children of the Sun not done → exactly 1 gap → ALMOST.
-		assertEquals(CoachEngine.Status.ALMOST, by.get("Dizana's quiver (BiS ranged cape)").status);
-		// Barrows gloves: RFD not done + Agility 53<65 → ALMOST, two gaps (incl. Agility).
+		// Dizana's: gated like a hard PvM challenge (Ranged 90/Def 80/Prayer 74 + quest) → BLOCKED
+		// for a mid-game account, NOT "almost" (the audit's key correction).
+		assertEquals(CoachEngine.Status.BLOCKED, by.get("Dizana's quiver (BiS ranged cape)").status);
+		// Barrows gloves: real Agility req is 48 (account has 53) → phantom Agility gap GONE; only the
+		// RFD + Monkey Madness I quests remain → ALMOST, no Agility gap.
 		assertEquals(CoachEngine.Status.ALMOST, by.get("Barrows gloves").status);
-		assertEquals(2, by.get("Barrows gloves").gaps.size());
-		assertTrue(by.get("Barrows gloves").gaps.stream().anyMatch(g -> g.contains("Agility")));
+		assertTrue(by.get("Barrows gloves").gaps.stream().noneMatch(g -> g.contains("Agility")));
 		// Piety: prayer 63→70 is the only gap → ALMOST.
 		assertEquals(CoachEngine.Status.ALMOST, by.get("Piety (melee prayer)").status);
 		// DS2: many skill gaps → BLOCKED, and QP is NOT among them (225 >= 200).
-		CoachEngine.Scored ds2 = by.get("Dragon Slayer 2 -> Vorkath");
+		CoachEngine.Scored ds2 = by.get("Dragon Slayer 2 (-> Vorkath)");
 		assertEquals(CoachEngine.Status.BLOCKED, ds2.status);
 		assertTrue(ds2.gaps.stream().noneMatch(g -> g.startsWith("QP")));
 		assertTrue(ds2.gaps.stream().anyMatch(g -> g.contains("Construction")));

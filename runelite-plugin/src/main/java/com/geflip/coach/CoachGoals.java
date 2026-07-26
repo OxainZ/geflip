@@ -73,42 +73,50 @@ final class CoachGoals
 	static
 	{
 		// --- cheap, huge-value unlocks -----------------------------------------
-		GOALS.add(new Goal("Barrows gloves", 5, "medium", "Recipe for Disaster — near-BiS gloves, permanent, cheap. The last subquest (King Awowogei) needs ~65 Agility (boostable to 70 with a Summer pie).",
-			quest(Quest.RECIPE_FOR_DISASTER), skill(Skill.COOKING, 70), skill(Skill.AGILITY, 65)));
+		GOALS.add(new Goal("Barrows gloves", 5, "medium", "Recipe for Disaster — near-BiS gloves, permanent, cheap. Last subquest (Freeing King Awowogei) needs 48 Agility + Monkey Madness I; RFD also wants Cooking 70.",
+			quest(Quest.RECIPE_FOR_DISASTER), quest(Quest.MONKEY_MADNESS_I), skill(Skill.COOKING, 70), skill(Skill.AGILITY, 48)));
 		GOALS.add(new Goal("Void ranged set", 3, "quick", "Pest Control — cheap strong ranged armour; great for Zulrah/slayer while you save for better.",
-			skill(Skill.RANGED, 42), skill(Skill.DEFENCE, 42), skill(Skill.HITPOINTS, 42), skill(Skill.PRAYER, 22)));
+			skill(Skill.RANGED, 42), skill(Skill.ATTACK, 42), skill(Skill.STRENGTH, 42), skill(Skill.DEFENCE, 42),
+			skill(Skill.HITPOINTS, 42), skill(Skill.MAGIC, 42), skill(Skill.PRAYER, 22)));
 		GOALS.add(new Goal("Ancient Magicks (Barrage)", 4, "medium", "Desert Treasure I — unlocks Ice Barrage/Burst for AoE slayer (huge XP + money at nechs/dust devils).",
 			quest(Quest.DESERT_TREASURE_I), skill(Skill.MAGIC, 50)));
 
 		// --- prayers (DPS multipliers) -----------------------------------------
 		GOALS.add(new Goal("Piety (melee prayer)", 4, "medium", "70 Prayer + 70 Defence + King's Ransom. Big melee boost for fang/slayer tasks.",
 			skill(Skill.PRAYER, 70), skill(Skill.DEFENCE, 70), quest(Quest.KINGS_RANSOM)));
-		GOALS.add(new Goal("Rigour (ranged prayer)", 5, "long", "74 Prayer + a Dexterous prayer scroll (CoX drop or buy). THE ranged DPS prayer — your top upgrade as a ranger.",
-			skill(Skill.PRAYER, 74)));
-		GOALS.add(new Goal("Augury (magic prayer)", 3, "long", "77 Prayer + an Arcane prayer scroll. Magic version of Rigour.",
-			skill(Skill.PRAYER, 77)));
+		GOALS.add(new Goal("Rigour (ranged prayer)", 5, "long", "74 Prayer + a Dexterous prayer scroll (CoX drop, or buy for ~24M). THE ranged DPS prayer — your top upgrade as a ranger.",
+			skill(Skill.PRAYER, 74), coins(24_000_000)));
+		GOALS.add(new Goal("Augury (magic prayer)", 3, "long", "77 Prayer + an Arcane prayer scroll (~15M). Magic version of Rigour.",
+			skill(Skill.PRAYER, 77), coins(15_000_000)));
 
 		// --- money bosses ------------------------------------------------------
 		GOALS.add(new Goal("Zulrah (money boss)", 5, "medium", "~2-3.5M/hr. Needs a blowpipe + partial Regicide to reach Zul-Andra. Drops serp helm, blowpipe parts, onyx.",
 			item("Toxic blowpipe", BLOWPIPE_CHARGED, BLOWPIPE_EMPTY), questStarted(Quest.REGICIDE), skill(Skill.RANGED, 75)));
 		GOALS.add(new Goal("Trident of the swamp", 3, "quick", "75 Magic to wield — your Zulrah mage weapon AND it clears Dragon Slayer 2's magic gate. Two birds.",
 			skill(Skill.MAGIC, 75)));
-		GOALS.add(new Goal("Dragon Slayer 2 -> Vorkath", 5, "long", "Vorkath is ~3M/hr. Your 225 QP already clears the 200 QP gate — only skills remain.",
-			qp(200), skill(Skill.MAGIC, 75), skill(Skill.SMITHING, 70), skill(Skill.MINING, 68),
-			skill(Skill.AGILITY, 62), skill(Skill.THIEVING, 60), skill(Skill.CONSTRUCTION, 60),
-			skill(Skill.HUNTER, 50), skill(Skill.HERBLORE, 50),
-			quest(Quest.DRAGON_SLAYER_I), quest(Quest.BONE_VOYAGE), quest(Quest.CLIENT_OF_KOUREND)));
+		GOALS.add(new Goal("Occult necklace", 3, "medium", "Best magic-damage neck — your Zulrah mage switch. From Smoke devils or buy.",
+			item("Occult necklace", OCCULT)));
+		GOALS.add(new Goal("Ava's accumulator (ranged QoL)", 4, "quick", "Animal Magnetism — returns your ammo + range bonus. Upgrade to the Assembler after DS2.",
+			quest(Quest.ANIMAL_MAGNETISM), skill(Skill.RANGED, 50)));
+		GOALS.add(new Goal("Dragon Slayer 2 (-> Vorkath)", 5, "long", "Completing DS2 unlocks Vorkath (~2.5-3.5M/hr). Needs 200 QP + a long quest chain and these skills.",
+			qp(200), skill(Skill.MAGIC, 75), skill(Skill.SMITHING, 70), skill(Skill.MINING, 68), skill(Skill.CRAFTING, 62),
+			skill(Skill.AGILITY, 60), skill(Skill.THIEVING, 60), skill(Skill.CONSTRUCTION, 50),
+			quest(Quest.DRAGON_SLAYER_I), quest(Quest.LEGENDS_QUEST), quest(Quest.DREAM_MENTOR),
+			quest(Quest.A_TAIL_OF_TWO_CATS), quest(Quest.ANIMAL_MAGNETISM), quest(Quest.GHOSTS_AHOY),
+			quest(Quest.BONE_VOYAGE), quest(Quest.CLIENT_OF_KOUREND)));
+		GOALS.add(new Goal("Salve amulet (ei) — Vorkath BiS", 3, "medium", "Haunted Mine + Lair of Tarn Razorlor. +20% dmg/acc vs undead — huge at Vorkath.",
+			quest(Quest.HAUNTED_MINE), quest(Quest.LAIR_OF_TARN_RAZORLOR)));
 
 		// --- slayer engine -----------------------------------------------------
-		GOALS.add(new Goal("Slayer helmet (imbued)", 5, "medium", "55 Slayer + unlock via Slayer points. Works for ranged too — with your blowpipe it shreds tasks.",
-			skill(Skill.SLAYER, 55)));
+		GOALS.add(new Goal("Slayer helmet (imbued)", 5, "medium", "55 Slayer + 55 Crafting + unlock via Slayer points. Works for ranged too — with your blowpipe it shreds tasks.",
+			skill(Skill.SLAYER, 55), skill(Skill.CRAFTING, 55)));
 		GOALS.add(new Goal("Kraken (slayer boss)", 3, "medium", "87 Slayer — easy AFK-ish money + trident/tentacle.", skill(Skill.SLAYER, 87)));
 		GOALS.add(new Goal("Cerberus (primordial etc.)", 4, "long", "91 Slayer — drops the crystals for BiS boots.", skill(Skill.SLAYER, 91)));
 		GOALS.add(new Goal("Alchemical Hydra", 4, "long", "95 Slayer — great money + hydra leather (ferocious gloves).", skill(Skill.SLAYER, 95)));
 
 		// --- ranged endgame cape + armour --------------------------------------
-		GOALS.add(new Goal("Dizana's quiver (BiS ranged cape)", 5, "long", "Fortis Colosseum. Only needs 75 Ranged (you have 84) + Children of the Sun. 10% extra-arrow = ~10% free DPS. Your real fire-cape successor.",
-			skill(Skill.RANGED, 75), quest(Quest.CHILDREN_OF_THE_SUN)));
+		GOALS.add(new Goal("Dizana's quiver (BiS ranged cape)", 5, "grind", "Fortis Colosseum wave 12 (Sol Heredit) — a HARD solo PvM fight on par with the Inferno, NOT a stat unlock. Needs strong gear, Rigour and practice + Children of the Sun.",
+			quest(Quest.CHILDREN_OF_THE_SUN), skill(Skill.RANGED, 90), skill(Skill.DEFENCE, 80), skill(Skill.PRAYER, 74)));
 		GOALS.add(new Goal("Amulet of anguish", 3, "medium", "Ranged BiS neck — big step up from fury for a ranger.",
 			item("Amulet of anguish", ANGUISH)));
 		GOALS.add(new Goal("Infernal cape", 4, "grind", "The Inferno — ENDGAME. One of the hardest solo challenges in the game; expect near-max stats, BiS gear, Rigour, and many attempts. Not a near-term goal.",
@@ -119,10 +127,10 @@ final class CoachGoals
 		GOALS.add(new Goal("Monkey Madness 2", 3, "medium", "Unlocks demonic gorillas (zenyte drops) + is a prereq for later content.",
 			quest(Quest.MONKEY_MADNESS_I), skill(Skill.SLAYER, 69), skill(Skill.CRAFTING, 70),
 			skill(Skill.HUNTER, 60), skill(Skill.AGILITY, 55), skill(Skill.THIEVING, 55), skill(Skill.FIREMAKING, 60)));
-		GOALS.add(new Goal("Song of the Elves -> Gauntlet", 5, "grind", "Unlocks Prifddinas + The Gauntlet (crystal armour/bow — excellent for a ranger) + Zalcano. Needs 70 in ~10 skills.",
+		GOALS.add(new Goal("Song of the Elves -> Gauntlet", 5, "grind", "Unlocks Prifddinas + The Gauntlet (crystal armour/bow — excellent for a ranger) + Zalcano. Needs 70 in 10 skills.",
 			skill(Skill.AGILITY, 70), skill(Skill.CONSTRUCTION, 70), skill(Skill.FARMING, 70), skill(Skill.HERBLORE, 70),
 			skill(Skill.HUNTER, 70), skill(Skill.MINING, 70), skill(Skill.SMITHING, 70), skill(Skill.THIEVING, 70),
-			skill(Skill.WOODCUTTING, 70), skill(Skill.CRAFTING, 70), skill(Skill.MAGIC, 70)));
+			skill(Skill.WOODCUTTING, 70), skill(Skill.CRAFTING, 70)));
 	}
 
 	// --- curated high-value quests (with their BINDING requirements) ----------
@@ -135,24 +143,31 @@ final class CoachGoals
 	static
 	{
 		QUESTS.add(new QuestRec(Quest.DESERT_TREASURE_I, "Ancient Magicks (Ice Barrage/Burst) — turbo-charges Slayer.",
-			skill(Skill.FIREMAKING, 50), skill(Skill.MAGIC, 50), skill(Skill.SLAYER, 10)));
+			skill(Skill.FIREMAKING, 50), skill(Skill.MAGIC, 50), skill(Skill.SLAYER, 10),
+			quest(Quest.THE_DIG_SITE), quest(Quest.TEMPLE_OF_IKOV), quest(Quest.THE_TOURIST_TRAP),
+			quest(Quest.TROLL_STRONGHOLD), quest(Quest.PRIEST_IN_PERIL), quest(Quest.WATERFALL_QUEST)));
 		QUESTS.add(new QuestRec(Quest.MONKEY_MADNESS_I, "Dragon scimitar + opens MM2 and the RFD monkey subquest."));
-		QUESTS.add(new QuestRec(Quest.REGICIDE, "Access to Zul-Andra (Zulrah) + elf lands."));
-		QUESTS.add(new QuestRec(Quest.RECIPE_FOR_DISASTER, "Barrows gloves. NOTE: the King Awowogei subquest needs ~70 Agility (boostable).",
-			skill(Skill.COOKING, 70), skill(Skill.AGILITY, 65)));
-		QUESTS.add(new QuestRec(Quest.CHILDREN_OF_THE_SUN, "Short — unlocks Fortis Colosseum → Dizana's quiver."));
+		QUESTS.add(new QuestRec(Quest.REGICIDE, "Access to Zul-Andra (Zulrah) + elf lands.", quest(Quest.UNDERGROUND_PASS)));
+		QUESTS.add(new QuestRec(Quest.RECIPE_FOR_DISASTER, "Barrows gloves. Last subquest needs 48 Agility + Monkey Madness I.",
+			skill(Skill.COOKING, 70), skill(Skill.AGILITY, 48), quest(Quest.MONKEY_MADNESS_I)));
+		QUESTS.add(new QuestRec(Quest.CHILDREN_OF_THE_SUN, "Short — unlocks Fortis Colosseum (Dizana's quiver comes from beating wave 12, a hard fight)."));
 		QUESTS.add(new QuestRec(Quest.LUNAR_DIPLOMACY, "Lunar spellbook (NPC Contact, Humidify, Vengeance later).",
 			skill(Skill.MAGIC, 65), skill(Skill.HERBLORE, 60), skill(Skill.CRAFTING, 55)));
 		QUESTS.add(new QuestRec(Quest.MONKEY_MADNESS_II, "Demonic gorillas (zenyte drops).",
-			quest(Quest.MONKEY_MADNESS_I), skill(Skill.SLAYER, 69), skill(Skill.CRAFTING, 70),
+			quest(Quest.MONKEY_MADNESS_I), quest(Quest.ENLIGHTENED_JOURNEY), quest(Quest.THE_EYES_OF_GLOUPHRIE),
+			quest(Quest.WATCHTOWER), quest(Quest.TROLL_STRONGHOLD), skill(Skill.SLAYER, 69), skill(Skill.CRAFTING, 70),
 			skill(Skill.HUNTER, 60), skill(Skill.AGILITY, 55), skill(Skill.THIEVING, 55), skill(Skill.FIREMAKING, 60)));
-		QUESTS.add(new QuestRec(Quest.DRAGON_SLAYER_II, "Vorkath (~3M/hr).",
-			qp(200), skill(Skill.MAGIC, 75), skill(Skill.SMITHING, 70), skill(Skill.MINING, 68),
-			skill(Skill.AGILITY, 62), skill(Skill.THIEVING, 60), skill(Skill.CONSTRUCTION, 60),
-			skill(Skill.HUNTER, 50), skill(Skill.HERBLORE, 50)));
+		QUESTS.add(new QuestRec(Quest.DRAGON_SLAYER_II, "Vorkath (~2.5-3.5M/hr). Long quest chain + these skills.",
+			qp(200), skill(Skill.MAGIC, 75), skill(Skill.SMITHING, 70), skill(Skill.MINING, 68), skill(Skill.CRAFTING, 62),
+			skill(Skill.AGILITY, 60), skill(Skill.THIEVING, 60), skill(Skill.CONSTRUCTION, 50),
+			quest(Quest.LEGENDS_QUEST), quest(Quest.DREAM_MENTOR), quest(Quest.A_TAIL_OF_TWO_CATS),
+			quest(Quest.ANIMAL_MAGNETISM), quest(Quest.GHOSTS_AHOY), quest(Quest.BONE_VOYAGE), quest(Quest.CLIENT_OF_KOUREND)));
 		QUESTS.add(new QuestRec(Quest.DESERT_TREASURE_II__THE_FALLEN_EMPIRE, "Ancient rings + BiS unlocks.",
-			skill(Skill.MAGIC, 75), skill(Skill.FIREMAKING, 90), skill(Skill.MINING, 62), skill(Skill.HERBLORE, 60),
-			skill(Skill.RUNECRAFT, 60), skill(Skill.CONSTRUCTION, 55), skill(Skill.AGILITY, 50), skill(Skill.THIEVING, 50)));
+			skill(Skill.MAGIC, 75), skill(Skill.FIREMAKING, 75), skill(Skill.THIEVING, 70), skill(Skill.HERBLORE, 62),
+			skill(Skill.RUNECRAFT, 60), skill(Skill.CONSTRUCTION, 60),
+			quest(Quest.DESERT_TREASURE_I), quest(Quest.SECRETS_OF_THE_NORTH), quest(Quest.ENAKHRAS_LAMENT),
+			quest(Quest.TEMPLE_OF_THE_EYE), quest(Quest.THE_GARDEN_OF_DEATH), quest(Quest.BELOW_ICE_MOUNTAIN),
+			quest(Quest.HIS_FAITHFUL_SERVANTS)));
 		QUESTS.add(new QuestRec(Quest.SONG_OF_THE_ELVES, "Prifddinas + The Gauntlet (crystal gear) + Zalcano.",
 			skill(Skill.AGILITY, 70), skill(Skill.CONSTRUCTION, 70), skill(Skill.FARMING, 70), skill(Skill.HERBLORE, 70),
 			skill(Skill.HUNTER, 70), skill(Skill.MINING, 70), skill(Skill.SMITHING, 70), skill(Skill.THIEVING, 70),
