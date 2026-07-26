@@ -28,47 +28,90 @@ class GeflipPanel extends PluginPanel
 	private final JLabel session = new JLabel("session: —");
 	private final JLabel calib = new JLabel(" ");      // your ACTUAL results (win% / hold)
 	private final JLabel legend = new JLabel(" ");     // what the row symbols mean
-	private final JPanel rows = new JPanel();
-	private final JPanel offersBox = new JPanel();   // "Your GE" — live open offers
+	private final JPanel rows = new JPanel();          // Flips tab
+	private final JPanel dipsRows = new JPanel();      // Dips tab (🔥 items cheap vs their norm)
+	private final JPanel offersBox = new JPanel();     // "Your GE" — live open offers (You tab)
+	private final java.awt.CardLayout cards = new java.awt.CardLayout();
+	private final JPanel cardPanel = new JPanel(cards);
+	private final JButton tabFlips = new JButton("Flips");
+	private final JButton tabDips = new JButton("Dips");
+	private final JButton tabYou = new JButton("You");
 
 	GeflipPanel(Runnable onRefresh)
 	{
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-		JPanel top = new JPanel(new BorderLayout());
-		JButton refresh = new JButton("Rescan");
-		refresh.addActionListener(e -> onRefresh.run());
-		top.add(refresh, BorderLayout.NORTH);
 		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		session.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
 		calib.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		calib.setFont(FontManager.getRunescapeSmallFont());
 		legend.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		legend.setFont(FontManager.getRunescapeSmallFont());
-		// one-glance key so every symbol on a row is understandable
-		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · %fill=fills-in-4h · 🔥dip · ⚠falling · ⏳low=won't fill</span></html>");
-		JPanel meta = new JPanel(new GridLayout(4, 1));
-		meta.add(status);
-		meta.add(session);
-		meta.add(calib);
-		meta.add(legend);
-		top.add(meta, BorderLayout.SOUTH);
+		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · %fill · 🔥dip · ⚠falling · ⏳low</span></html>");
 
-		// north = controls/meta, then the live "Your GE" offers box beneath it
-		JPanel north = new JPanel();
-		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
-		top.setAlignmentX(Component.LEFT_ALIGNMENT);
-		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
-		offersBox.setAlignmentX(Component.LEFT_ALIGNMENT);
-		north.add(top);
-		north.add(offersBox);
+		// --- top: rescan + status + legend ---
+		JButton refresh = new JButton("Rescan");
+		refresh.addActionListener(e -> onRefresh.run());
+		refresh.setAlignmentX(Component.LEFT_ALIGNMENT);
+		status.setAlignmentX(Component.LEFT_ALIGNMENT);
+		legend.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JPanel top = new JPanel();
+		top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
+		top.add(refresh);
+		top.add(status);
+		top.add(legend);
+
+		// --- tab bar: Flips | Dips | You ---
+		JPanel tabBar = new JPanel(new GridLayout(1, 3, 3, 0));
+		tabBar.setBorder(BorderFactory.createEmptyBorder(6, 0, 4, 0));
+		tabBar.add(tabFlips); tabBar.add(tabDips); tabBar.add(tabYou);
+		tabFlips.addActionListener(e -> showCard("flips"));
+		tabDips.addActionListener(e -> showCard("dips"));
+		tabYou.addActionListener(e -> showCard("you"));
+
+		JPanel north = new JPanel(new BorderLayout());
+		north.add(top, BorderLayout.NORTH);
+		north.add(tabBar, BorderLayout.SOUTH);
 		add(north, BorderLayout.NORTH);
 
+		// --- cards ---
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
-		JScrollPane scroll = new JScrollPane(rows);
-		scroll.setBorder(null);
-		add(scroll, BorderLayout.CENTER);
+		dipsRows.setLayout(new BoxLayout(dipsRows, BoxLayout.Y_AXIS));
+		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
+
+		// "You" card = session P&L + your record + live GE offers
+		JPanel youBox = new JPanel();
+		youBox.setLayout(new BoxLayout(youBox, BoxLayout.Y_AXIS));
+		session.setAlignmentX(Component.LEFT_ALIGNMENT);
+		calib.setAlignmentX(Component.LEFT_ALIGNMENT);
+		offersBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+		youBox.add(session);
+		youBox.add(calib);
+		youBox.add(offersBox);
+
+		cardPanel.add(scrollOf(rows), "flips");
+		cardPanel.add(scrollOf(dipsRows), "dips");
+		cardPanel.add(scrollOf(youBox), "you");
+		add(cardPanel, BorderLayout.CENTER);
+		showCard("flips");
+	}
+
+	private static JScrollPane scrollOf(JPanel content)
+	{
+		JScrollPane s = new JScrollPane(content);
+		s.setBorder(null);
+		s.getVerticalScrollBar().setUnitIncrement(16);
+		return s;
+	}
+
+	private void showCard(String name)
+	{
+		cards.show(cardPanel, name);
+		// highlight the active tab
+		tabFlips.setForeground("flips".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+		tabDips.setForeground("dips".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+		tabYou.setForeground("you".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 	}
 
 	void setStatus(String s) { SwingUtilities.invokeLater(() -> status.setText(s)); }
@@ -162,9 +205,24 @@ class GeflipPanel extends PluginPanel
 		SwingUtilities.invokeLater(() ->
 		{
 			rows.removeAll();
-			for (GeflipScanner.Flip f : flips) rows.add(rowFor(f));
-			rows.revalidate();
-			rows.repaint();
+			dipsRows.removeAll();
+			int dips = 0;
+			for (GeflipScanner.Flip f : flips)
+			{
+				rows.add(rowFor(f));
+				if (f.dumping) { dipsRows.add(rowFor(f)); dips++; }   // 🔥 cheap vs its recent norm
+			}
+			if (dips == 0)
+			{
+				JLabel none = new JLabel("no dips right now — nothing's trading below its norm");
+				none.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				none.setFont(FontManager.getRunescapeSmallFont());
+				none.setBorder(BorderFactory.createEmptyBorder(8, 6, 8, 6));
+				dipsRows.add(none);
+			}
+			tabDips.setText(dips > 0 ? "Dips (" + dips + ")" : "Dips");
+			rows.revalidate(); rows.repaint();
+			dipsRows.revalidate(); dipsRows.repaint();
 		});
 	}
 
