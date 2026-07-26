@@ -69,6 +69,10 @@ public class CoachPlugin extends Plugin
 	private boolean primed = false;   // skip the very first scan so we don't alert your whole backlog
 	// session efficiency: baseline XP/wealth/time snapped on the first logged-in read
 	private long sessStartMs = 0, sessStartXp = 0, sessStartWealth = -1;
+	private final Map<Skill, Long> startSkillXp = new EnumMap<>(Skill.class);   // per-skill baseline → xp/hr per skill
+	// map "Magic" -> Skill.MAGIC so we can turn a gap string back into a skill for ETAs
+	private static final Map<String, Skill> SKILL_BY_CAP = new java.util.HashMap<>();
+	static { for (Skill sk : Skill.values()) if (sk != Skill.OVERALL) SKILL_BY_CAP.put(CoachGoals.cap(sk.name()), sk); }
 	// PvM progress from the OSRS hiscores (boss KCs, collection log, clues)
 	private volatile net.runelite.client.hiscore.HiscoreResult hiscore;
 	private volatile String hiscoreName;
@@ -118,6 +122,7 @@ public class CoachPlugin extends Plugin
 			refreshHiscore();
 			p.setNext(CoachEngine.doNext(all));
 			p.setGoals(all, questLines(st), pvmLines(), diaryLines());
+			p.setPath(criticalPath(st));
 			p.setBlocked(CoachEngine.blocked(all));
 			p.setFarm(config.farmingHelper() ? CoachFarm.plan(st.level(Skill.FARMING), farmElapsedMin()) : null);
 			fireUnlockAlerts(all, st);
@@ -248,8 +253,8 @@ public class CoachPlugin extends Plugin
 
 		if (primed && config.unlockAlerts())
 		{
-			for (String g : ready) if (!lastReady.contains(g)) notifier.notify("Geflip Coach: \"" + g + "\" is now available!");
-			for (String q : qReady) if (!lastQuestReady.contains(q)) notifier.notify("Geflip Coach: you can now start \"" + q + "\"");
+			for (String g : ready) if (!lastReady.contains(g)) { notifier.notify("Geflip Coach: \"" + g + "\" is now available!"); webhook("✅ Unlocked: **" + g + "**"); }
+			for (String q : qReady) if (!lastQuestReady.contains(q)) { notifier.notify("Geflip Coach: you can now start \"" + q + "\""); webhook("📜 Quest available: **" + q + "**"); }
 		}
 		lastReady.clear(); lastReady.addAll(ready);
 		lastQuestReady.clear(); lastQuestReady.addAll(qReady);
@@ -260,7 +265,12 @@ public class CoachPlugin extends Plugin
 	private String sessionStats(CoachState st)
 	{
 		long now = System.currentTimeMillis(), xp = totalXp();
-		if (sessStartMs == 0) { sessStartMs = now; sessStartXp = xp; sessStartWealth = st.wealth; return "session: tracking…"; }
+		if (sessStartMs == 0)
+		{
+			sessStartMs = now; sessStartXp = xp; sessStartWealth = st.wealth;
+			for (Skill sk : Skill.values()) if (sk != Skill.OVERALL) startSkillXp.put(sk, (long) client.getSkillExperience(sk));
+			return "session: tracking…";
+		}
 		if (sessStartWealth < 0 && st.wealth >= 0) sessStartWealth = st.wealth;   // baseline once prices load
 		double hrs = (now - sessStartMs) / 3_600_000.0;
 		if (hrs < 1.0 / 60) return "session: warming up…";
@@ -335,6 +345,93 @@ public class CoachPlugin extends Plugin
 		return out;
 	}
 
+	// --- critical-path planner (the "how do I actually get there" brain) ------
+	/** Ordered plan to the focus goal: every skill to train (with a live ETA if you're training it)
+	 *  and quest to do, prerequisites first. Focus = config.focusGoal (name match) or the
+	 *  highest-impact blocked goal. Client thread (reads live skill XP). */
+	private List<String> criticalPath(CoachState st)
+	{
+		List<CoachEngine.Scored> all = CoachEngine.evaluate(st);
+		CoachGoals.Goal target = null;
+		String want = config.focusGoal().trim().toLowerCase();
+		if (!want.isEmpty())
+			for (CoachEngine.Scored sc : all) if (sc.goal.name.toLowerCase().contains(want)) { target = sc.goal; break; }
+		if (target == null) { List<CoachEngine.Scored> b = CoachEngine.blocked(all); if (!b.isEmpty()) target = b.get(0).goal; }
+		if (target == null) return java.util.Collections.emptyList();
+
+		java.util.LinkedHashMap<String, Integer> skills = new java.util.LinkedHashMap<>();   // capName -> target level (max)
+		java.util.LinkedHashSet<String> quests = new java.util.LinkedHashSet<>();             // pretty names, prereqs first
+		java.util.LinkedHashSet<String> misc = new java.util.LinkedHashSet<>();
+		collectPath(target.reqs, st, skills, quests, misc, 0);
+
+		List<String> out = new ArrayList<>();
+		out.add("PATH TO " + target.name);
+		if (skills.isEmpty() && quests.isEmpty() && misc.isEmpty()) { out.add("✓ ready now — go do it!"); return out; }
+		for (Map.Entry<String, Integer> e : skills.entrySet())
+		{
+			Skill sk = SKILL_BY_CAP.get(e.getKey());
+			int cur = sk != null ? st.level(sk) : 0;
+			String eta = sk != null ? etaFor(sk, e.getValue()) : null;
+			out.add("• Train " + e.getKey() + " " + cur + "→" + e.getValue() + (eta != null ? "  (~" + eta + ")" : ""));
+		}
+		for (String q : quests) out.add("• Quest: " + q);
+		for (String m : misc) out.add("• " + m);
+		return out;
+	}
+
+	private void collectPath(List<CoachGoals.Req> reqs, CoachState st, Map<String, Integer> skills,
+		Set<String> quests, Set<String> misc, int depth)
+	{
+		for (CoachGoals.Req r : reqs)
+		{
+			CoachGoals.Gap g = r.gap(st);
+			if (g == null) continue;
+			String t = g.text;
+			int plus = t.lastIndexOf(" +");
+			if (plus > 0 && SKILL_BY_CAP.containsKey(t.substring(0, plus)))   // "<Skill> +N" → train to cur+N
+			{
+				String cap = t.substring(0, plus);
+				try { int delta = Integer.parseInt(t.substring(plus + 2).trim()); int tgt = st.level(SKILL_BY_CAP.get(cap)) + delta;
+					skills.merge(cap, tgt, Math::max); } catch (NumberFormatException ignored) {}
+			}
+			else if (t.startsWith("quest: ") || t.startsWith("start: "))
+			{
+				String qn = t.substring(7).trim();
+				if (depth < 2) { CoachGoals.QuestRec qr = findQuestRec(qn); if (qr != null) collectPath(qr.reqs, st, skills, quests, misc, depth + 1); }
+				quests.add(qn);   // added AFTER its prereqs → correct order in the LinkedHashSet
+			}
+			else misc.add(t);   // QP / gp / item
+		}
+	}
+
+	private static CoachGoals.QuestRec findQuestRec(String prettyName)
+	{
+		for (CoachGoals.QuestRec qr : CoachGoals.QUESTS) if (CoachGoals.pretty(qr.q).equals(prettyName)) return qr;
+		return null;
+	}
+
+	/** XP to reach a skill level, then ETA at your live per-skill rate (null if not training it). */
+	private static long xpForLevel(int lvl)
+	{
+		double xp = 0;
+		for (int i = 1; i < lvl; i++) xp += Math.floor(i + 300 * Math.pow(2, i / 7.0));
+		return (long) Math.floor(xp / 4);
+	}
+
+	private String etaFor(Skill sk, int targetLevel)
+	{
+		Long base = startSkillXp.get(sk);
+		if (base == null || sessStartMs == 0) return null;
+		double hrs = (System.currentTimeMillis() - sessStartMs) / 3_600_000.0;
+		long cur = client.getSkillExperience(sk);
+		if (hrs < 0.03 || cur <= base) return null;   // not (yet) training this skill
+		double rate = (cur - base) / hrs;
+		long need = xpForLevel(targetLevel) - cur;
+		if (need <= 0 || rate <= 0) return null;
+		double eta = need / rate;
+		return eta < 1 ? Math.max(1, Math.round(eta * 60)) + "m" : String.format("%.1fh", eta);
+	}
+
 	/** Record "I just did a farm run" (persisted), so the Farm tab counts down to the next one. */
 	void markFarmRun()
 	{
@@ -350,6 +447,31 @@ public class CoachPlugin extends Plugin
 		if (v == null) return -1;
 		try { long last = Long.parseLong(v.trim()); return last > 0 ? (int) ((System.currentTimeMillis() - last) / 60000) : -1; }
 		catch (NumberFormatException e) { return -1; }
+	}
+
+	/** Push a one-line message to the configured Discord webhook (off-thread, best-effort). So your
+	 *  phone buzzes when a goal unlocks even with the game closed. */
+	private void webhook(String msg)
+	{
+		final String url = config.webhookUrl().trim();
+		if (url.isEmpty() || !url.startsWith("http")) return;
+		executor.submit(() ->
+		{
+			try
+			{
+				HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+				c.setRequestMethod("POST");
+				c.setConnectTimeout(10000); c.setReadTimeout(10000);
+				c.setRequestProperty("Content-Type", "application/json");
+				c.setDoOutput(true);
+				JsonObject body = new JsonObject();
+				body.addProperty("content", msg);
+				try (OutputStream os = c.getOutputStream()) { os.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
+				c.getResponseCode();   // fire; ignore body
+				c.disconnect();
+			}
+			catch (Exception e) { log.debug("coach: webhook failed", e); }
+		});
 	}
 
 	private static final int[] CA_TIERS = {

@@ -36,12 +36,14 @@ class CoachPanel extends PluginPanel
 	private final JPanel nextBox = new JPanel();
 	private final JPanel goalsBox = new JPanel();
 	private final JPanel blockedBox = new JPanel();
+	private final JPanel pathBox = new JPanel();
 	private final JPanel farmBox = new JPanel();
 	private final JTextField askInput = new JTextField();
 	private final JTextArea askResult = new JTextArea();
 
 	private final JButton tabNext = new JButton("Next");
 	private final JButton tabGoals = new JButton("Goals");
+	private final JButton tabPath = new JButton("Path");
 	private final JButton tabBlocked = new JButton("Blocked");
 	private final JButton tabFarm = new JButton("Farm");
 	private final JButton tabAsk = new JButton("Ask");
@@ -74,22 +76,24 @@ class CoachPanel extends PluginPanel
 		top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 		top.add(refresh); top.add(status); top.add(summary); top.add(sessionStats);
 
-		JPanel tabBar = new JPanel(new GridLayout(1, 5, 2, 0));
+		JPanel tabBar = new JPanel(new GridLayout(1, 6, 2, 0));
 		tabBar.setBorder(BorderFactory.createEmptyBorder(6, 0, 4, 0));
-		tabBar.add(tabNext); tabBar.add(tabGoals); tabBar.add(tabBlocked); tabBar.add(tabFarm); tabBar.add(tabAsk);
-		for (JButton b : new JButton[]{ tabNext, tabGoals, tabBlocked, tabFarm, tabAsk })
+		tabBar.add(tabNext); tabBar.add(tabGoals); tabBar.add(tabPath); tabBar.add(tabBlocked); tabBar.add(tabFarm); tabBar.add(tabAsk);
+		for (JButton b : new JButton[]{ tabNext, tabGoals, tabPath, tabBlocked, tabFarm, tabAsk })
 			b.setMargin(new java.awt.Insets(2, 1, 2, 1));
 		tabNext.addActionListener(e -> show("next"));
 		tabGoals.addActionListener(e -> show("goals"));
+		tabPath.addActionListener(e -> show("path"));
 		tabBlocked.addActionListener(e -> show("blocked"));
 		tabFarm.addActionListener(e -> show("farm"));
 		tabAsk.addActionListener(e -> show("ask"));
 
-		for (JPanel p : new JPanel[]{ nextBox, goalsBox, blockedBox, farmBox })
+		for (JPanel p : new JPanel[]{ nextBox, goalsBox, blockedBox, pathBox, farmBox })
 			p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 
 		cards.add(scroll(nextBox), "next");
 		cards.add(scroll(goalsBox), "goals");
+		cards.add(scroll(pathBox), "path");
 		cards.add(scroll(blockedBox), "blocked");
 		cards.add(farmCard(), "farm");
 		cards.add(askCard(), "ask");
@@ -157,6 +161,7 @@ class CoachPanel extends PluginPanel
 		((java.awt.CardLayout) cards.getLayout()).show(cards, card);
 		tabNext.setForeground("next".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabGoals.setForeground("goals".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+		tabPath.setForeground("path".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabBlocked.setForeground("blocked".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabFarm.setForeground("farm".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabAsk.setForeground("ask".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
@@ -210,6 +215,16 @@ class CoachPanel extends PluginPanel
 				for (String d : diaries) goalsBox.add(hint(d));
 			}
 			goalsBox.revalidate(); goalsBox.repaint();
+		});
+	}
+
+	void setPath(List<String> lines)
+	{
+		SwingUtilities.invokeLater(() -> {
+			pathBox.removeAll();
+			if (lines == null || lines.isEmpty()) pathBox.add(hint("Set a Focus goal in config (or wait for auto-pick)."));
+			else for (String l : lines) pathBox.add(l.isEmpty() ? hint(" ") : (l.startsWith("PATH") ? header(l) : hint(l)));
+			pathBox.revalidate(); pathBox.repaint();
 		});
 	}
 

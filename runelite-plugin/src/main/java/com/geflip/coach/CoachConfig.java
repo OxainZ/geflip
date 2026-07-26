@@ -24,6 +24,19 @@ public interface CoachConfig extends Config
 		position = 3)
 	default boolean unlockAlerts() { return true; }
 
+	@ConfigItem(keyName = "focusGoal", name = "Focus goal (Path tab)",
+		description = "Type a goal name (e.g. 'Vorkath' or 'Dizana') to see the full ordered path to it — "
+			+ "every skill to train and quest to do, in order, with live ETAs. Blank = auto-pick your "
+			+ "highest-impact blocked goal.",
+		position = 4)
+	default String focusGoal() { return ""; }
+
+	@ConfigItem(keyName = "webhookUrl", name = "Discord webhook (alerts)",
+		description = "Optional: a Discord webhook URL. Goal unlocks + big milestones get pushed here so "
+			+ "you see them on your phone even with the game closed. Blank = off.",
+		position = 5)
+	default String webhookUrl() { return ""; }
+
 	@ConfigSection(name = "Ask (LLM coach)", description = "Optional: ask a live-context question about your account.",
 		position = 10, closedByDefault = true)
 	String ask = "ask";
