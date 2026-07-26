@@ -11,6 +11,7 @@ import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.InventoryID;
+import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.ItemID;
 import net.runelite.api.events.GrandExchangeOfferChanged;
@@ -43,6 +44,10 @@ public class GeflipPlugin extends Plugin
 
 	// live coins you actually have (inventory + bank when opened); −1 = unknown yet
 	private volatile long liveGp = -1;
+	// snapshots of what you actually hold (item id -> qty), taken on the client thread so the
+	// off-thread holdings reconcile never touches live containers. null = not read yet.
+	private volatile java.util.Map<Integer, Integer> invCounts;
+	private volatile java.util.Map<Integer, Integer> bankCounts;
 
 	private final GeflipScanner scanner = new GeflipScanner();
 	private GeflipPanel panel;
@@ -154,17 +159,32 @@ public class GeflipPlugin extends Plugin
 		{ this.id = id; this.name = name; this.qty = qty; this.avgCost = avgCost; this.sellHint = sellHint; }
 	}
 
-	/** Everything you're holding, biggest first, with the current recommended sell price. */
+	/**
+	 * Everything you're holding, biggest first, with the current recommended sell price.
+	 * RECONCILED against what you actually possess: an item you no longer have (inventory +
+	 * bank read, none left, not in a GE slot) is dropped automatically; a partial sale caps
+	 * the shown qty. When the bank hasn't been opened we can't be sure, so we keep it (the ✓
+	 * button is the manual fallback there).
+	 */
 	private java.util.List<Hold> buildHoldings()
 	{
+		boolean invKnown = invCounts != null;      // logged in & inventory read
+		boolean bankKnown = bankCounts != null;    // bank opened this session
 		java.util.List<Hold> out = new java.util.ArrayList<>();
 		for (java.util.Map.Entry<Integer, long[]> e : ledger.holdings.entrySet())
 		{
+			int id = e.getKey();
 			int qty = (int) e.getValue()[0];
 			if (qty <= 0) continue;
 			long avg = e.getValue()[1] / qty;
-			String nm = scanner.nameFor(e.getKey());
-			out.add(new Hold(e.getKey(), nm != null ? nm : "#" + e.getKey(), qty, avg, scanner.sellHint(e.getKey())));
+			if (invKnown && !inActiveGe(id))
+			{
+				int have = possessed(id);
+				if (have <= 0) { if (bankKnown) continue; /* provably gone → drop */ }
+				else if (have < qty) qty = have;   // you sold some — show only what's left
+			}
+			String nm = scanner.nameFor(id);
+			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id)));
 		}
 		out.sort((a, b) -> Long.compare((long) b.qty * b.avgCost, (long) a.qty * a.avgCost));
 		return out;
@@ -502,18 +522,47 @@ public class GeflipPlugin extends Plugin
 	 * flag — advances even when NO GE event fires (a priced-out offer that never fills emits
 	 * no further events). Runs on the client thread, so reading live slots[] is safe.
 	 */
-	/** Track the coins you actually hold — inventory always, bank when it's been opened. */
+	/** Track what you actually hold — inventory always, bank when it's been opened. Client thread. */
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged ev)
 	{
 		int id = ev.getContainerId();
-		if (id != InventoryID.INVENTORY.getId() && id != InventoryID.BANK.getId()) return;
+		if (id == InventoryID.INVENTORY.getId()) invCounts = countMap(client.getItemContainer(InventoryID.INVENTORY));
+		else if (id == InventoryID.BANK.getId()) bankCounts = countMap(client.getItemContainer(InventoryID.BANK));
+		else return;
 		long gp = 0; boolean known = false;
-		ItemContainer inv = client.getItemContainer(InventoryID.INVENTORY);
-		if (inv != null) { gp += inv.count(ItemID.COINS_995); known = true; }
-		ItemContainer bank = client.getItemContainer(InventoryID.BANK);
-		if (bank != null) { gp += bank.count(ItemID.COINS_995); known = true; }
+		if (invCounts != null) { gp += invCounts.getOrDefault(ItemID.COINS_995, 0); known = true; }
+		if (bankCounts != null) { gp += bankCounts.getOrDefault(ItemID.COINS_995, 0); known = true; }
 		if (known) liveGp = gp;
+	}
+
+	private static java.util.Map<Integer, Integer> countMap(ItemContainer c)
+	{
+		java.util.Map<Integer, Integer> m = new java.util.HashMap<>();
+		if (c == null) return m;
+		for (Item it : c.getItems())
+		{
+			if (it == null || it.getId() < 0) continue;
+			m.merge(it.getId(), it.getQuantity(), Integer::sum);
+		}
+		return m;
+	}
+
+	/** How many of an item you actually possess (inventory + bank when opened). */
+	private int possessed(int id)
+	{
+		int n = 0;
+		java.util.Map<Integer, Integer> inv = invCounts, bank = bankCounts;
+		if (inv != null) n += inv.getOrDefault(id, 0);
+		if (bank != null) n += bank.getOrDefault(id, 0);
+		return n;
+	}
+
+	/** Is this item currently sitting in one of your GE slots (in flight)? */
+	private boolean inActiveGe(int id)
+	{
+		for (Offer o : offerSnapshot) if (o.id == id) return true;
+		return false;
 	}
 
 	/** The bankroll to size flips with: your real coins if auto is on and known, else the config. */
