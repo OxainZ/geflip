@@ -45,10 +45,10 @@ public interface GeflipConfig extends Config
 	@ConfigItem(
 		keyName = "rows",
 		name = "Rows shown",
-		description = "How many top flips to list in the panel.",
+		description = "How many top flips to list in the panel — more = more opportunities to scan.",
 		position = 5
 	)
-	default int rows() { return 20; }
+	default int rows() { return 30; }
 
 	@ConfigItem(
 		keyName = "useTrends",

@@ -52,6 +52,8 @@ class GeflipScanner
 		double roi, gph, expGph, confidence, fillHours; Double t90, t180; boolean decliner;
 		int resetMins = -1;   // minutes until this item's 4h buy window resets (−1 = none active)
 		boolean dumping;      // cheap right now vs its recent norm — a dip/buy signal
+		double fillProb;      // P(the round-trip actually completes in a 4h cycle), 0..1
+		boolean wontFill;     // too little counter-flow — expect slow/failed fills
 	}
 
 	/** Item name from the cached mapping (null if not loaded / unknown). */
@@ -265,6 +267,14 @@ class GeflipScanner
 			int tkB = tickSize(lo), tkS = tickSize(hi);
 			int bidComp = lo + tkB;
 			int askComp = Math.max(bidComp + 1, hi - tkS);
+			// ORDER-FLOW IMBALANCE: if instant-buys outnumber instant-sells (rho>0) the item is
+			// being bid up — competitors overcut your buy, so you realistically fill it HIGHER;
+			// sell pressure (rho<0) drags your realistic sell fill LOWER. (Cont/Kukanov/Stoikov.)
+			double rho = (vh + vl) > 0 ? (double) (vh - vl) / (vh + vl) : 0;
+			double kappa = 0.4;
+			if (rho > 0) bidComp += (int) Math.round(rho * kappa * (hi - lo));
+			else if (rho < 0) askComp -= (int) Math.round(-rho * kappa * (hi - lo));
+			askComp = Math.max(bidComp + 1, askComp);
 			int haircutDelta = instant - margin;                         // keep the corroboration pessimism
 			int marginComp = (askComp - saleTax(askComp, meta.exempt) - bidComp) - haircutDelta;
 			if (marginComp < Math.max(1, cfg.minMargin())) continue;     // no achievable margin after undercut
@@ -289,6 +299,13 @@ class GeflipScanner
 			long through = (long) (PART * flowFcast * cycleH);
 			int qty = (int) Math.max(0, Math.min(limit, Math.min(afford, through)));
 			if (qty <= 0) continue;
+
+			// FILL PROBABILITY (Poisson): expected units arriving on the SLOWER side in one 4h
+			// cycle vs the qty you'd buy — how likely the round-trip actually completes.
+			double expUnits = PART * Math.min(vh, vl) * cycleH;
+			double zf = (expUnits - qty) / Math.sqrt(Math.max(1, expUnits));
+			double fillProb = 1.0 / (1.0 + Math.exp(-1.702 * zf));   // logistic approx of the normal CDF
+			boolean wontFill = Math.min(vh, vl) < 50 || fillProb < 0.15;   // too little counter-flow
 
 			// intra-hour trend (falling-knife) penalty — matches the web's trendPen
 			double midNow = (lo + hi) / 2.0;
@@ -329,6 +346,7 @@ class GeflipScanner
 			f.gph = (double) marginComp * qty / effCycleH;
 			f.expGph = f.gph * conf * pen;   // short-term confidence x long-term trend penalty
 			f.confidence = conf * pen; f.t90 = t90; f.decliner = pen < 1.0; f.dumping = dumping;
+			f.fillProb = fillProb; f.wontFill = wontFill;
 			out.add(f);
 		}
 		// same tiebreak order as the web: expGph desc, confidence desc, name asc

@@ -47,7 +47,7 @@ class GeflipPanel extends PluginPanel
 		legend.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		legend.setFont(FontManager.getRunescapeSmallFont());
 		// one-glance key so every symbol on a row is understandable
-		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · 🔥dip · ⚠falling</span></html>");
+		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · %fill=fills-in-4h · 🔥dip · ⚠falling · ⏳low=won't fill</span></html>");
 		JPanel meta = new JPanel(new GridLayout(4, 1));
 		meta.add(status);
 		meta.add(session);
@@ -191,8 +191,9 @@ class GeflipPanel extends PluginPanel
 		// gp/h rate isn't a mystery (a "~2d" item won't earn its hourly rate soon) ---
 		String ft = fillTxt(f.fillHours);
 		String reset = f.resetMins > 0 ? "   ↻" + (f.resetMins >= 60 ? (f.resetMins / 60) + "h" : f.resetMins + "m") : "";
+		String fill = f.wontFill ? "   ⏳low" : "   " + Math.round(f.fillProb * 100) + "% fill";
 		JLabel sub = new JLabel(gp(f.buy) + " → " + gp(f.sell)
-			+ "   +" + gp(f.margin) + "   ×" + f.quantity + (ft.isEmpty() ? "" : "   " + ft) + reset);
+			+ "   +" + gp(f.margin) + "   ×" + f.quantity + (ft.isEmpty() ? "" : "   " + ft) + reset + fill);
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 
@@ -212,6 +213,8 @@ class GeflipPanel extends PluginPanel
 		tip.append("Buy up to ").append(f.quantity).append(" (bankroll/limit/volume capped)<br>");
 		tip.append("Est. ").append(gp((long) f.expGph)).append("/hr — profit ÷ how long both offers take to fill<br>");
 		if (f.fillHours < 900) tip.append("Fills in ~").append(fillTxt(f.fillHours).replace("~", "")).append("<br>");
+		tip.append(f.wontFill ? "⏳ Low counter-flow — expect slow/failed fills<br>"
+			: Math.round(f.fillProb * 100) + "% chance the round-trip completes within 4h<br>");
 		if (f.resetMins > 0) tip.append("↻ your 4h buy limit resets in ~")
 			.append(f.resetMins >= 60 ? (f.resetMins / 60) + "h" : f.resetMins + "m").append("<br>");
 		if (f.dumping) tip.append("🔥 cheap right now vs its recent norm — a dip<br>");
