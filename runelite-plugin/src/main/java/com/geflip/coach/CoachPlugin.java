@@ -68,7 +68,7 @@ public class CoachPlugin extends Plugin
 	protected void startUp()
 	{
 		panel = new CoachPanel(this::rescan, this::ask, this::buildContext);
-		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/geflip_icon.png");
+		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/coach_icon.png");
 		navButton = NavigationButton.builder().tooltip("Geflip Coach").icon(icon).priority(8).panel(panel).build();
 		clientToolbar.addNavigation(navButton);
 		int s = Math.max(10, config.refreshSec());
