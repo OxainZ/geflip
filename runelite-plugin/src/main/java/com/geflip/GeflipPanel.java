@@ -48,16 +48,22 @@ class GeflipPanel extends PluginPanel
 	private final java.util.function.Function<String, String> onPriceCheck;
 	private final java.util.function.ObjLongConsumer<Integer> onEditCost;
 	private final java.util.function.IntConsumer onPersonalUse;
+	private final Runnable onWatchLast;
+	private final java.util.function.IntConsumer onUnwatch;
+	private final JPanel watchBox = new JPanel();      // "Watch" — pinned items + live prices (You tab)
 
 	GeflipPanel(Runnable onRefresh, java.util.function.IntConsumer onClearHold,
 		java.util.function.Function<String, String> onPriceCheck,
 		java.util.function.ObjLongConsumer<Integer> onEditCost,
-		java.util.function.IntConsumer onPersonalUse)
+		java.util.function.IntConsumer onPersonalUse,
+		Runnable onWatchLast, java.util.function.IntConsumer onUnwatch)
 	{
 		this.onClearHold = onClearHold;
 		this.onPriceCheck = onPriceCheck;
 		this.onEditCost = onEditCost;
 		this.onPersonalUse = onPersonalUse;
+		this.onWatchLast = onWatchLast;
+		this.onUnwatch = onUnwatch;
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
@@ -92,6 +98,14 @@ class GeflipPanel extends PluginPanel
 		priceInput.addActionListener(e -> {
 			if (onPriceCheck != null) priceResult.setText("<html>" + onPriceCheck.apply(priceInput.getText()) + "</html>");
 		});
+		// price-check input + a ☆ to add the checked item to your watchlist
+		JButton watchBtn = mini("☆", "Watch the item you just priced — pings you when it goes cheap.");
+		watchBtn.addActionListener(e -> { if (onWatchLast != null) onWatchLast.run(); });
+		JPanel priceRow = new JPanel(new BorderLayout(4, 0));
+		priceRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+		priceRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, priceInput.getPreferredSize().height));
+		priceRow.add(priceInput, BorderLayout.CENTER);
+		priceRow.add(watchBtn, BorderLayout.EAST);
 
 		JPanel top = new JPanel();
 		top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
@@ -99,7 +113,7 @@ class GeflipPanel extends PluginPanel
 		top.add(status);
 		top.add(combined);
 		top.add(bankLabel);
-		top.add(priceInput);
+		top.add(priceRow);
 		top.add(priceResult);
 		top.add(legend);
 
@@ -124,6 +138,7 @@ class GeflipPanel extends PluginPanel
 		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
 		holdBox.setLayout(new BoxLayout(holdBox, BoxLayout.Y_AXIS));
 		perfBox.setLayout(new BoxLayout(perfBox, BoxLayout.Y_AXIS));
+		watchBox.setLayout(new BoxLayout(watchBox, BoxLayout.Y_AXIS));
 
 		// "You" card = session P&L + your record + what to sell + best items + live GE offers
 		JPanel youBox = new JPanel();
@@ -133,9 +148,11 @@ class GeflipPanel extends PluginPanel
 		offersBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		holdBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		perfBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+		watchBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		youBox.add(session);
 		youBox.add(calib);
 		youBox.add(holdBox);
+		youBox.add(watchBox);
 		youBox.add(perfBox);
 		youBox.add(offersBox);
 
@@ -205,6 +222,50 @@ class GeflipPanel extends PluginPanel
 			}
 			else calib.setText("record: no completed flips yet — it fills in as you flip");
 		});
+	}
+
+	/** Render "Watch" — pinned items with live buy/sell; cheap ones flagged. */
+	void setWatch(List<GeflipPlugin.Watch> watches)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			watchBox.removeAll();
+			if (watches != null && !watches.isEmpty())
+			{
+				JLabel hdr = new JLabel("Watch");
+				hdr.setForeground(ColorScheme.BRAND_ORANGE);
+				hdr.setBorder(BorderFactory.createEmptyBorder(6, 1, 2, 1));
+				hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
+				watchBox.add(hdr);
+				for (GeflipPlugin.Watch w : watches) watchBox.add(watchRow(w));
+			}
+			watchBox.revalidate();
+			watchBox.repaint();
+		});
+	}
+
+	private JPanel watchRow(GeflipPlugin.Watch w)
+	{
+		JPanel p = new JPanel(new BorderLayout(6, 0));
+		p.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JLabel name = new JLabel((w.cheap ? "🔥 " : "") + w.name);
+		name.setForeground(w.cheap ? ColorScheme.BRAND_ORANGE : ColorScheme.TEXT_COLOR);
+		JLabel px = new JLabel((w.buy > 0 ? "buy " + gp(w.buy) : "") + (w.sell > 0 ? "  sell " + gp(w.sell) : ""));
+		px.setFont(FontManager.getRunescapeSmallFont());
+		px.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		JButton rm = mini("✕", "Stop watching this item");
+		rm.addActionListener(e -> { if (onUnwatch != null) onUnwatch.accept(w.id); });
+		JPanel col = new JPanel();
+		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+		col.setOpaque(false);
+		name.setAlignmentX(Component.LEFT_ALIGNMENT); px.setAlignmentX(Component.LEFT_ALIGNMENT);
+		col.add(name); col.add(px);
+		p.add(col, BorderLayout.CENTER);
+		p.add(rm, BorderLayout.EAST);
+		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return p;
 	}
 
 	/** Render "Best items" — your realized profit per item (journal analytics). */

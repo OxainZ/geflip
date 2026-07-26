@@ -221,6 +221,14 @@ class GeflipScanner
 	// raw quotes from the last scan, so we can price any held item on demand
 	private volatile JsonObject lastLatest, lastM5, lastH1;
 
+	/** True if the item is trading cheap right now vs its recent norm (a dip / good buy). */
+	boolean isCheap(int id)
+	{
+		Integer lo = instant(id, "low");
+		Integer avgLo = avgField(quoteSrc(id), "avgLowPrice");
+		return lo != null && avgLo != null && avgLo > 0 && lo < avgLo * 0.95;
+	}
+
 	/** Find an item id by name (exact case-insensitive first, then contains). −1 if unknown. */
 	int idForName(String name)
 	{

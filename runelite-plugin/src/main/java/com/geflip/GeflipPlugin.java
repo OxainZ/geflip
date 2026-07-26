@@ -50,6 +50,10 @@ public class GeflipPlugin extends Plugin
 	// your manual cost corrections (id -> real avg cost) for holdings the plugin mis-costed
 	// because it didn't see every buy (mobile / offline). Persisted.
 	private final java.util.Map<Integer, Long> costOverride = new java.util.concurrent.ConcurrentHashMap<>();
+	// items you're watching (persisted) + which we've already "cheap now" alerted on
+	private final java.util.Set<Integer> watchlist = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private final java.util.Set<Integer> watchAlerted = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private volatile int lastCheckedId = -1;   // last item you priced (for the ☆ watch button)
 
 	// live coins you actually have (inventory + bank when opened); −1 = unknown yet
 	private volatile long liveGp = -1;
@@ -158,6 +162,14 @@ public class GeflipPlugin extends Plugin
 				if (!t.isEmpty()) out.add(t);
 			}
 		return out;
+	}
+
+	/** A watched item with its live buy/sell + whether it's cheap right now. */
+	static final class Watch
+	{
+		final int id; final String name; final int buy, sell; final boolean cheap;
+		Watch(int id, String name, int buy, int sell, boolean cheap)
+		{ this.id = id; this.name = name; this.buy = buy; this.sell = sell; this.cheap = cheap; }
 	}
 
 	/** An item you're holding (bought, not yet sold) + where to list it to sell. */
@@ -285,6 +297,7 @@ public class GeflipPlugin extends Plugin
 		if (name == null || name.trim().isEmpty()) return "type an item name";
 		int id = scanner.idForName(name);
 		if (id < 0) return "\"" + name.trim() + "\" not found — check spelling / rescan";
+		lastCheckedId = id;   // remember for the ☆ watch button
 		String nm = scanner.nameFor(id);
 		int buy = scanner.buyHint(id), sell = scanner.sellHint(id);
 		if (buy <= 0 && sell <= 0) return (nm != null ? nm : name) + ": no live price — hit Rescan first";
@@ -330,6 +343,62 @@ public class GeflipPlugin extends Plugin
 		recompute();
 	}
 
+	/** Add/remove the last price-checked item from your watchlist (☆ button). */
+	void toggleWatchLast()
+	{
+		int id = lastCheckedId;
+		if (id <= 0) { if (panel != null) panel.setStatus("price-check an item first, then ☆ to watch it"); return; }
+		if (!watchlist.remove(id)) watchlist.add(id);
+		persist();
+		recompute();
+	}
+
+	/** Remove an item from the watchlist (✕ on a watch row). */
+	void unwatch(int id) { watchlist.remove(id); persist(); recompute(); }
+
+	/** Live buy/sell for each watched item, cheap ones first. */
+	private java.util.List<Watch> buildWatch()
+	{
+		java.util.List<Watch> out = new java.util.ArrayList<>();
+		for (int id : watchlist)
+		{
+			String nm = scanner.nameFor(id);
+			out.add(new Watch(id, nm != null ? nm : "#" + id, scanner.buyHint(id), scanner.sellHint(id), scanner.isCheap(id)));
+		}
+		out.sort((a, b) -> Boolean.compare(b.cheap, a.cheap));
+		return out;
+	}
+
+	/** Ping once when a watched item goes cheap (a buy window); re-arm when it recovers. */
+	private void checkWatch()
+	{
+		java.util.Set<Integer> cheapNow = new java.util.HashSet<>();
+		for (int id : watchlist)
+		{
+			if (!scanner.isCheap(id)) continue;
+			cheapNow.add(id);
+			if (watchAlerted.add(id))
+			{
+				String nm = scanner.nameFor(id);
+				int buy = scanner.buyHint(id);
+				notifier.notify("Geflip watch: " + (nm != null ? nm : "#" + id) + " is cheap now — buy ~" + gpn(buy));
+			}
+		}
+		watchAlerted.retainAll(cheapNow);
+	}
+
+	/** Persist the fill log + markers off-thread (snapshots taken on the client thread). */
+	private void persist()
+	{
+		clientThread.invoke(() ->
+		{
+			java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
+			String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
+			java.util.Map<Integer, long[]> win = deepCopyWindows();
+			executor.submit(() -> saveFills(snap, sig, key, since, win));
+		});
+	}
+
 	/** Your items ranked by realized profit — the journal analytics ("what actually pays me"). */
 	private java.util.List<String> topItems()
 	{
@@ -352,7 +421,7 @@ public class GeflipPlugin extends Plugin
 	{
 		java.util.Set<Integer> excluded = scanner.idsForNames(excludeLowered());
 		ledger = GeflipLedger.compute(fills, excluded, costOverride);
-		if (panel != null) { panel.setSession(ledger); panel.setHoldings(buildHoldings()); panel.setTopItems(topItems()); }
+		if (panel != null) { panel.setSession(ledger); panel.setHoldings(buildHoldings()); panel.setTopItems(topItems()); panel.setWatch(buildWatch()); }
 	}
 
 	/** On-disk shape: the fill log, per-slot dedup markers, offer-age clocks, buy windows. */
@@ -361,6 +430,7 @@ public class GeflipPlugin extends Plugin
 		java.util.List<Fill> fills; String[] slotSig, slotKey; long[] slotSince;
 		java.util.Map<Integer, long[]> buyWindows;
 		java.util.Map<Integer, Long> costOverride;
+		java.util.List<Integer> watchlist;
 	}
 
 	private void loadFills()
@@ -381,6 +451,7 @@ public class GeflipPlugin extends Plugin
 				for (int i = 0; i < slotSince.length && i < p.slotSince.length; i++) slotSince[i] = p.slotSince[i];
 			if (p.buyWindows != null) buyWindows.putAll(p.buyWindows);
 			if (p.costOverride != null) costOverride.putAll(p.costOverride);
+			if (p.watchlist != null) watchlist.addAll(p.watchlist);
 		}
 		catch (Exception e) { log.debug("geflip: could not load fills history", e); }
 	}
@@ -403,6 +474,7 @@ public class GeflipPlugin extends Plugin
 			p.slotSince = since;
 			p.buyWindows = windows;
 			p.costOverride = new java.util.HashMap<>(costOverride);
+			p.watchlist = new java.util.ArrayList<>(watchlist);
 			java.nio.file.Files.write(fillsFile.toPath(),
 				new com.google.gson.Gson().toJson(p).getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		}
@@ -503,7 +575,7 @@ public class GeflipPlugin extends Plugin
 	protected void startUp()
 	{
 		panel = new GeflipPanel(this::triggerScan, this::clearHolding, this::priceCheck,
-			(id, cost) -> setCost(id, cost), this::markPersonalUse);
+			(id, cost) -> setCost(id, cost), this::markPersonalUse, this::toggleWatchLast, this::unwatch);
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/geflip_icon.png");
 		navButton = NavigationButton.builder()
 			.tooltip("Geflip")
@@ -572,6 +644,7 @@ public class GeflipPlugin extends Plugin
 				if (p != null) p.setStatus("scan failed — check connection");
 			}
 			checkDumps();  // warn if anything you HOLD has crashed below your buy
+			checkWatch();  // ping when a watched item goes cheap
 			cloudPush();   // push fills/session to the cloud store (no-op if not configured)
 		});
 	}
