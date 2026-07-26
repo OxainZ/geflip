@@ -546,6 +546,7 @@ public class GeflipPlugin extends Plugin
 				if (p != null) p.setBankroll(bank, config.autoBankroll() && liveGp >= 0);
 				lastFlips = flips;                       // share with the bridge/cloud
 				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " flips · " + timeNow()); }
+				if (p != null) p.setDecants(scanner.scanDecants(config));   // decanting opportunities
 				recompute();   // mapping is loaded now → exclude list resolves, P&L reflows
 			}
 			catch (Exception e)

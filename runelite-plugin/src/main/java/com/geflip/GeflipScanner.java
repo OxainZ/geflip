@@ -153,6 +153,64 @@ class GeflipScanner
 		return out;
 	}
 
+	/** A decanting opportunity: buy the cheapest-per-dose form, decant to (4) at Bob Barter
+	 *  (free/instant), sell the (4). Profit is net of the 2% tax on the (4) sale. */
+	static final class Decant
+	{
+		String name;        // family, e.g. "Prayer potion"
+		String buyLabel;    // e.g. "Prayer potion(3)"
+		int buyId, buyPrice, buyDose;
+		int sell4Id, sell4;
+		int profitPer4;     // net gp per (4) made
+	}
+
+	private static final java.util.regex.Pattern DOSE = java.util.regex.Pattern.compile("^(.*)\\((\\d)\\)$");
+
+	/** Scan for profitable decants using the cached quotes from the last flip scan. */
+	List<Decant> scanDecants(GeflipConfig cfg)
+	{
+		Map<Integer, Meta> map = mapping;
+		if (map == null || lastLatest == null) return new ArrayList<>();
+		// group dose variants by base name: base -> (dose -> meta)
+		Map<String, Map<Integer, Meta>> fam = new HashMap<>();
+		for (Meta m : map.values())
+		{
+			java.util.regex.Matcher mt = DOSE.matcher(m.name);
+			if (!mt.matches()) continue;
+			int dose;
+			try { dose = Integer.parseInt(mt.group(2)); } catch (NumberFormatException e) { continue; }
+			if (dose < 1 || dose > 4) continue;
+			fam.computeIfAbsent(mt.group(1).trim(), k -> new HashMap<>()).put(dose, m);
+		}
+		List<Decant> out = new ArrayList<>();
+		for (Map.Entry<String, Map<Integer, Meta>> e : fam.entrySet())
+		{
+			Meta four = e.getValue().get(4);
+			if (four == null || (four.members && !cfg.members())) continue;
+			int sell4 = sellHint(four.id);
+			if (sell4 <= 0) continue;
+			// cheapest per-dose across all variants
+			double bestPerDose = Double.MAX_VALUE; Meta bestM = null; int bestBuy = 0, bestDose = 0;
+			for (Map.Entry<Integer, Meta> d : e.getValue().entrySet())
+			{
+				int buy = buyHint(d.getValue().id);
+				if (buy <= 0) continue;
+				double perDose = (double) buy / d.getKey();
+				if (perDose < bestPerDose) { bestPerDose = perDose; bestM = d.getValue(); bestBuy = buy; bestDose = d.getKey(); }
+			}
+			if (bestM == null || bestDose == 4) continue;   // need a cheaper sub-(4) source
+			int profit4 = (sell4 - saleTax(sell4, four.exempt)) - (int) Math.round(4 * bestPerDose);
+			if (profit4 < Math.max(1, cfg.minMargin())) continue;
+			Decant dc = new Decant();
+			dc.name = e.getKey(); dc.buyLabel = bestM.name; dc.buyId = bestM.id; dc.buyPrice = bestBuy;
+			dc.buyDose = bestDose; dc.sell4Id = four.id; dc.sell4 = sell4; dc.profitPer4 = profit4;
+			out.add(dc);
+		}
+		out.sort(Comparator.<Decant>comparingInt(x -> -x.profitPer4));
+		int rows = Math.max(5, cfg.rows());
+		return out.size() > rows ? new ArrayList<>(out.subList(0, rows)) : out;
+	}
+
 	/** Buy limit for an item (−1 if unknown / mapping not loaded). */
 	int limitFor(int id)
 	{

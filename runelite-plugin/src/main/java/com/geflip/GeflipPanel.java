@@ -32,12 +32,14 @@ class GeflipPanel extends PluginPanel
 	private final JLabel legend = new JLabel(" ");     // what the row symbols mean
 	private final JPanel rows = new JPanel();          // Flips tab
 	private final JPanel dipsRows = new JPanel();      // Dips tab (🔥 items cheap vs their norm)
+	private final JPanel decantRows = new JPanel();    // Decant tab (buy low-dose → sell (4))
 	private final JPanel offersBox = new JPanel();     // "Your GE" — live open offers (You tab)
 	private final JPanel holdBox = new JPanel();       // "To sell" — items you hold + sell price (You tab)
 	private final java.awt.CardLayout cards = new java.awt.CardLayout();
 	private final JPanel cardPanel = new JPanel(cards);
 	private final JButton tabFlips = new JButton("Flips");
 	private final JButton tabDips = new JButton("Dips");
+	private final JButton tabDecant = new JButton("Decant");
 	private final JButton tabYou = new JButton("You");
 	private final javax.swing.JTextField priceInput = new javax.swing.JTextField();
 	private final JLabel priceResult = new JLabel(" ");
@@ -101,11 +103,12 @@ class GeflipPanel extends PluginPanel
 		top.add(legend);
 
 		// --- tab bar: Flips | Dips | You ---
-		JPanel tabBar = new JPanel(new GridLayout(1, 3, 3, 0));
+		JPanel tabBar = new JPanel(new GridLayout(1, 4, 3, 0));
 		tabBar.setBorder(BorderFactory.createEmptyBorder(6, 0, 4, 0));
-		tabBar.add(tabFlips); tabBar.add(tabDips); tabBar.add(tabYou);
+		tabBar.add(tabFlips); tabBar.add(tabDips); tabBar.add(tabDecant); tabBar.add(tabYou);
 		tabFlips.addActionListener(e -> showCard("flips"));
 		tabDips.addActionListener(e -> showCard("dips"));
+		tabDecant.addActionListener(e -> showCard("decant"));
 		tabYou.addActionListener(e -> showCard("you"));
 
 		JPanel north = new JPanel(new BorderLayout());
@@ -116,6 +119,7 @@ class GeflipPanel extends PluginPanel
 		// --- cards ---
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
 		dipsRows.setLayout(new BoxLayout(dipsRows, BoxLayout.Y_AXIS));
+		decantRows.setLayout(new BoxLayout(decantRows, BoxLayout.Y_AXIS));
 		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
 		holdBox.setLayout(new BoxLayout(holdBox, BoxLayout.Y_AXIS));
 
@@ -133,6 +137,7 @@ class GeflipPanel extends PluginPanel
 
 		cardPanel.add(scrollOf(rows), "flips");
 		cardPanel.add(scrollOf(dipsRows), "dips");
+		cardPanel.add(scrollOf(decantRows), "decant");
 		cardPanel.add(scrollOf(youBox), "you");
 		add(cardPanel, BorderLayout.CENTER);
 		showCard("flips");
@@ -152,6 +157,7 @@ class GeflipPanel extends PluginPanel
 		// highlight the active tab
 		tabFlips.setForeground("flips".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabDips.setForeground("dips".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+		tabDecant.setForeground("decant".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabYou.setForeground("you".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 	}
 
@@ -354,6 +360,72 @@ class GeflipPanel extends PluginPanel
 			rows.revalidate(); rows.repaint();
 			dipsRows.revalidate(); dipsRows.repaint();
 		});
+	}
+
+	/** Render decanting opportunities: buy cheapest dose → decant to (4) at Bob Barter → sell. */
+	void setDecants(List<GeflipScanner.Decant> decants)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			decantRows.removeAll();
+			JLabel hint = new JLabel("<html><span style='color:#999'>buy the cheap dose, decant to (4) free at Bob Barter, sell</span></html>");
+			hint.setFont(FontManager.getRunescapeSmallFont());
+			hint.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+			hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+			decantRows.add(hint);
+			if (decants == null || decants.isEmpty())
+			{
+				JLabel none = new JLabel("no profitable decants right now");
+				none.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				none.setFont(FontManager.getRunescapeSmallFont());
+				none.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+				none.setAlignmentX(Component.LEFT_ALIGNMENT);
+				decantRows.add(none);
+			}
+			else for (GeflipScanner.Decant d : decants) decantRows.add(decantRow(d));
+			tabDecant.setText(decants != null && !decants.isEmpty() ? "Decant (" + decants.size() + ")" : "Decant");
+			decantRows.revalidate(); decantRows.repaint();
+		});
+	}
+
+	private JPanel decantRow(GeflipScanner.Decant d)
+	{
+		JPanel p = new JPanel(new BorderLayout(0, 2));
+		p.setBorder(BorderFactory.createEmptyBorder(5, 7, 5, 7));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel top = new JPanel(new BorderLayout(6, 0));
+		top.setOpaque(false);
+		JLabel name = new JLabel(d.name);
+		name.setForeground(ColorScheme.TEXT_COLOR);
+		JLabel prof = new JLabel("+" + gp(d.profitPer4) + "/ea");
+		prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		prof.setHorizontalAlignment(JLabel.RIGHT);
+		top.add(name, BorderLayout.CENTER);
+		top.add(prof, BorderLayout.EAST);
+		JLabel sub = new JLabel("buy " + d.buyLabel + " @" + gp(d.buyPrice) + "  →  sell (4) @" + gp(d.sell4));
+		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		sub.setFont(FontManager.getRunescapeSmallFont());
+		JPanel col = new JPanel();
+		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+		col.setOpaque(false);
+		top.setAlignmentX(Component.LEFT_ALIGNMENT); sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+		col.add(top); col.add(sub);
+		p.add(col, BorderLayout.CENTER);
+		name.setToolTipText("Buy " + d.buyLabel + " at ~" + gp(d.buyPrice) + ", decant to (4) free at Bob Barter, "
+			+ "sell (4) at ~" + gp(d.sell4) + " → +" + gp(d.profitPer4) + " each after tax. Click to copy the name.");
+		final String copyName = d.name;
+		p.addMouseListener(new java.awt.event.MouseAdapter()
+		{
+			@Override public void mouseClicked(java.awt.event.MouseEvent e)
+			{
+				java.awt.datatransfer.StringSelection sel = new java.awt.datatransfer.StringSelection(copyName);
+				java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, sel);
+				status.setText("copied \"" + copyName + "\"");
+			}
+		});
+		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return p;
 	}
 
 	private JPanel rowFor(GeflipScanner.Flip f)
