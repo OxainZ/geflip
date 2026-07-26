@@ -615,6 +615,9 @@ public class GeflipPlugin extends Plugin
 		clientToolbar.addNavigation(navButton);
 		loadFills();     // restore the persisted fill history
 		recompute();     // show flip P&L from it immediately (reflows once mapping loads)
+		// reconcile against the live GE slots now, in case the plugin was enabled mid-session
+		// (RuneLite only replays offer events on login) — the truest fill source we can read.
+		clientThread.invoke(this::reconcileGeSlots);
 		scheduleRefresh();
 		triggerScan();
 
@@ -690,84 +693,119 @@ public class GeflipPlugin extends Plugin
 		GrandExchangeOffer o = ev.getOffer();
 		if (o == null) return;
 		int slot = ev.getSlot();
-		GrandExchangeOfferState st = o.getState();
-		// mirror EVERY slot change so the panel/web knows your live open offers, not just fills
-		if (slot >= 0 && slot < slots.length) slots[slot] = o;
-		// stamp when THIS offer began (item+price+total), so we can age it. A new/changed
-		// offer resets the clock; an empty slot clears it. Login-replay keeps the same key.
-		if (slot >= 0 && slot < slotSince.length)
-		{
-			if (st == GrandExchangeOfferState.EMPTY) { slotSince[slot] = 0; slotKey[slot] = null; }
-			else
-			{
-				String key = o.getItemId() + ":" + o.getPrice() + ":" + o.getTotalQuantity();
-				// a genuinely NEW offer took this slot → reset both the age clock and the fill
-				// high-water mark (a matching key on login-replay is the SAME offer — keep the mark)
-				if (!key.equals(slotKey[slot]))
-				{
-					slotKey[slot] = key; slotSince[slot] = System.currentTimeMillis();
-					slotBookedQty[slot] = 0; slotBookedSpent[slot] = 0;
-				}
-			}
-		}
-		// build the offer snapshot HERE (client thread) and publish it for the panel + bridge/cloud
+		if (slot >= 0 && slot < slots.length) slots[slot] = o;   // mirror the live slot
+
+		boolean booked = bookOfferProgress(slot, o);   // book any newly-filled units (partials too)
+
+		// publish the offer snapshot + keep To-sell in step (a listing/cancel with no fill still
+		// changes what's "to sell" — buildHoldings() subtracts what's actively listed).
 		java.util.List<Offer> snap = buildOffers();
 		offerSnapshot = snap;
 		if (panel != null) panel.setOffers(snap);
-		// the offer set just changed — maybe you LISTED part of a holding for sale (state SELLING,
-		// not SOLD). That never reaches recompute() below (it returns early on a non-fill), so
-		// rebuild To-sell now: buildHoldings() subtracts listedForSaleQty() from what's shown.
 		refreshHoldingsView();
 
-		if (slot < 0 || slot >= slotBookedQty.length) return;
+		if (booked) persistAndRecompute();
+	}
 
-		// a collected/empty slot resets its fill high-water mark (and the old dedup marker) so the
-		// next offer to occupy the slot starts clean.
+	/**
+	 * Reconcile against the client's LIVE GE slots — the truest available fill source. RuneLite
+	 * only replays offer events on game login, not when this plugin is enabled mid-session, so
+	 * without this a completed/partly-filled offer during a disabled window would be missed.
+	 * This reads all 8 real slots and books any unbooked filled units; the per-slot high-water
+	 * marks make it fully idempotent (re-running books nothing new). Client thread only.
+	 */
+	private void reconcileGeSlots()
+	{
+		GrandExchangeOffer[] live = client.getGrandExchangeOffers();
+		if (live == null) return;
+		boolean any = false;
+		for (int i = 0; i < live.length && i < slots.length; i++)
+		{
+			GrandExchangeOffer o = live[i];
+			if (o == null) continue;
+			slots[i] = o;
+			any |= bookOfferProgress(i, o);
+		}
+		java.util.List<Offer> snap = buildOffers();
+		offerSnapshot = snap;
+		if (panel != null) panel.setOffers(snap);
+		refreshHoldingsView();
+		if (any) persistAndRecompute();
+	}
+
+	@Subscribe
+	public void onGameStateChanged(net.runelite.api.events.GameStateChanged ev)
+	{
+		// on login the client is about to replay slot states; reconcile catches anything the
+		// event stream doesn't (plugin enabled mid-session, offers filled while logged out).
+		if (ev.getGameState() == net.runelite.api.GameState.LOGGED_IN)
+			clientThread.invoke(this::reconcileGeSlots);
+	}
+
+	/**
+	 * Book the newly-filled portion of the offer now in `slot` (the delta since a per-slot
+	 * high-water mark). quantitySold/spent are CUMULATIVE per offer, so booking the delta:
+	 *   • captures PARTIAL buys/sells the instant units fill ("sold a little" moves P&L + To-sell),
+	 *   • is idempotent on login-replay / reconcile (same numbers ⇒ zero delta),
+	 *   • books a cancelled offer's filled tail before EMPTY clears the slot.
+	 * Also maintains the age clock (slotSince) and resets the mark when a NEW offer takes the slot.
+	 * Returns true iff a fill was recorded. MUST run on the client thread.
+	 */
+	private boolean bookOfferProgress(int slot, GrandExchangeOffer o)
+	{
+		if (o == null || slot < 0 || slot >= slotBookedQty.length) return false;
+		GrandExchangeOfferState st = o.getState();
 		if (st == GrandExchangeOfferState.EMPTY)
 		{
+			slotSince[slot] = 0; slotKey[slot] = null;
 			slotBookedQty[slot] = 0; slotBookedSpent[slot] = 0;
 			if (slot < slotSig.length) slotSig[slot] = null;
-			return;
+			return false;
 		}
-
-		// INCREMENTAL BOOKING. quantitySold/spent are CUMULATIVE for the offer; book only the
-		// delta since we last saw this slot. This captures a PARTIAL buy/sell the moment units
-		// fill — the whole point: "sold a little" now moves P&L and drops off To-sell right away.
-		// It also naturally dedups login-replays (same numbers ⇒ zero delta) and books the tail
-		// of a cancelled offer (its filled units) before EMPTY clears the slot.
+		// a genuinely NEW offer in this slot → reset the age clock + fill mark (a matching key on
+		// login-replay is the SAME offer, so we keep the mark and don't re-book what we already had)
+		String key = o.getItemId() + ":" + o.getPrice() + ":" + o.getTotalQuantity();
+		if (!key.equals(slotKey[slot]))
+		{
+			slotKey[slot] = key; slotSince[slot] = System.currentTimeMillis();
+			slotBookedQty[slot] = 0; slotBookedSpent[slot] = 0;
+		}
 		boolean isBuy = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.BOUGHT
 			|| st == GrandExchangeOfferState.CANCELLED_BUY;
 		boolean isSell = st == GrandExchangeOfferState.SELLING || st == GrandExchangeOfferState.SOLD
 			|| st == GrandExchangeOfferState.CANCELLED_SELL;
-		if (!isBuy && !isSell) return;
+		if (!isBuy && !isSell) return false;
 
 		int soldNow = o.getQuantitySold();
 		long spentNow = o.getSpent();
 		int deltaQty = soldNow - slotBookedQty[slot];
 		long deltaSpent = spentNow - slotBookedSpent[slot];
-		if (deltaQty <= 0 || deltaSpent <= 0) return;   // nothing new filled since the last event
-		int unit = (int) (deltaSpent / deltaQty);        // avg price of just the newly-filled units
-		slotBookedQty[slot] = soldNow; slotBookedSpent[slot] = spentNow;   // advance the high-water mark
+		if (deltaQty <= 0 || deltaSpent <= 0) return false;   // nothing new filled since last seen
+		int unit = (int) (deltaSpent / deltaQty);              // avg price of just the new units
+		slotBookedQty[slot] = soldNow; slotBookedSpent[slot] = spentNow;
 
 		long now = System.currentTimeMillis() / 1000;
 		if (isBuy)
 		{
 			fills.add(new Fill(o.getItemId(), "BUY", unit, deltaQty, 0, now));
-			// advance the item's rolling 4h buy-limit window by the units that just filled
 			long nowMs = System.currentTimeMillis();
 			long[] w = buyWindows.get(o.getItemId());
-			// replace-on-write (never mutate a shared array in place — it's read off-thread)
 			if (w == null || nowMs - w[0] >= BUY_WINDOW_MS) buyWindows.put(o.getItemId(), new long[]{ nowMs, deltaQty });
 			else buyWindows.put(o.getItemId(), new long[]{ w[0], w[1] + deltaQty });
 		}
-		else // sell — record the 2% tax the GE takes on just the newly-sold units
+		else
 		{
 			int tax = GeflipScanner.saleTax(unit, scanner.isExempt(o.getItemId())) * deltaQty;
 			fills.add(new Fill(o.getItemId(), "SELL", unit, deltaQty, tax, now));
 		}
-		if (fills.size() > 3000) fills.remove(0);   // keep it bounded
-		// snapshot the mutable state HERE (client thread), then persist + re-match off-thread
-		// so the executor never serialises arrays/list the client thread is mutating.
+		if (fills.size() > 3000) fills.remove(0);
+		return true;
+	}
+
+	/** Snapshot the fill/slot state on the CLIENT thread, then persist + re-match off-thread
+	 *  (so the executor never serialises arrays/list the client thread is mutating). */
+	private void persistAndRecompute()
+	{
 		java.util.List<Fill> fillSnap = new java.util.ArrayList<>(fills);
 		String[] sigSnap = slotSig.clone(), keySnap = slotKey.clone();
 		long[] sinceSnap = slotSince.clone();
