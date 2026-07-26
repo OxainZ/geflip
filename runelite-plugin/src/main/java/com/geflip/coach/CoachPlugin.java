@@ -114,9 +114,12 @@ public class CoachPlugin extends Plugin
 			List<CoachEngine.Scored> all = CoachEngine.evaluate(st);
 			p.setStatus("read " + timeShort());
 			String ca = caTier();
+			int slayerPts = client.getVarbitValue(Varbits.SLAYER_POINTS);
+			int streak = client.getVarbitValue(Varbits.SLAYER_TASK_STREAK);
 			p.setSummary("combat " + st.combatLevel + " · " + st.qp + " QP"
 				+ (st.wealth >= 0 ? " · " + CoachGoals.gp(st.wealth) + " net" : st.coins >= 0 ? " · " + CoachGoals.gp(st.coins) + " gp" : "")
 				+ (ca != null ? " · CA " + ca : "")
+				+ (slayerPts > 0 || streak > 0 ? " · Slayer " + slayerPts + "pt/" + streak + " streak" : "")
 				+ (st.bankKnown ? "" : " · (open bank for full net worth)"));
 			p.setSessionStats(sessionStats(st));
 			refreshHiscore();
