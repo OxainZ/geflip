@@ -636,6 +636,7 @@ public class GeflipPlugin extends Plugin
 				lastFlips = flips;                       // share with the bridge/cloud
 				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " flips · " + timeNow()); }
 				if (p != null) p.setDecants(scanner.scanDecants(config));   // decanting opportunities
+				if (p != null) p.setSets(scanner.scanSets(config));         // set-exchange arbitrage
 				recompute();   // mapping is loaded now → exclude list resolves, P&L reflows
 			}
 			catch (Exception e)

@@ -211,6 +211,78 @@ class GeflipScanner
 		return out.size() > rows ? new ArrayList<>(out.subList(0, rows)) : out;
 	}
 
+	/** A set-exchange arbitrage: combine pieces->set or split set->pieces (free at the GE clerk). */
+	static final class SetFlip
+	{
+		String name, dir;       // e.g. "Bandos armour set", "buy pieces → sell set"
+		long buyTotal, sellNet; // cost of the buy side, net-of-tax proceeds of the sell side
+		int profit;
+	}
+
+	// Sets defined by NAME (resolved to ids via the live mapping, so no hardcoded/guessable ids;
+	// an unrecognised name just skips that set). Row = { setName, piece1, piece2, ... }.
+	private static final String[][] SETS = {
+		{"Ahrim's armour set", "Ahrim's hood", "Ahrim's robetop", "Ahrim's robeskirt", "Ahrim's staff"},
+		{"Dharok's armour set", "Dharok's helm", "Dharok's platebody", "Dharok's platelegs", "Dharok's greataxe"},
+		{"Guthan's armour set", "Guthan's helm", "Guthan's platebody", "Guthan's chainskirt", "Guthan's warspear"},
+		{"Karil's armour set", "Karil's coif", "Karil's leathertop", "Karil's leatherskirt", "Karil's crossbow"},
+		{"Torag's armour set", "Torag's helm", "Torag's platebody", "Torag's platelegs", "Torag's hammers"},
+		{"Verac's armour set", "Verac's helm", "Verac's brassard", "Verac's plateskirt", "Verac's flail"},
+		{"Armadyl armour set", "Armadyl helmet", "Armadyl chestplate", "Armadyl chainskirt"},
+		{"Bandos armour set", "Bandos chestplate", "Bandos tassets", "Bandos boots"},
+		{"Ancestral robes set", "Ancestral hat", "Ancestral robe top", "Ancestral robe bottom"},
+		{"Justiciar armour set", "Justiciar faceguard", "Justiciar chestguard", "Justiciar legguards"},
+		{"Inquisitor's armour set", "Inquisitor's great helm", "Inquisitor's hauberk", "Inquisitor's plateskirt"},
+		{"Dagon'hai robes set", "Dagon'hai hat", "Dagon'hai robe top", "Dagon'hai robe bottom"},
+	};
+
+	/** Scan set-exchange arbitrage (combine vs split), using the cached quotes. */
+	List<SetFlip> scanSets(GeflipConfig cfg)
+	{
+		if (mapping == null || lastLatest == null) return new ArrayList<>();
+		List<SetFlip> out = new ArrayList<>();
+		for (String[] s : SETS)
+		{
+			int setId = idForName(s[0]);
+			if (setId < 0) continue;
+			Meta setMeta = mapping.get(setId);
+			if (setMeta != null && setMeta.members && !cfg.members()) continue;
+			int[] pieces = new int[s.length - 1];
+			boolean ok = true;
+			for (int i = 1; i < s.length; i++) { int pid = idForName(s[i]); if (pid < 0) { ok = false; break; } pieces[i - 1] = pid; }
+			if (!ok) continue;
+
+			int setBuy = buyHint(setId), setSell = sellHint(setId);
+			if (setBuy <= 0 || setSell <= 0) continue;
+
+			// combine: BUY the pieces, sell the boxed set
+			long piecesBuy = 0; boolean pb = true;
+			for (int pid : pieces) { int b = buyHint(pid); if (b <= 0) { pb = false; break; } piecesBuy += b; }
+			long combine = pb ? (setSell - saleTax(setSell, setMeta != null && setMeta.exempt)) - piecesBuy : Long.MIN_VALUE;
+
+			// split: BUY the set, sell the pieces (tax on each piece)
+			long piecesSellNet = 0; boolean ps = true;
+			for (int pid : pieces)
+			{
+				int sp = sellHint(pid); if (sp <= 0) { ps = false; break; }
+				Meta pm = mapping.get(pid);
+				piecesSellNet += sp - saleTax(sp, pm != null && pm.exempt);
+			}
+			long split = ps ? piecesSellNet - setBuy : Long.MIN_VALUE;
+
+			SetFlip f = new SetFlip();
+			f.name = s[0];
+			if (combine >= split && combine >= Math.max(1, cfg.minMargin()))
+			{ f.dir = "buy pieces → sell set"; f.buyTotal = piecesBuy; f.sellNet = setSell - saleTax(setSell, setMeta != null && setMeta.exempt); f.profit = (int) combine; }
+			else if (split >= Math.max(1, cfg.minMargin()))
+			{ f.dir = "buy set → sell pieces"; f.buyTotal = setBuy; f.sellNet = piecesSellNet; f.profit = (int) split; }
+			else continue;
+			out.add(f);
+		}
+		out.sort(Comparator.<SetFlip>comparingInt(x -> -x.profit));
+		return out;
+	}
+
 	/** Buy limit for an item (−1 if unknown / mapping not loaded). */
 	int limitFor(int id)
 	{

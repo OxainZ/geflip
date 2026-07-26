@@ -33,6 +33,7 @@ class GeflipPanel extends PluginPanel
 	private final JPanel rows = new JPanel();          // Flips tab
 	private final JPanel dipsRows = new JPanel();      // Dips tab (🔥 items cheap vs their norm)
 	private final JPanel decantRows = new JPanel();    // Decant tab (buy low-dose → sell (4))
+	private final JPanel setsRows = new JPanel();      // Sets tab (combine/split set exchange)
 	private final JPanel offersBox = new JPanel();     // "Your GE" — live open offers (You tab)
 	private final JPanel holdBox = new JPanel();       // "To sell" — items you hold + sell price (You tab)
 	private final JPanel perfBox = new JPanel();       // "Best items" — realized per-item profit (You tab)
@@ -41,6 +42,7 @@ class GeflipPanel extends PluginPanel
 	private final JButton tabFlips = new JButton("Flips");
 	private final JButton tabDips = new JButton("Dips");
 	private final JButton tabDecant = new JButton("Decant");
+	private final JButton tabSets = new JButton("Sets");
 	private final JButton tabYou = new JButton("You");
 	private final javax.swing.JTextField priceInput = new javax.swing.JTextField();
 	private final JLabel priceResult = new JLabel(" ");
@@ -118,12 +120,15 @@ class GeflipPanel extends PluginPanel
 		top.add(legend);
 
 		// --- tab bar: Flips | Dips | You ---
-		JPanel tabBar = new JPanel(new GridLayout(1, 4, 3, 0));
+		JPanel tabBar = new JPanel(new GridLayout(1, 5, 2, 0));
 		tabBar.setBorder(BorderFactory.createEmptyBorder(6, 0, 4, 0));
-		tabBar.add(tabFlips); tabBar.add(tabDips); tabBar.add(tabDecant); tabBar.add(tabYou);
+		tabBar.add(tabFlips); tabBar.add(tabDips); tabBar.add(tabDecant); tabBar.add(tabSets); tabBar.add(tabYou);
+		for (JButton b : new JButton[]{tabFlips, tabDips, tabDecant, tabSets, tabYou})
+			b.setMargin(new java.awt.Insets(2, 1, 2, 1));
 		tabFlips.addActionListener(e -> showCard("flips"));
 		tabDips.addActionListener(e -> showCard("dips"));
 		tabDecant.addActionListener(e -> showCard("decant"));
+		tabSets.addActionListener(e -> showCard("sets"));
 		tabYou.addActionListener(e -> showCard("you"));
 
 		JPanel north = new JPanel(new BorderLayout());
@@ -135,6 +140,7 @@ class GeflipPanel extends PluginPanel
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
 		dipsRows.setLayout(new BoxLayout(dipsRows, BoxLayout.Y_AXIS));
 		decantRows.setLayout(new BoxLayout(decantRows, BoxLayout.Y_AXIS));
+		setsRows.setLayout(new BoxLayout(setsRows, BoxLayout.Y_AXIS));
 		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
 		holdBox.setLayout(new BoxLayout(holdBox, BoxLayout.Y_AXIS));
 		perfBox.setLayout(new BoxLayout(perfBox, BoxLayout.Y_AXIS));
@@ -159,6 +165,7 @@ class GeflipPanel extends PluginPanel
 		cardPanel.add(scrollOf(rows), "flips");
 		cardPanel.add(scrollOf(dipsRows), "dips");
 		cardPanel.add(scrollOf(decantRows), "decant");
+		cardPanel.add(scrollOf(setsRows), "sets");
 		cardPanel.add(scrollOf(youBox), "you");
 		add(cardPanel, BorderLayout.CENTER);
 		showCard("flips");
@@ -179,6 +186,7 @@ class GeflipPanel extends PluginPanel
 		tabFlips.setForeground("flips".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabDips.setForeground("dips".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabDecant.setForeground("decant".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+		tabSets.setForeground("sets".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabYou.setForeground("you".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 	}
 
@@ -479,6 +487,61 @@ class GeflipPanel extends PluginPanel
 			tabDecant.setText(decants != null && !decants.isEmpty() ? "Decant (" + decants.size() + ")" : "Decant");
 			decantRows.revalidate(); decantRows.repaint();
 		});
+	}
+
+	/** Render set-exchange arbitrage (combine pieces↔set at the GE clerk, free). */
+	void setSets(List<GeflipScanner.SetFlip> sets)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			setsRows.removeAll();
+			JLabel hint = new JLabel("<html><span style='color:#999'>combine/split at the GE clerk (free) for the spread</span></html>");
+			hint.setFont(FontManager.getRunescapeSmallFont());
+			hint.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+			hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+			setsRows.add(hint);
+			if (sets == null || sets.isEmpty())
+			{
+				JLabel none = new JLabel("no profitable set flips right now");
+				none.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				none.setFont(FontManager.getRunescapeSmallFont());
+				none.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+				none.setAlignmentX(Component.LEFT_ALIGNMENT);
+				setsRows.add(none);
+			}
+			else for (GeflipScanner.SetFlip s : sets) setsRows.add(setRow(s));
+			tabSets.setText(sets != null && !sets.isEmpty() ? "Sets (" + sets.size() + ")" : "Sets");
+			setsRows.revalidate(); setsRows.repaint();
+		});
+	}
+
+	private JPanel setRow(GeflipScanner.SetFlip s)
+	{
+		JPanel p = new JPanel(new BorderLayout(0, 2));
+		p.setBorder(BorderFactory.createEmptyBorder(5, 7, 5, 7));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel top = new JPanel(new BorderLayout(6, 0));
+		top.setOpaque(false);
+		JLabel name = new JLabel(s.name);
+		name.setForeground(ColorScheme.TEXT_COLOR);
+		JLabel prof = new JLabel("+" + gp(s.profit));
+		prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		prof.setHorizontalAlignment(JLabel.RIGHT);
+		top.add(name, BorderLayout.CENTER);
+		top.add(prof, BorderLayout.EAST);
+		JLabel sub = new JLabel(s.dir + "   (" + gp(s.buyTotal) + " → " + gp(s.sellNet) + ")");
+		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		sub.setFont(FontManager.getRunescapeSmallFont());
+		JPanel col = new JPanel();
+		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+		col.setOpaque(false);
+		top.setAlignmentX(Component.LEFT_ALIGNMENT); sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+		col.add(top); col.add(sub);
+		p.add(col, BorderLayout.CENTER);
+		name.setToolTipText(s.name + ": " + s.dir + " for +" + gp(s.profit) + " (net of tax). Combine/split is free at a GE clerk.");
+		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return p;
 	}
 
 	private JPanel decantRow(GeflipScanner.Decant d)
