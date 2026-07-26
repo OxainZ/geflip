@@ -17,12 +17,14 @@ import java.util.Set;
  */
 final class GeflipLedger
 {
-	long realizedFlip;       // gp from matched buy->sell round-trips (net of sale tax)
+	long realizedFlip;       // gp from matched buy->sell round-trips (net of sale tax) — FLIP profit only
 	long inventoryCost;      // cost of bought-but-unsold flip items (open capital)
 	long keptNet;            // net gp on excluded "I use this" items (buys - sells)
+	long unmatchedProceeds;  // net gp from selling stock with NO logged buy (bank/mobile) — NOT flip
+	                         // profit (no cost basis), tracked apart so it can't inflate the P&L
 	int  matchedUnits;       // units that completed a round-trip
 	int  openUnits;          // units held (unsold flip buys)
-	int  unmatchedSellUnits; // sold with no logged buy (basis unknown; counted as pure proceeds)
+	int  unmatchedSellUnits; // sold with no logged buy (basis unknown; NOT counted as profit)
 	int  flips;              // completed round-trips (sell events that closed >=1 unit) — CALIBRATION
 	int  wins;               // of those flips, the profitable ones
 	long holdSecSum;         // unit-weighted hold time (secs), for the average
@@ -96,13 +98,11 @@ final class GeflipLedger
 				}
 				if (remaining > 0)                            // sold something we never logged buying
 				{
-					long proceeds = net * remaining;
-					l.realizedFlip += proceeds;
+					// NO cost basis → this is NOT flip profit. Selling a fang from your bank isn't a
+					// +16m flip. Track the proceeds separately so they never inflate realizedFlip or
+					// the per-item "Best items" journal (which is flips only).
+					l.unmatchedProceeds += net * remaining;
 					l.unmatchedSellUnits += remaining;
-					// fold the proceeds into the per-item journal too, so "Best items" reconciles
-					// with the session realized total. NOT counted as a completed flip/win — there's
-					// no cost basis to judge it, only known proceeds.
-					l.byItem.computeIfAbsent(f.id, k -> new long[5])[0] += proceeds;
 				}
 			}
 		}

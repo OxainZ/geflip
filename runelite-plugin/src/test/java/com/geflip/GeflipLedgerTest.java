@@ -68,12 +68,16 @@ public class GeflipLedgerTest
 	}
 
 	@Test
-	public void unmatchedSellIsFlaggedNotHidden()
+	public void unmatchedSellIsNotCountedAsFlipProfit()
 	{
-		// sell with no logged buy (pre-install inventory): proceeds counted, but flagged.
+		// sell with no logged buy (pre-install / bank / mobile stock): proceeds are tracked
+		// SEPARATELY and must NOT inflate flip P&L — there's no cost basis, so it isn't a flip.
 		GeflipLedger l = GeflipLedger.compute(fills(sell(1, 150, 10)), null);
 		assertEquals(10, l.unmatchedSellUnits);
-		assertTrue(l.realizedFlip > 0);
+		assertEquals(0, l.realizedFlip);              // NOT counted as flip profit
+		assertTrue(l.unmatchedProceeds > 0);          // shown apart as "sold stock"
+		assertEquals(0, l.flips);                     // not a completed round-trip
+		assertTrue(l.byItem.isEmpty());               // stays out of "Best items"
 	}
 
 	@Test

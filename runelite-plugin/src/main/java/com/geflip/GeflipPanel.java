@@ -252,12 +252,15 @@ class GeflipPanel extends PluginPanel
 			String txt = "flip " + gp(l.realizedFlip);
 			if (l.openUnits > 0) txt += " · held " + gp(l.inventoryCost);
 			if (l.keptNet != 0) txt += " · kept " + gp(l.keptNet);
+			if (l.unmatchedProceeds != 0) txt += " · sold stock " + gp(l.unmatchedProceeds);
 			session.setText(txt);
 			session.setForeground(l.realizedFlip >= 0
 				? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.PROGRESS_ERROR_COLOR);
 			session.setToolTipText("flip = profit from matched buy→sell round-trips (net of tax)   ·   "
 				+ "held = cost of bought-but-unsold flip items   ·   "
-				+ "kept = net spent on your \"not a flip\" items");
+				+ "kept = net spent on your \"not a flip\" items   ·   "
+				+ "sold stock = proceeds from selling items the plugin never saw you buy (bank / "
+				+ "pre-install / mobile) — NOT flip profit, there's no cost basis to measure a flip");
 
 			// CALIBRATION: your ACTUAL track record, so you can trust (or discount) the gp/h estimates
 			if (l.flips > 0)
