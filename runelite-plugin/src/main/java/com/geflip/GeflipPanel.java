@@ -26,6 +26,7 @@ class GeflipPanel extends PluginPanel
 {
 	private final JLabel status = new JLabel("idle");
 	private final JLabel combined = new JLabel(" ");   // real earn rate = top slots summed
+	private final JLabel bankLabel = new JLabel(" ");  // the bankroll being used (your coins)
 	private final JLabel session = new JLabel("session: —");
 	private final JLabel calib = new JLabel(" ");      // your ACTUAL results (win% / hold)
 	private final JLabel legend = new JLabel(" ");     // what the row symbols mean
@@ -60,11 +61,15 @@ class GeflipPanel extends PluginPanel
 		legend.setAlignmentX(Component.LEFT_ALIGNMENT);
 		combined.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
 		combined.setAlignmentX(Component.LEFT_ALIGNMENT);
+		bankLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		bankLabel.setFont(FontManager.getRunescapeSmallFont());
+		bankLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		JPanel top = new JPanel();
 		top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 		top.add(refresh);
 		top.add(status);
 		top.add(combined);
+		top.add(bankLabel);
 		top.add(legend);
 
 		// --- tab bar: Flips | Dips | You ---
@@ -123,6 +128,13 @@ class GeflipPanel extends PluginPanel
 	}
 
 	void setStatus(String s) { SwingUtilities.invokeLater(() -> status.setText(s)); }
+
+	/** Show the bankroll the scan is sizing to (your real coins when auto is on). */
+	void setBankroll(long gp, boolean auto)
+	{
+		SwingUtilities.invokeLater(() ->
+			bankLabel.setText("bankroll: " + gp(gp) + (auto ? " (your coins)" : " (manual)")));
+	}
 
 	void setSession(GeflipLedger l)
 	{

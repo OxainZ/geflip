@@ -9,9 +9,19 @@ import net.runelite.client.config.Range;
 public interface GeflipConfig extends Config
 {
 	@ConfigItem(
+		keyName = "autoBankroll",
+		name = "Auto bankroll (my coins)",
+		description = "Size flips from the coins you ACTUALLY have (inventory + bank when it's been "
+			+ "opened this session), instead of the number below. Turn off to cap it manually.",
+		position = 0
+	)
+	default boolean autoBankroll() { return true; }
+
+	@ConfigItem(
 		keyName = "bankroll",
 		name = "Bankroll (m)",
-		description = "Gold you have to deploy, in millions. Drives quantity sizing.",
+		description = "Manual fallback, in millions — used only when Auto bankroll is off or your "
+			+ "coins aren't readable yet. Drives quantity sizing.",
 		position = 1
 	)
 	default int bankrollM() { return 50; }

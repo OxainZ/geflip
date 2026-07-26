@@ -7,9 +7,14 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
+import net.runelite.api.InventoryID;
+import net.runelite.api.ItemContainer;
+import net.runelite.api.ItemID;
 import net.runelite.api.events.GrandExchangeOfferChanged;
+import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
@@ -31,9 +36,13 @@ import net.runelite.client.util.ImageUtil;
 )
 public class GeflipPlugin extends Plugin
 {
+	@Inject private Client client;
 	@Inject private ClientToolbar clientToolbar;
 	@Inject private GeflipConfig config;
 	@Inject private ScheduledExecutorService executor;
+
+	// live coins you actually have (inventory + bank when opened); −1 = unknown yet
+	private volatile long liveGp = -1;
 
 	private final GeflipScanner scanner = new GeflipScanner();
 	private GeflipPanel panel;
@@ -367,8 +376,10 @@ public class GeflipPlugin extends Plugin
 			try
 			{
 				if (p != null) p.setStatus("scanning…");
-				java.util.List<GeflipScanner.Flip> flips = scanner.scan(config, remainingLimits());
+				long bank = bankrollGp();
+				java.util.List<GeflipScanner.Flip> flips = scanner.scan(config, remainingLimits(), bank);
 				for (GeflipScanner.Flip f : flips) f.resetMins = limitResetMins(f.id);   // buy-limit timer
+				if (p != null) p.setBankroll(bank, config.autoBankroll() && liveGp >= 0);
 				lastFlips = flips;                       // share with the bridge/cloud
 				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " flips · " + timeNow()); }
 				recompute();   // mapping is loaded now → exclude list resolves, P&L reflows
@@ -470,6 +481,27 @@ public class GeflipPlugin extends Plugin
 	 * flag — advances even when NO GE event fires (a priced-out offer that never fills emits
 	 * no further events). Runs on the client thread, so reading live slots[] is safe.
 	 */
+	/** Track the coins you actually hold — inventory always, bank when it's been opened. */
+	@Subscribe
+	public void onItemContainerChanged(ItemContainerChanged ev)
+	{
+		int id = ev.getContainerId();
+		if (id != InventoryID.INVENTORY.getId() && id != InventoryID.BANK.getId()) return;
+		long gp = 0; boolean known = false;
+		ItemContainer inv = client.getItemContainer(InventoryID.INVENTORY);
+		if (inv != null) { gp += inv.count(ItemID.COINS_995); known = true; }
+		ItemContainer bank = client.getItemContainer(InventoryID.BANK);
+		if (bank != null) { gp += bank.count(ItemID.COINS_995); known = true; }
+		if (known) liveGp = gp;
+	}
+
+	/** The bankroll to size flips with: your real coins if auto is on and known, else the config. */
+	private long bankrollGp()
+	{
+		if (config.autoBankroll() && liveGp >= 0) return Math.max(1, liveGp);
+		return Math.max(1L, config.bankrollM() * 1_000_000L);
+	}
+
 	@Subscribe
 	public void onGameTick(net.runelite.api.events.GameTick ev)
 	{

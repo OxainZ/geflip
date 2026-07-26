@@ -187,6 +187,8 @@ class GeflipScanner
 	}
 
 	List<Flip> scan(GeflipConfig cfg) throws Exception { return scan(cfg, java.util.Collections.emptyMap()); }
+	List<Flip> scan(GeflipConfig cfg, java.util.Map<Integer, Integer> remaining) throws Exception
+	{ return scan(cfg, remaining, cfg.bankrollM() * 1_000_000L); }
 
 	/**
 	 * Full scan → ranked flips. `remaining` maps item id → units still buyable in the
@@ -194,7 +196,7 @@ class GeflipScanner
 	 * dropped, and quantity is capped by what's left — so it never recommends a flip you
 	 * can't act on right now.
 	 */
-	List<Flip> scan(GeflipConfig cfg, java.util.Map<Integer, Integer> remaining) throws Exception
+	List<Flip> scan(GeflipConfig cfg, java.util.Map<Integer, Integer> remaining, long bankrollGp) throws Exception
 	{
 		Map<Integer, Meta> map = loadMapping();
 		JsonObject latest = new JsonParser().parse(httpGet(API + "/latest")).getAsJsonObject().getAsJsonObject("data");
@@ -210,7 +212,7 @@ class GeflipScanner
 		catch (Exception ignored) { /* optional liquidity gate */ }
 		Map<Integer, Double> t90s = loadT90(cfg.useTrends());
 
-		long bankroll = cfg.bankrollM() * 1_000_000L;
+		long bankroll = Math.max(1, bankrollGp);
 		long perItemCap = (long) (bankroll * 0.25);
 		double cycleH = 4.0;
 		long now = System.currentTimeMillis() / 1000;
