@@ -800,9 +800,15 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
       if (guard.avgHighPrice!=null) rHigh = Math.min(q.high, guard.avgHighPrice);
       if (guard.avgLowPrice!=null)  rLow  = Math.max(q.low,  guard.avgLowPrice);
     }
+    // PHANTOM-PRICE floor: a lone fat-finger instant-sell (6gp on a 1.3k item) prints in /latest
+    // but is unbuyable. When 5m/1h have no instant-sell VWAP, floor the buy with the 24h average
+    // if the live low is <half of it (a real dip within ~half the norm still prices off the quote).
+    const g24low = d24?.[idStr]?.avgLowPrice;
+    if (g24low!=null && g24low>0 && q.low < g24low/2) rLow = Math.max(rLow, g24low);
     let buy  = cfg.slip>0 ? Math.ceil(rLow *(1+cfg.slip)) : rLow;   // reassigned to the undercut price below
     let sell = cfg.slip>0 ? Math.floor(rHigh*(1-cfg.slip)) : rHigh;
     if (sell <= buy){ R('no realistic spread'); continue; }
+    if (buy*100 < sell*15){ R('buy is a phantom quote'); continue; }   // buy <15% of sell = bad low print
     if (buy < cfg.minPrice){ R('below min price'); continue; }
     if (cfg.maxPrice!=null && buy > cfg.maxPrice){ R('above max price'); continue; }
 

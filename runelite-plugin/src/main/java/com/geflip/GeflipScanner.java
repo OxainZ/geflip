@@ -473,6 +473,20 @@ class GeflipScanner
 					lo = Math.max(loInst, guardLow);
 				}
 			}
+			// PHANTOM-PRICE floor: a lone fat-finger instant-sell (e.g. 6gp on a 1.3k item) prints in
+			// /latest but is UNBUYABLE — it filled and vanished. When neither 5m nor 1h has an
+			// instant-sell VWAP, that phantom stands and fakes a huge margin. Floor the buy with the
+			// 24h average (where the item truly trades) when the live low is <half of it; a real dip
+			// (within ~half the 24h norm) still prices off the live quote.
+			if (d24 != null && d24.has(e.getKey()))
+			{
+				JsonObject g24 = d24.getAsJsonObject(e.getKey());
+				if (g24.has("avgLowPrice") && !g24.get("avgLowPrice").isJsonNull())
+				{
+					int low24 = g24.get("avgLowPrice").getAsInt();
+					if (low24 > 0 && loInst < low24 / 2) lo = Math.max(lo, low24);
+				}
+			}
 			if (hi <= lo) continue;   // no realistic spread once guarded
 			// DUMP signal: the instant-sell price is well below the recent norm = someone's
 			// dumping, so you can buy cheap right now (a dip; per the swing research these revert).
@@ -522,6 +536,9 @@ class GeflipScanner
 			int haircutDelta = instant - margin;                         // keep the corroboration pessimism
 			int marginComp = (askComp - saleTax(askComp, meta.exempt) - bidComp) - haircutDelta;
 			if (marginComp < Math.max(1, cfg.minMargin())) continue;     // no achievable margin after undercut
+			// backstop for scans where 24h data didn't load: a real fillable flip never has the buy at
+			// a tiny fraction of the sell. Buy < 15% of sell ⇒ the low is a phantom quote — drop it.
+			if (bidComp > 0 && (long) bidComp * 100 < (long) askComp * 15) continue;
 
 			// 24h liquidity gate + flow forecast shrinkage (web: minVol24 + flowFcast)
 			JsonObject w24 = (d24 != null && d24.has(e.getKey())) ? d24.getAsJsonObject(e.getKey()) : null;
