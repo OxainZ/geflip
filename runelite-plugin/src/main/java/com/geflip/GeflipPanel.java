@@ -31,6 +31,7 @@ class GeflipPanel extends PluginPanel
 	private final JPanel rows = new JPanel();          // Flips tab
 	private final JPanel dipsRows = new JPanel();      // Dips tab (🔥 items cheap vs their norm)
 	private final JPanel offersBox = new JPanel();     // "Your GE" — live open offers (You tab)
+	private final JPanel holdBox = new JPanel();       // "To sell" — items you hold + sell price (You tab)
 	private final java.awt.CardLayout cards = new java.awt.CardLayout();
 	private final JPanel cardPanel = new JPanel(cards);
 	private final JButton tabFlips = new JButton("Flips");
@@ -79,15 +80,18 @@ class GeflipPanel extends PluginPanel
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
 		dipsRows.setLayout(new BoxLayout(dipsRows, BoxLayout.Y_AXIS));
 		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
+		holdBox.setLayout(new BoxLayout(holdBox, BoxLayout.Y_AXIS));
 
-		// "You" card = session P&L + your record + live GE offers
+		// "You" card = session P&L + your record + what to sell + live GE offers
 		JPanel youBox = new JPanel();
 		youBox.setLayout(new BoxLayout(youBox, BoxLayout.Y_AXIS));
 		session.setAlignmentX(Component.LEFT_ALIGNMENT);
 		calib.setAlignmentX(Component.LEFT_ALIGNMENT);
 		offersBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+		holdBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		youBox.add(session);
 		youBox.add(calib);
+		youBox.add(holdBox);
 		youBox.add(offersBox);
 
 		cardPanel.add(scrollOf(rows), "flips");
@@ -147,6 +151,60 @@ class GeflipPanel extends PluginPanel
 			}
 			else calib.setText("record: no completed flips yet — it fills in as you flip");
 		});
+	}
+
+	/** Render "To sell" — items you're holding (bought, not yet sold) + where to list them. */
+	void setHoldings(List<GeflipPlugin.Hold> holds)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			holdBox.removeAll();
+			if (holds != null && !holds.isEmpty())
+			{
+				JLabel hdr = new JLabel("To sell");
+				hdr.setForeground(ColorScheme.BRAND_ORANGE);
+				hdr.setBorder(BorderFactory.createEmptyBorder(6, 1, 2, 1));
+				hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
+				holdBox.add(hdr);
+				for (GeflipPlugin.Hold h : holds) holdBox.add(holdRow(h));
+			}
+			holdBox.revalidate();
+			holdBox.repaint();
+		});
+	}
+
+	private JPanel holdRow(GeflipPlugin.Hold h)
+	{
+		JPanel p = new JPanel(new BorderLayout(0, 1));
+		p.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JLabel name = new JLabel(h.name + "  ×" + h.qty);
+		name.setForeground(ColorScheme.TEXT_COLOR);
+		String line2;
+		if (h.sellHint > 0)
+		{
+			long net = h.sellHint - (h.sellHint < 50 ? 0 : Math.min((long) (h.sellHint * 0.02), 5_000_000));
+			boolean profit = net >= h.avgCost;
+			line2 = "cost " + gp(h.avgCost) + "  →  sell @ " + gp(h.sellHint)
+				+ "  (" + (profit ? "+" : "") + gp(net - h.avgCost) + "/ea)";
+			JLabel sub = new JLabel(line2);
+			sub.setFont(FontManager.getRunescapeSmallFont());
+			sub.setForeground(profit ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.PROGRESS_ERROR_COLOR);
+			p.add(sub, BorderLayout.SOUTH);
+			p.setToolTipText("You hold " + h.qty + " at ~" + gp(h.avgCost) + " each. List a sell at ~"
+				+ gp(h.sellHint) + " to fill; " + (profit ? "that's a profit." : "that's a LOSS — decide cut vs hold."));
+		}
+		else
+		{
+			JLabel sub = new JLabel("cost " + gp(h.avgCost) + "  ·  no live price");
+			sub.setFont(FontManager.getRunescapeSmallFont());
+			sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			p.add(sub, BorderLayout.SOUTH);
+		}
+		p.add(name, BorderLayout.CENTER);
+		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return p;
 	}
 
 	/** Render your live open GE offers (buying/selling with fill progress). */

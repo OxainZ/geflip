@@ -159,6 +159,32 @@ class GeflipScanner
 		return m != null ? m.limit : -1;
 	}
 
+	// raw quotes from the last scan, so we can price any held item on demand
+	private volatile JsonObject lastLatest, lastM5, lastH1;
+
+	/** Recommended price to LIST A SELL at for any item (one tick under the realistic high),
+	 *  even if it's not in the ranked flip list. −1 if we have no recent quote. */
+	int sellHint(int id)
+	{
+		JsonObject latest = lastLatest, m5 = lastM5, h1 = lastH1;
+		if (latest == null) return -1;
+		String k = String.valueOf(id);
+		Integer hi = null;
+		if (latest.has(k))
+		{
+			JsonObject q = latest.getAsJsonObject(k);
+			if (q.has("high") && !q.get("high").isJsonNull()) hi = q.get("high").getAsInt();
+		}
+		Integer avgHi = null;
+		JsonObject g = (m5 != null && m5.has(k)) ? m5.getAsJsonObject(k)
+			: (h1 != null && h1.has(k) ? h1.getAsJsonObject(k) : null);
+		if (g != null && g.has("avgHighPrice") && !g.get("avgHighPrice").isJsonNull())
+			avgHi = g.get("avgHighPrice").getAsInt();
+		Integer sell = (hi != null && avgHi != null) ? Math.min(hi, avgHi) : hi != null ? hi : avgHi;
+		if (sell == null || sell <= 0) return -1;
+		return sell - tickSize(sell);   // undercut a tick so a resting sell actually fills
+	}
+
 	List<Flip> scan(GeflipConfig cfg) throws Exception { return scan(cfg, java.util.Collections.emptyMap()); }
 
 	/**
@@ -175,6 +201,9 @@ class GeflipScanner
 		JsonObject m5 = null;
 		try { m5 = new JsonParser().parse(httpGet(API + "/5m")).getAsJsonObject().getAsJsonObject("data"); }
 		catch (Exception ignored) { /* optional — realistic-price guard */ }
+		// cache the raw quotes so we can price ANY item on demand (e.g. things you're holding
+		// that dropped off the ranked list) — used by sellHint().
+		lastLatest = latest; lastM5 = m5; lastH1 = h1;
 		JsonObject d24 = null;
 		try { d24 = new JsonParser().parse(httpGet(API + "/24h")).getAsJsonObject().getAsJsonObject("data"); }
 		catch (Exception ignored) { /* optional liquidity gate */ }

@@ -137,12 +137,36 @@ public class GeflipPlugin extends Plugin
 		return out;
 	}
 
+	/** An item you're holding (bought, not yet sold) + where to list it to sell. */
+	static final class Hold
+	{
+		final int id; final String name; final int qty; final long avgCost; final int sellHint;
+		Hold(int id, String name, int qty, long avgCost, int sellHint)
+		{ this.id = id; this.name = name; this.qty = qty; this.avgCost = avgCost; this.sellHint = sellHint; }
+	}
+
+	/** Everything you're holding, biggest first, with the current recommended sell price. */
+	private java.util.List<Hold> buildHoldings()
+	{
+		java.util.List<Hold> out = new java.util.ArrayList<>();
+		for (java.util.Map.Entry<Integer, long[]> e : ledger.holdings.entrySet())
+		{
+			int qty = (int) e.getValue()[0];
+			if (qty <= 0) continue;
+			long avg = e.getValue()[1] / qty;
+			String nm = scanner.nameFor(e.getKey());
+			out.add(new Hold(e.getKey(), nm != null ? nm : "#" + e.getKey(), qty, avg, scanner.sellHint(e.getKey())));
+		}
+		out.sort((a, b) -> Long.compare((long) b.qty * b.avgCost, (long) a.qty * a.avgCost));
+		return out;
+	}
+
 	/** Rebuild the flip ledger from the raw fills + current exclude list, and refresh the panel. */
 	private void recompute()
 	{
 		java.util.Set<Integer> excluded = scanner.idsForNames(excludeLowered());
 		ledger = GeflipLedger.compute(fills, excluded);
-		if (panel != null) panel.setSession(ledger);
+		if (panel != null) { panel.setSession(ledger); panel.setHoldings(buildHoldings()); }
 	}
 
 	/** On-disk shape: the fill log, per-slot dedup markers, offer-age clocks, buy windows. */

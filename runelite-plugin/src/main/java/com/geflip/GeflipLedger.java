@@ -27,6 +27,8 @@ final class GeflipLedger
 	int  wins;               // of those flips, the profitable ones
 	long holdSecSum;         // unit-weighted hold time (secs), for the average
 	long firstTs, lastTs;    // span of the fill log (secs), for the realized gp/day rate
+	// what you're still holding (bought, not yet sold): item id -> [qty, totalCost]
+	final java.util.Map<Integer, long[]> holdings = new HashMap<>();
 
 	/** Your ACTUAL win-rate on completed flips (0..1). */
 	double winRate() { return flips > 0 ? (double) wins / flips : 0; }
@@ -80,8 +82,15 @@ final class GeflipLedger
 				}
 			}
 		}
-		for (Deque<long[]> dq : lots.values())
-			for (long[] lot : dq) { l.inventoryCost += lot[0] * lot[1]; l.openUnits += (int) lot[1]; }
+		for (Map.Entry<Integer, Deque<long[]>> en : lots.entrySet())
+			for (long[] lot : en.getValue())
+			{
+				l.inventoryCost += lot[0] * lot[1];
+				l.openUnits += (int) lot[1];
+				long[] h = l.holdings.computeIfAbsent(en.getKey(), k -> new long[2]);
+				h[0] += lot[1];              // qty held
+				h[1] += lot[0] * lot[1];     // total cost
+			}
 		return l;
 	}
 }
