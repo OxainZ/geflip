@@ -161,10 +161,29 @@ class GeflipScanner
 		String buyLabel;    // e.g. "Prayer potion(3)"
 		int buyId, buyPrice, buyDose;
 		int sell4Id, sell4;
-		int profitPer4;     // net gp per (4) made
+		long profitPer4;    // net gp per (4) made
 	}
 
 	private static final java.util.regex.Pattern DOSE = java.util.regex.Pattern.compile("^(.*)\\((\\d)\\)$");
+	// (n)-suffixed items that AREN'T potions and can't be decanted at Bob Barter (charged jewellery,
+	// teleport items, etc.). Matched against the base name so glory(1..4) etc. never show as decants.
+	private static final java.util.regex.Pattern NOT_A_POTION = java.util.regex.Pattern.compile(
+		"(?i)\\b(amulet|necklace|ring|bracelet|pendant|tiara|hat|slayer helmet|ring of|teleport)\\b");
+
+	/** True only if the item's newest instant quote is fresh (≤1h old) — same staleness gate the
+	 *  main scan uses. Sets and thinly-traded doses can print prices days stale; this rejects them
+	 *  so a decant/set row is never built on an unrealisable, ancient quote. */
+	private boolean quoteFresh(int id)
+	{
+		if (lastLatest == null) return false;
+		String k = String.valueOf(id);
+		if (!lastLatest.has(k)) return false;
+		JsonObject q = lastLatest.getAsJsonObject(k);
+		long now = System.currentTimeMillis() / 1000, newest = 0;
+		if (q.has("highTime") && !q.get("highTime").isJsonNull()) newest = Math.max(newest, q.get("highTime").getAsLong());
+		if (q.has("lowTime") && !q.get("lowTime").isJsonNull()) newest = Math.max(newest, q.get("lowTime").getAsLong());
+		return newest > 0 && (now - newest) <= 3600;
+	}
 
 	/** Scan for profitable decants using the cached quotes from the last flip scan. */
 	List<Decant> scanDecants(GeflipConfig cfg)
@@ -180,33 +199,37 @@ class GeflipScanner
 			int dose;
 			try { dose = Integer.parseInt(mt.group(2)); } catch (NumberFormatException e) { continue; }
 			if (dose < 1 || dose > 4) continue;
-			fam.computeIfAbsent(mt.group(1).trim(), k -> new HashMap<>()).put(dose, m);
+			String base = mt.group(1).trim();
+			if (NOT_A_POTION.matcher(base).find()) continue;   // charged jewellery isn't decantable
+			fam.computeIfAbsent(base, k -> new HashMap<>()).put(dose, m);
 		}
 		List<Decant> out = new ArrayList<>();
 		for (Map.Entry<String, Map<Integer, Meta>> e : fam.entrySet())
 		{
 			Meta four = e.getValue().get(4);
 			if (four == null || (four.members && !cfg.members())) continue;
+			if (!quoteFresh(four.id)) continue;              // don't sell (4) on a stale print
 			int sell4 = sellHint(four.id);
 			if (sell4 <= 0) continue;
-			// cheapest per-dose across all variants
+			// cheapest per-dose across all FRESH variants
 			double bestPerDose = Double.MAX_VALUE; Meta bestM = null; int bestBuy = 0, bestDose = 0;
 			for (Map.Entry<Integer, Meta> d : e.getValue().entrySet())
 			{
+				if (!quoteFresh(d.getValue().id)) continue;
 				int buy = buyHint(d.getValue().id);
 				if (buy <= 0) continue;
 				double perDose = (double) buy / d.getKey();
 				if (perDose < bestPerDose) { bestPerDose = perDose; bestM = d.getValue(); bestBuy = buy; bestDose = d.getKey(); }
 			}
 			if (bestM == null || bestDose == 4) continue;   // need a cheaper sub-(4) source
-			int profit4 = (sell4 - saleTax(sell4, four.exempt)) - (int) Math.round(4 * bestPerDose);
+			long profit4 = (sell4 - saleTax(sell4, four.exempt)) - Math.round(4 * bestPerDose);
 			if (profit4 < Math.max(1, cfg.minMargin())) continue;
 			Decant dc = new Decant();
 			dc.name = e.getKey(); dc.buyLabel = bestM.name; dc.buyId = bestM.id; dc.buyPrice = bestBuy;
 			dc.buyDose = bestDose; dc.sell4Id = four.id; dc.sell4 = sell4; dc.profitPer4 = profit4;
 			out.add(dc);
 		}
-		out.sort(Comparator.<Decant>comparingInt(x -> -x.profitPer4));
+		out.sort(Comparator.<Decant>comparingLong(x -> -x.profitPer4));
 		int rows = Math.max(5, cfg.rows());
 		return out.size() > rows ? new ArrayList<>(out.subList(0, rows)) : out;
 	}
@@ -243,13 +266,18 @@ class GeflipScanner
 		List<SetFlip> out = new ArrayList<>();
 		for (String[] s : SETS)
 		{
-			int setId = idForName(s[0]);
-			if (setId < 0) continue;
+			int setId = idForNameExact(s[0]);   // EXACT only — a contains-match here = bogus money math
+			if (setId < 0 || !quoteFresh(setId)) continue;
 			Meta setMeta = mapping.get(setId);
 			if (setMeta != null && setMeta.members && !cfg.members()) continue;
 			int[] pieces = new int[s.length - 1];
 			boolean ok = true;
-			for (int i = 1; i < s.length; i++) { int pid = idForName(s[i]); if (pid < 0) { ok = false; break; } pieces[i - 1] = pid; }
+			for (int i = 1; i < s.length; i++)
+			{
+				int pid = idForNameExact(s[i]);
+				if (pid < 0 || !quoteFresh(pid)) { ok = false; break; }
+				pieces[i - 1] = pid;
+			}
 			if (!ok) continue;
 
 			int setBuy = buyHint(setId), setSell = sellHint(setId);
@@ -301,13 +329,28 @@ class GeflipScanner
 		return lo != null && avgLo != null && avgLo > 0 && lo < avgLo * 0.95;
 	}
 
-	/** Find an item id by name (exact case-insensitive first, then contains). −1 if unknown. */
+	/** Find an item id by name (exact case-insensitive first, then contains). −1 if unknown.
+	 *  The contains fallback is for loose user price-checks ONLY — never for money math, since
+	 *  HashMap order makes it non-deterministic which partial match wins. */
 	int idForName(String name)
 	{
-		if (mapping == null || name == null || name.trim().isEmpty()) return -1;
+		int exact = idForNameExact(name);
+		if (exact >= 0) return exact;
+		if (mapping == null || name == null) return -1;
 		String n = name.trim().toLowerCase();
-		for (Meta m : mapping.values()) if (m.name.toLowerCase().equals(n)) return m.id;
+		if (n.isEmpty()) return -1;
 		for (Meta m : mapping.values()) if (m.name.toLowerCase().contains(n)) return m.id;
+		return -1;
+	}
+
+	/** Exact case-insensitive name→id, or −1. Use this (never the contains fallback) whenever a
+	 *  wrong resolution would produce real money numbers — e.g. the Sets scanner. */
+	int idForNameExact(String name)
+	{
+		if (mapping == null || name == null) return -1;
+		String n = name.trim().toLowerCase();
+		if (n.isEmpty()) return -1;
+		for (Meta m : mapping.values()) if (m.name.toLowerCase().equals(n)) return m.id;
 		return -1;
 	}
 
