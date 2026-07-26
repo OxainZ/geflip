@@ -57,6 +57,7 @@ public class CoachPlugin extends Plugin
 	@Inject private ClientThread clientThread;
 	@Inject private net.runelite.client.Notifier notifier;
 	@Inject private net.runelite.client.config.ConfigManager configManager;
+	@Inject private net.runelite.client.hiscore.HiscoreClient hiscoreClient;
 
 	private CoachPanel panel;
 	private NavigationButton navButton;
@@ -68,6 +69,10 @@ public class CoachPlugin extends Plugin
 	private boolean primed = false;   // skip the very first scan so we don't alert your whole backlog
 	// session efficiency: baseline XP/wealth/time snapped on the first logged-in read
 	private long sessStartMs = 0, sessStartXp = 0, sessStartWealth = -1;
+	// PvM progress from the OSRS hiscores (boss KCs, collection log, clues)
+	private volatile net.runelite.client.hiscore.HiscoreResult hiscore;
+	private volatile String hiscoreName;
+	private volatile long lastHiscoreMs = 0;
 
 	@Provides
 	CoachConfig provideConfig(net.runelite.client.config.ConfigManager cm) { return cm.getConfig(CoachConfig.class); }
@@ -110,8 +115,9 @@ public class CoachPlugin extends Plugin
 				+ (ca != null ? " · CA " + ca : "")
 				+ (st.bankKnown ? "" : " · (open bank for full net worth)"));
 			p.setSessionStats(sessionStats(st));
+			refreshHiscore();
 			p.setNext(CoachEngine.doNext(all));
-			p.setGoals(all, questLines(st), diaryLines());
+			p.setGoals(all, questLines(st), pvmLines(), diaryLines());
 			p.setBlocked(CoachEngine.blocked(all));
 			p.setFarm(config.farmingHelper() ? CoachFarm.plan(st.level(Skill.FARMING), farmElapsedMin()) : null);
 			fireUnlockAlerts(all, st);
@@ -275,6 +281,60 @@ public class CoachPlugin extends Plugin
 		return t;
 	}
 
+	// --- PvM progress via the OSRS hiscores (boss KCs, collection log, clues) ----
+	// key bosses to surface, in display order (label -> HiscoreSkill)
+	private static final Object[][] PVM = {
+		{"Collection log", net.runelite.client.hiscore.HiscoreSkill.COLLECTIONS_LOGGED},
+		{"Clues (all)", net.runelite.client.hiscore.HiscoreSkill.CLUE_SCROLL_ALL},
+		{"Zulrah", net.runelite.client.hiscore.HiscoreSkill.ZULRAH},
+		{"Vorkath", net.runelite.client.hiscore.HiscoreSkill.VORKATH},
+		{"TzTok-Jad", net.runelite.client.hiscore.HiscoreSkill.TZTOK_JAD},
+		{"TzKal-Zuk (Inferno)", net.runelite.client.hiscore.HiscoreSkill.TZKAL_ZUK},
+		{"Alchemical Hydra", net.runelite.client.hiscore.HiscoreSkill.ALCHEMICAL_HYDRA},
+		{"Kraken", net.runelite.client.hiscore.HiscoreSkill.KRAKEN},
+		{"Cerberus", net.runelite.client.hiscore.HiscoreSkill.CERBERUS},
+		{"Barrows", net.runelite.client.hiscore.HiscoreSkill.BARROWS_CHESTS},
+		{"Grotesque Guardians", net.runelite.client.hiscore.HiscoreSkill.GROTESQUE_GUARDIANS},
+		{"Giant Mole", net.runelite.client.hiscore.HiscoreSkill.GIANT_MOLE},
+		{"Chambers of Xeric", net.runelite.client.hiscore.HiscoreSkill.CHAMBERS_OF_XERIC},
+		{"Theatre of Blood", net.runelite.client.hiscore.HiscoreSkill.THEATRE_OF_BLOOD},
+		{"Tombs of Amascut", net.runelite.client.hiscore.HiscoreSkill.TOMBS_OF_AMASCUT},
+		{"Phantom Muspah", net.runelite.client.hiscore.HiscoreSkill.PHANTOM_MUSPAH},
+	};
+
+	/** Look up the player's hiscores (KCs) when the name changes or every ~10 min. Off-thread. */
+	private void refreshHiscore()
+	{
+		net.runelite.api.Player me = client.getLocalPlayer();
+		String nm = me != null ? me.getName() : null;
+		if (nm == null) return;
+		long now = System.currentTimeMillis();
+		if (nm.equals(hiscoreName) && now - lastHiscoreMs < 600_000) return;   // fresh enough
+		hiscoreName = nm; lastHiscoreMs = now;
+		try
+		{
+			hiscoreClient.lookupAsync(nm, net.runelite.client.hiscore.HiscoreEndpoint.NORMAL)
+				.whenComplete((r, ex) -> { if (r != null) hiscore = r; });
+		}
+		catch (Exception e) { log.debug("coach: hiscore lookup failed", e); }
+	}
+
+	/** Boss KCs + collection-log + clue totals from the hiscores (only entries you're ranked on). */
+	private List<String> pvmLines()
+	{
+		net.runelite.client.hiscore.HiscoreResult h = hiscore;
+		if (h == null) return java.util.Collections.emptyList();
+		List<String> out = new ArrayList<>();
+		for (Object[] row : PVM)
+		{
+			net.runelite.client.hiscore.Skill sk = h.getSkill((net.runelite.client.hiscore.HiscoreSkill) row[1]);
+			if (sk == null) continue;
+			int v = sk.getLevel();
+			if (v > 0) out.add(row[0] + ": " + String.format("%,d", v));
+		}
+		return out;
+	}
+
 	/** Record "I just did a farm run" (persisted), so the Farm tab counts down to the next one. */
 	void markFarmRun()
 	{
@@ -349,6 +409,8 @@ public class CoachPlugin extends Plugin
 		for (CoachEngine.QuestScored qs : CoachEngine.quests(st))
 			b.append("- ").append(CoachGoals.pretty(qs.rec.q)).append(qs.ready ? " — DO NOW" : " [" + String.join(", ", qs.gaps) + "]")
 				.append(" (").append(qs.rec.note).append(")\n");
+		List<String> pvm = pvmLines();
+		if (!pvm.isEmpty()) b.append("\nPvM experience (kill counts): ").append(String.join(", ", pvm));
 		return b.toString();
 	}
 

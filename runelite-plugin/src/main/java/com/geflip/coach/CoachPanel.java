@@ -189,7 +189,7 @@ class CoachPanel extends PluginPanel
 		});
 	}
 
-	void setGoals(List<CoachEngine.Scored> rows, List<String> quests, List<String> diaries)
+	void setGoals(List<CoachEngine.Scored> rows, List<String> quests, List<String> pvm, List<String> diaries)
 	{
 		SwingUtilities.invokeLater(() -> {
 			goalsBox.removeAll();
@@ -198,6 +198,11 @@ class CoachPanel extends PluginPanel
 			{
 				goalsBox.add(header("Next quests"));
 				for (String q : quests) goalsBox.add(hint(q));
+			}
+			if (pvm != null && !pvm.isEmpty())
+			{
+				goalsBox.add(header("PvM (kill counts)"));
+				for (String kc : pvm) goalsBox.add(hint(kc));
 			}
 			if (diaries != null && !diaries.isEmpty())
 			{
