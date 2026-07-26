@@ -95,6 +95,18 @@ public class GeflipLedgerTest
 	}
 
 	@Test
+	public void costOverrideCorrectsHeldInventory()
+	{
+		// bought 10 @100 (held). Override says you really paid 60 each.
+		java.util.Map<Integer, Long> ov = new java.util.HashMap<>();
+		ov.put(1, 60L);
+		GeflipLedger l = GeflipLedger.compute(fills(buy(1, 100, 10)), null, ov);
+		assertEquals(600, l.inventoryCost);          // 10 * 60, not 10 * 100
+		assertEquals(600, l.holdings.get(1)[1]);     // holdings cost corrected too
+		assertEquals(10, l.holdings.get(1)[0]);
+	}
+
+	@Test
 	public void fifoMatchesOldestLotsFirst()
 	{
 		// two buy lots, one sell that spans both — cost basis is FIFO (30 @100, then 20 @120).

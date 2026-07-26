@@ -185,9 +185,9 @@ public class GeflipPlugin extends Plugin
 			int id = e.getKey();
 			int qty = (int) e.getValue()[0];
 			if (qty <= 0) continue;
-			// cost per unit: your manual correction if you set one, else the FIFO average
-			Long ov = costOverride.get(id);   // single lookup — no check-then-get race
-			long avg = ov != null ? ov : e.getValue()[1] / qty;
+			// cost per unit: the ledger already folded in any manual correction, so this is
+			// consistent with the session "held" total
+			long avg = e.getValue()[1] / e.getValue()[0];
 			// subtract what you've ALREADY LISTED for sale — that's not "to sell" anymore.
 			// (only actively-SELLING units; a CANCELLED sell is back in your hands.)
 			qty -= listedForSaleQty(id);
@@ -334,7 +334,7 @@ public class GeflipPlugin extends Plugin
 	private void recompute()
 	{
 		java.util.Set<Integer> excluded = scanner.idsForNames(excludeLowered());
-		ledger = GeflipLedger.compute(fills, excluded);
+		ledger = GeflipLedger.compute(fills, excluded, costOverride);
 		if (panel != null) { panel.setSession(ledger); panel.setHoldings(buildHoldings()); }
 	}
 

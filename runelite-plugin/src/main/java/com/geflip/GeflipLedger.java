@@ -41,6 +41,13 @@ final class GeflipLedger
 
 	static GeflipLedger compute(List<GeflipPlugin.Fill> fills, Set<Integer> excluded)
 	{
+		return compute(fills, excluded, null);
+	}
+
+	/** overrides = your manual per-item cost corrections (id -> real avg cost); applied to the
+	 *  held inventory so "held" and the To-sell rows agree. Past realized profit is unchanged. */
+	static GeflipLedger compute(List<GeflipPlugin.Fill> fills, Set<Integer> excluded, java.util.Map<Integer, Long> overrides)
+	{
 		GeflipLedger l = new GeflipLedger();
 		if (fills == null) return l;
 		Map<Integer, Deque<long[]>> lots = new HashMap<>();   // id -> FIFO of [unitCost, qtyRemaining, buyTs]
@@ -90,6 +97,16 @@ final class GeflipLedger
 				long[] h = l.holdings.computeIfAbsent(en.getKey(), k -> new long[2]);
 				h[0] += lot[1];              // qty held
 				h[1] += lot[0] * lot[1];     // total cost
+			}
+		// apply manual cost corrections so held-inventory cost matches what you say you paid
+		if (overrides != null)
+			for (Map.Entry<Integer, long[]> he : l.holdings.entrySet())
+			{
+				Long ov = overrides.get(he.getKey());
+				if (ov == null || he.getValue()[0] <= 0) continue;
+				long corrected = ov * he.getValue()[0];
+				l.inventoryCost += corrected - he.getValue()[1];   // adjust the total held cost
+				he.getValue()[1] = corrected;
 			}
 		return l;
 	}
