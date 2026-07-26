@@ -301,14 +301,22 @@ public class GeflipPlugin extends Plugin
 		String nm = scanner.nameFor(id);
 		int buy = scanner.buyHint(id), sell = scanner.sellHint(id);
 		if (buy <= 0 && sell <= 0) return (nm != null ? nm : name) + ": no live price — hit Rescan first";
-		StringBuilder s = new StringBuilder(nm != null ? nm : name).append(": ");
-		if (buy > 0) s.append("buy ~").append(gpn(buy)).append("   ");
-		if (sell > 0)
+		String head = nm != null ? nm : name;
+		// only one side quoted — can't compute a margin, just show what we have
+		if (buy <= 0 || sell <= 0)
 		{
-			int net = sell - GeflipScanner.saleTax(sell, scanner.isExempt(id));
-			s.append("sell ~").append(gpn(sell)).append(" (net ").append(gpn(net)).append(")");
+			if (sell <= 0) return head + ": buy ~" + gpn(buy) + " (no sell quote yet)";
+			int net1 = sell - GeflipScanner.saleTax(sell, scanner.isExempt(id));
+			return head + ": sell ~" + gpn(sell) + " (net " + gpn(net1) + ", no buy quote yet)";
 		}
-		return s.toString();
+		// both sides quoted → the answer is the MARGIN. buyHint overcuts a tick and sellHint
+		// undercuts a tick to actually fill, so on a razor-tight item buy can exceed sell — that's
+		// not a bug, it means there's no flip. Lead with the per-item profit so it's unambiguous.
+		int net = sell - GeflipScanner.saleTax(sell, scanner.isExempt(id));
+		int margin = net - buy;   // real gp/item if you buy at buy and sell at sell, after the 2% tax
+		String line = head + ": buy ~" + gpn(buy) + " → sell ~" + gpn(sell) + " (net " + gpn(net) + ")";
+		if (margin > 0) return line + "  = +" + gpn(margin) + "/ea";
+		return line + "  = " + gpn(margin) + "/ea  ✗ no margin (spread too tight)";
 	}
 
 	private static String gpn(long v) { return String.format("%,d", v); }
