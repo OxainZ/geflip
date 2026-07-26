@@ -49,10 +49,11 @@ class CoachPanel extends PluginPanel
 
 	private final Consumer<String> onAsk;
 	private final Supplier<String> onCopyContext;
+	private final Runnable onFarmRunDone;
 
-	CoachPanel(Runnable onRefresh, Consumer<String> onAsk, Supplier<String> onCopyContext)
+	CoachPanel(Runnable onRefresh, Consumer<String> onAsk, Supplier<String> onCopyContext, Runnable onFarmRunDone)
 	{
-		this.onAsk = onAsk; this.onCopyContext = onCopyContext;
+		this.onAsk = onAsk; this.onCopyContext = onCopyContext; this.onFarmRunDone = onFarmRunDone;
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
@@ -90,7 +91,7 @@ class CoachPanel extends PluginPanel
 		cards.add(scroll(nextBox), "next");
 		cards.add(scroll(goalsBox), "goals");
 		cards.add(scroll(blockedBox), "blocked");
-		cards.add(scroll(farmBox), "farm");
+		cards.add(farmCard(), "farm");
 		cards.add(askCard(), "ask");
 
 		JPanel north = new JPanel(new BorderLayout());
@@ -99,6 +100,17 @@ class CoachPanel extends PluginPanel
 		add(north, BorderLayout.NORTH);
 		add(cards, BorderLayout.CENTER);
 		show("next");
+	}
+
+	private JPanel farmCard()
+	{
+		JPanel p = new JPanel(new BorderLayout(0, 4));
+		JButton done = new JButton("✓ Mark farm run done");
+		done.setToolTipText("Log that you just did a farm run — the timers count down to when herbs/trees/fruit are ready again.");
+		done.addActionListener(e -> { if (onFarmRunDone != null) onFarmRunDone.run(); });
+		p.add(done, BorderLayout.NORTH);
+		p.add(scroll(farmBox), BorderLayout.CENTER);
+		return p;
 	}
 
 	private JPanel askCard()

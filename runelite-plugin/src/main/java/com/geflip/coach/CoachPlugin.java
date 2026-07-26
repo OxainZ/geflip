@@ -56,6 +56,7 @@ public class CoachPlugin extends Plugin
 	@Inject private ScheduledExecutorService executor;
 	@Inject private ClientThread clientThread;
 	@Inject private net.runelite.client.Notifier notifier;
+	@Inject private net.runelite.client.config.ConfigManager configManager;
 
 	private CoachPanel panel;
 	private NavigationButton navButton;
@@ -74,7 +75,7 @@ public class CoachPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new CoachPanel(this::rescan, this::ask, this::buildContext);
+		panel = new CoachPanel(this::rescan, this::ask, this::buildContext, this::markFarmRun);
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/coach_icon.png");
 		navButton = NavigationButton.builder().tooltip("Geflip Coach").icon(icon).priority(8).panel(panel).build();
 		clientToolbar.addNavigation(navButton);
@@ -112,7 +113,7 @@ public class CoachPlugin extends Plugin
 			p.setNext(CoachEngine.doNext(all));
 			p.setGoals(all, questLines(st), diaryLines());
 			p.setBlocked(CoachEngine.blocked(all));
-			p.setFarm(config.farmingHelper() ? CoachFarm.plan(st.level(Skill.FARMING)) : null);
+			p.setFarm(config.farmingHelper() ? CoachFarm.plan(st.level(Skill.FARMING), farmElapsedMin()) : null);
 			fireUnlockAlerts(all, st);
 		});
 	}
@@ -272,6 +273,23 @@ public class CoachPlugin extends Plugin
 		long t = 0;
 		for (Skill sk : Skill.values()) if (sk != Skill.OVERALL) t += client.getSkillExperience(sk);
 		return t;
+	}
+
+	/** Record "I just did a farm run" (persisted), so the Farm tab counts down to the next one. */
+	void markFarmRun()
+	{
+		configManager.setConfiguration("geflipcoach", "lastFarmRunMs", System.currentTimeMillis());
+		if (panel != null) panel.setStatus("farm run logged — timers reset");
+		rescan();
+	}
+
+	/** Minutes since your last logged farm run (−1 if never). */
+	private int farmElapsedMin()
+	{
+		String v = configManager.getConfiguration("geflipcoach", "lastFarmRunMs");
+		if (v == null) return -1;
+		try { long last = Long.parseLong(v.trim()); return last > 0 ? (int) ((System.currentTimeMillis() - last) / 60000) : -1; }
+		catch (NumberFormatException e) { return -1; }
 	}
 
 	private static final int[] CA_TIERS = {

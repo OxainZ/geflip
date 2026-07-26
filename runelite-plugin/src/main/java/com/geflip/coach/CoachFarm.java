@@ -34,10 +34,33 @@ final class CoachFarm
 		return best;
 	}
 
+	// approximate grow times (minutes): herbs ~80m, trees ~6h, fruit trees ~16h.
+	static final int HERB_MIN = 80, TREE_MIN = 360, FRUIT_MIN = 960;
+
+	private static String eta(int elapsedMin, int cycle, String label)
+	{
+		if (elapsedMin < 0) return "  " + label + ": —";
+		int left = cycle - elapsedMin;
+		return "  " + label + ": " + (left <= 0 ? "READY ✓" : "in ~" + (left >= 60 ? (left / 60) + "h" + (left % 60 != 0 ? (left % 60) + "m" : "") : left + "m"));
+	}
+
+	/** Readiness header for the current run cycle, given minutes since your last "mark run done"
+	 *  (−1 if never logged). A cycle tracker — RuneLite's Timetracking reads exact per-patch state. */
+	static List<String> readiness(int elapsedMin)
+	{
+		List<String> o = new ArrayList<>();
+		if (elapsedMin < 0) { o.add("No run logged yet — plant, then hit 'Mark farm run done'."); return o; }
+		o.add("Since last run: ~" + (elapsedMin >= 60 ? (elapsedMin / 60) + "h" + (elapsedMin % 60) + "m" : elapsedMin + "m"));
+		o.add(eta(elapsedMin, HERB_MIN, "Herbs").trim());
+		o.add(eta(elapsedMin, TREE_MIN, "Trees").trim());
+		o.add(eta(elapsedMin, FRUIT_MIN, "Fruit trees").trim());
+		return o;
+	}
+
 	/** A step-by-step combined herb + tree + fruit-tree run for the player's level: what to bring,
 	 *  then a numbered route (teleport → patch → do), then the tips. Repeatable each cycle — every
 	 *  stop is the same loop: harvest → clear → ultracompost → plant → pay to protect. */
-	static List<String> plan(int farmingLevel)
+	static List<String> plan(int farmingLevel, int elapsedMin)
 	{
 		String herb = bare(HERBS, farmingLevel), tree = bare(TREES, farmingLevel),
 			fruit = bare(FRUIT, farmingLevel), bush = bare(BUSH, farmingLevel);
@@ -48,6 +71,8 @@ final class CoachFarm
 
 		o.add("FARM RUN — Farming " + farmingLevel + " (herbs + trees + fruit trees)");
 		o.add("Herb=" + herb + " · Tree=" + tree + " · Fruit=" + fruit + " · Bush=" + bush);
+		o.add("");
+		o.addAll(readiness(elapsedMin));
 		o.add("");
 		o.add("BRING:");
 		o.add("• " + (guildHerbTree ? 6 : 5) + "x " + herb + " (herb) seeds");
