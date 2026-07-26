@@ -221,7 +221,7 @@ class GeflipPanel extends PluginPanel
 		String line2;
 		if (h.sellHint > 0)
 		{
-			long tax = h.sellHint < 50 ? 0 : Math.min((long) (h.sellHint * 0.02), 5_000_000);
+			long tax = (h.exempt || h.sellHint < 50) ? 0 : Math.min((long) (h.sellHint * 0.02), 5_000_000);
 			long net = h.sellHint - tax;
 			boolean profit = net >= h.avgCost;
 			boolean taxTrap = !profit && (h.sellHint - h.avgCost) >= 0;   // raw spread ok, tax eats it

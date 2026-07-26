@@ -750,9 +750,13 @@ function observedSlippage(cands, minVol=50){
 
 function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
   const rej = {}; const R = r => rej[r]=(rej[r]||0)+1;
-  // defend the divisor: a tampered/imported config with cycleH<=0 would make every gph
-  // Infinity and float junk rows to the top. Clamp to a sane floor for this run.
-  cfg = {...cfg, cycleH: Math.max(0.1, Number(cfg.cycleH)||4)};
+  // defend the divisors: a tampered/imported/cloud config with bad numbers would make gph
+  // Infinity or NaN and float junk rows to the top. Clamp every numeric lever for this run.
+  cfg = {...cfg,
+    cycleH:  Math.max(0.1, Number(cfg.cycleH)||4),
+    part:    Math.min(1, Math.max(0.001, Number(cfg.part)||0.20)),
+    maxFrac: Math.min(1, Math.max(0.01, Number(cfg.maxFrac)||0.25)),
+    bankroll: Math.max(0, Number(cfg.bankroll)||0)};
   const natP = latest[NATURE_RUNE]?.high ?? null;
   const perItemCap = Math.floor(cfg.bankroll * cfg.maxFrac);
   const out = [];
@@ -824,7 +828,7 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     const afford = Math.floor(perItemCap / buy);
     const through = Math.floor(cfg.part * flowFcast * cfg.cycleH);
     const qty = Math.min(limit, afford, through);
-    if (qty <= 0){ R('no affordable/absorbable qty'); continue; }
+    if (!(qty > 0)){ R('no affordable/absorbable qty'); continue; }   // !(>0) also rejects NaN
     const bound = qty===limit?'buy limit': qty===afford?'capital':'throughput';
 
     // ---- Order flow: which leg is actually the bottleneck ----
@@ -1431,6 +1435,7 @@ function renderScan(){
 }
 function detailRow(c){
   return `<tr class="detail"><td colspan="9">
+    ${c.why?`<div class="hint" style="margin:0 0 6px">${esc(c.why)}${c.wontFill?' · ⏳ may not fill':''}</div>`:''}
     <div class="dgrid">
       <div><label>buy at</label>${gpHtml(c.buy)}</div>
       <div><label>sell at</label>${gpHtml(c.sell)}</div>

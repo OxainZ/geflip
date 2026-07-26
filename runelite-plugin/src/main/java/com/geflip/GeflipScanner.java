@@ -173,18 +173,19 @@ class GeflipScanner
 		return -1;
 	}
 
-	/** A recent volume-weighted price for an item — the robust "where it's trading" number,
-	 *  immune to a single stale instant print. field = "avgLowPrice" or "avgHighPrice". */
-	private Integer vwap(int id, String field)
+	/** The single best VWAP source for an item (5m preferred, else 1h) — so buy & sell hints
+	 *  read the SAME window and can't invert by mixing 5m-low with 1h-high. */
+	private JsonObject quoteSrc(int id)
 	{
 		String k = String.valueOf(id);
-		for (JsonObject src : new JsonObject[]{ lastM5, lastH1 })
-			if (src != null && src.has(k))
-			{
-				JsonObject g = src.getAsJsonObject(k);
-				if (g.has(field) && !g.get(field).isJsonNull()) return g.get(field).getAsInt();
-			}
+		if (lastM5 != null && lastM5.has(k)) return lastM5.getAsJsonObject(k);
+		if (lastH1 != null && lastH1.has(k)) return lastH1.getAsJsonObject(k);
 		return null;
+	}
+
+	private static Integer avgField(JsonObject g, String field)
+	{
+		return (g != null && g.has(field) && !g.get(field).isJsonNull()) ? g.get(field).getAsInt() : null;
 	}
 
 	private Integer instant(int id, String field)
@@ -200,7 +201,7 @@ class GeflipScanner
 	 *  recent VWAP so a stale instant print can't invert it; falls back to the instant low. */
 	int buyHint(int id)
 	{
-		Integer buy = vwap(id, "avgLowPrice");
+		Integer buy = avgField(quoteSrc(id), "avgLowPrice");
 		if (buy == null) buy = instant(id, "low");
 		if (buy == null || buy <= 0) return -1;
 		return buy + tickSize(buy);   // overcut a tick so a resting buy actually fills
@@ -210,7 +211,7 @@ class GeflipScanner
 	 *  recent VWAP so a stale instant print can't invert it; falls back to the instant high. */
 	int sellHint(int id)
 	{
-		Integer sell = vwap(id, "avgHighPrice");
+		Integer sell = avgField(quoteSrc(id), "avgHighPrice");
 		if (sell == null) sell = instant(id, "high");
 		if (sell == null || sell <= 0) return -1;
 		return sell - tickSize(sell);   // undercut a tick so a resting sell actually fills

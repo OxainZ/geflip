@@ -42,6 +42,7 @@ public class GeflipPlugin extends Plugin
 	@Inject private GeflipConfig config;
 	@Inject private ScheduledExecutorService executor;
 	@Inject private net.runelite.client.Notifier notifier;
+	@Inject private net.runelite.client.callback.ClientThread clientThread;
 
 	// held items we've already crash-alerted on, so we don't spam (re-armed on recovery)
 	private final java.util.Set<Integer> dumpAlerted = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -158,9 +159,9 @@ public class GeflipPlugin extends Plugin
 	/** An item you're holding (bought, not yet sold) + where to list it to sell. */
 	static final class Hold
 	{
-		final int id; final String name; final int qty; final long avgCost; final int sellHint;
-		Hold(int id, String name, int qty, long avgCost, int sellHint)
-		{ this.id = id; this.name = name; this.qty = qty; this.avgCost = avgCost; this.sellHint = sellHint; }
+		final int id; final String name; final int qty; final long avgCost; final int sellHint; final boolean exempt;
+		Hold(int id, String name, int qty, long avgCost, int sellHint, boolean exempt)
+		{ this.id = id; this.name = name; this.qty = qty; this.avgCost = avgCost; this.sellHint = sellHint; this.exempt = exempt; }
 	}
 
 	/**
@@ -188,7 +189,7 @@ public class GeflipPlugin extends Plugin
 				else if (have < qty) qty = have;   // you sold some — show only what's left
 			}
 			String nm = scanner.nameFor(id);
-			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id)));
+			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id), scanner.isExempt(id)));
 		}
 		out.sort((a, b) -> Long.compare((long) b.qty * b.avgCost, (long) a.qty * a.avgCost));
 		return out;
@@ -201,18 +202,36 @@ public class GeflipPlugin extends Plugin
 	 */
 	void clearHolding(int id)
 	{
-		long[] h = ledger.holdings.get(id);
-		if (h == null || h[0] <= 0) return;
-		int qty = (int) h[0];
-		int price = scanner.sellHint(id);
-		if (price <= 0) price = (int) (h[1] / Math.max(1, h[0]));   // no quote → book flat at cost
-		int tax = GeflipScanner.saleTax(price, scanner.isExempt(id)) * qty;
-		fills.add(new Fill(id, "SELL", price, qty, tax, System.currentTimeMillis() / 1000));
-		if (fills.size() > 3000) fills.remove(0);
-		java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
-		String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
-		java.util.Map<Integer, long[]> win = new java.util.HashMap<>(buyWindows);
-		executor.submit(() -> { saveFills(snap, sig, key, since, win); recompute(); });
+		// don't mark something still LISTED on the GE — the real SOLD event will book it, and a
+		// synthetic sell now would double-count when it fills.
+		if (inActiveGe(id))
+		{
+			if (panel != null) panel.setStatus("still listed on the GE — let it fill / collect first");
+			return;
+		}
+		// do the mutation on the client thread so the slot arrays aren't cloned mid-write
+		clientThread.invoke(() ->
+		{
+			long[] h = ledger.holdings.get(id);
+			if (h == null || h[0] <= 0) return;
+			int qty = (int) h[0];
+			int price = scanner.sellHint(id);
+			if (price <= 0) price = (int) (h[1] / Math.max(1, h[0]));   // no quote → book flat at cost
+			int tax = GeflipScanner.saleTax(price, scanner.isExempt(id)) * qty;
+			fills.add(new Fill(id, "SELL", price, qty, tax, System.currentTimeMillis() / 1000));
+			if (fills.size() > 3000) fills.remove(0);
+			java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
+			String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
+			java.util.Map<Integer, long[]> win = deepCopyWindows();
+			executor.submit(() -> { saveFills(snap, sig, key, since, win); recompute(); });
+		});
+	}
+
+	private java.util.Map<Integer, long[]> deepCopyWindows()
+	{
+		java.util.Map<Integer, long[]> m = new java.util.HashMap<>();
+		for (java.util.Map.Entry<Integer, long[]> e : buyWindows.entrySet()) m.put(e.getKey(), e.getValue().clone());
+		return m;
 	}
 
 	/**
@@ -226,6 +245,8 @@ public class GeflipPlugin extends Plugin
 		for (java.util.Map.Entry<Integer, long[]> e : ledger.holdings.entrySet())
 		{
 			int id = e.getKey();
+			// don't alert on something you provably no longer hold (sold on mobile etc.)
+			if (invCounts != null && bankCounts != null && possessed(id) <= 0 && !inActiveGe(id)) continue;
 			long cost = e.getValue()[0] > 0 ? e.getValue()[1] / e.getValue()[0] : 0;
 			int sell = scanner.sellHint(id);
 			if (sell <= 0 || cost <= 0) continue;
@@ -554,8 +575,9 @@ public class GeflipPlugin extends Plugin
 			// advance the item's rolling 4h buy-limit window
 			long nowMs = System.currentTimeMillis();
 			long[] w = buyWindows.get(o.getItemId());
+			// replace-on-write (never mutate a shared array in place — it's read off-thread)
 			if (w == null || nowMs - w[0] >= BUY_WINDOW_MS) buyWindows.put(o.getItemId(), new long[]{ nowMs, qty });
-			else w[1] += qty;
+			else buyWindows.put(o.getItemId(), new long[]{ w[0], w[1] + qty });
 		}
 		else // sell — record the 2% tax the GE takes on the sale (respecting tax-exempt items)
 		{
@@ -568,7 +590,7 @@ public class GeflipPlugin extends Plugin
 		java.util.List<Fill> fillSnap = new java.util.ArrayList<>(fills);
 		String[] sigSnap = slotSig.clone(), keySnap = slotKey.clone();
 		long[] sinceSnap = slotSince.clone();
-		java.util.Map<Integer, long[]> winSnap = new java.util.HashMap<>(buyWindows);
+		java.util.Map<Integer, long[]> winSnap = deepCopyWindows();
 		executor.submit(() -> { saveFills(fillSnap, sigSnap, keySnap, sinceSnap, winSnap); recompute(); });
 	}
 
