@@ -173,47 +173,45 @@ class GeflipScanner
 		return -1;
 	}
 
-	/** Recommended price to PLACE A BUY at for any item (one tick over the realistic low). */
+	/** A recent volume-weighted price for an item — the robust "where it's trading" number,
+	 *  immune to a single stale instant print. field = "avgLowPrice" or "avgHighPrice". */
+	private Integer vwap(int id, String field)
+	{
+		String k = String.valueOf(id);
+		for (JsonObject src : new JsonObject[]{ lastM5, lastH1 })
+			if (src != null && src.has(k))
+			{
+				JsonObject g = src.getAsJsonObject(k);
+				if (g.has(field) && !g.get(field).isJsonNull()) return g.get(field).getAsInt();
+			}
+		return null;
+	}
+
+	private Integer instant(int id, String field)
+	{
+		if (lastLatest == null) return null;
+		String k = String.valueOf(id);
+		if (!lastLatest.has(k)) return null;
+		JsonObject q = lastLatest.getAsJsonObject(k);
+		return (q.has(field) && !q.get(field).isJsonNull()) ? q.get(field).getAsInt() : null;
+	}
+
+	/** Recommended price to PLACE A BUY at (one tick over where sellers dump). Prefers the
+	 *  recent VWAP so a stale instant print can't invert it; falls back to the instant low. */
 	int buyHint(int id)
 	{
-		JsonObject latest = lastLatest, m5 = lastM5, h1 = lastH1;
-		if (latest == null) return -1;
-		String k = String.valueOf(id);
-		Integer lo = null;
-		if (latest.has(k))
-		{
-			JsonObject q = latest.getAsJsonObject(k);
-			if (q.has("low") && !q.get("low").isJsonNull()) lo = q.get("low").getAsInt();
-		}
-		Integer avgLo = null;
-		JsonObject g = (m5 != null && m5.has(k)) ? m5.getAsJsonObject(k)
-			: (h1 != null && h1.has(k) ? h1.getAsJsonObject(k) : null);
-		if (g != null && g.has("avgLowPrice") && !g.get("avgLowPrice").isJsonNull())
-			avgLo = g.get("avgLowPrice").getAsInt();
-		Integer buy = (lo != null && avgLo != null) ? Math.max(lo, avgLo) : lo != null ? lo : avgLo;
+		Integer buy = vwap(id, "avgLowPrice");
+		if (buy == null) buy = instant(id, "low");
 		if (buy == null || buy <= 0) return -1;
 		return buy + tickSize(buy);   // overcut a tick so a resting buy actually fills
 	}
 
-	/** Recommended price to LIST A SELL at for any item (one tick under the realistic high),
-	 *  even if it's not in the ranked flip list. −1 if we have no recent quote. */
+	/** Recommended price to LIST A SELL at (one tick under where buyers buy). Prefers the
+	 *  recent VWAP so a stale instant print can't invert it; falls back to the instant high. */
 	int sellHint(int id)
 	{
-		JsonObject latest = lastLatest, m5 = lastM5, h1 = lastH1;
-		if (latest == null) return -1;
-		String k = String.valueOf(id);
-		Integer hi = null;
-		if (latest.has(k))
-		{
-			JsonObject q = latest.getAsJsonObject(k);
-			if (q.has("high") && !q.get("high").isJsonNull()) hi = q.get("high").getAsInt();
-		}
-		Integer avgHi = null;
-		JsonObject g = (m5 != null && m5.has(k)) ? m5.getAsJsonObject(k)
-			: (h1 != null && h1.has(k) ? h1.getAsJsonObject(k) : null);
-		if (g != null && g.has("avgHighPrice") && !g.get("avgHighPrice").isJsonNull())
-			avgHi = g.get("avgHighPrice").getAsInt();
-		Integer sell = (hi != null && avgHi != null) ? Math.min(hi, avgHi) : hi != null ? hi : avgHi;
+		Integer sell = vwap(id, "avgHighPrice");
+		if (sell == null) sell = instant(id, "high");
 		if (sell == null || sell <= 0) return -1;
 		return sell - tickSize(sell);   // undercut a tick so a resting sell actually fills
 	}

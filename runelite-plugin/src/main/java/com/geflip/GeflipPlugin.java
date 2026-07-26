@@ -41,6 +41,10 @@ public class GeflipPlugin extends Plugin
 	@Inject private ClientToolbar clientToolbar;
 	@Inject private GeflipConfig config;
 	@Inject private ScheduledExecutorService executor;
+	@Inject private net.runelite.client.Notifier notifier;
+
+	// held items we've already crash-alerted on, so we don't spam (re-armed on recovery)
+	private final java.util.Set<Integer> dumpAlerted = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	// live coins you actually have (inventory + bank when opened); −1 = unknown yet
 	private volatile long liveGp = -1;
@@ -209,6 +213,35 @@ public class GeflipPlugin extends Plugin
 		String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
 		java.util.Map<Integer, long[]> win = new java.util.HashMap<>(buyWindows);
 		executor.submit(() -> { saveFills(snap, sig, key, since, win); recompute(); });
+	}
+
+	/**
+	 * Crash guard: if an item you're HOLDING has fallen below your buy price (net of tax),
+	 * push one notification so you can cut it before it drops further. Re-arms once it recovers.
+	 */
+	private void checkDumps()
+	{
+		if (!config.dumpAlerts()) return;
+		java.util.Set<Integer> stillDown = new java.util.HashSet<>();
+		for (java.util.Map.Entry<Integer, long[]> e : ledger.holdings.entrySet())
+		{
+			int id = e.getKey();
+			long cost = e.getValue()[0] > 0 ? e.getValue()[1] / e.getValue()[0] : 0;
+			int sell = scanner.sellHint(id);
+			if (sell <= 0 || cost <= 0) continue;
+			long net = sell - GeflipScanner.saleTax(sell, scanner.isExempt(id));
+			if (net < cost * 0.90)   // you're 10%+ underwater on a held item — it crashed
+			{
+				stillDown.add(id);
+				if (dumpAlerted.add(id))   // first time we've seen this crash
+				{
+					String nm = scanner.nameFor(id);
+					notifier.notify("Geflip: " + (nm != null ? nm : "#" + id) + " crashed to ~"
+						+ gpn(net) + " (you paid ~" + gpn(cost) + ") — consider cutting.");
+				}
+			}
+		}
+		dumpAlerted.retainAll(stillDown);   // re-arm items that recovered
 	}
 
 	/** Look up the recommended buy/sell for ANY item by name — for the panel's price-check box. */
@@ -451,6 +484,7 @@ public class GeflipPlugin extends Plugin
 				log.warn("geflip scan failed", e);
 				if (p != null) p.setStatus("scan failed — check connection");
 			}
+			checkDumps();  // warn if anything you HOLD has crashed below your buy
 			cloudPush();   // push fills/session to the cloud store (no-op if not configured)
 		});
 	}

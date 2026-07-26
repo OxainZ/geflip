@@ -221,16 +221,20 @@ class GeflipPanel extends PluginPanel
 		String line2;
 		if (h.sellHint > 0)
 		{
-			long net = h.sellHint - (h.sellHint < 50 ? 0 : Math.min((long) (h.sellHint * 0.02), 5_000_000));
+			long tax = h.sellHint < 50 ? 0 : Math.min((long) (h.sellHint * 0.02), 5_000_000);
+			long net = h.sellHint - tax;
 			boolean profit = net >= h.avgCost;
+			boolean taxTrap = !profit && (h.sellHint - h.avgCost) >= 0;   // raw spread ok, tax eats it
 			line2 = "cost " + gp(h.avgCost) + "  →  sell @ " + gp(h.sellHint)
-				+ "  (" + (profit ? "+" : "") + gp(net - h.avgCost) + "/ea)";
+				+ "  (" + (profit ? "+" : "") + gp(net - h.avgCost) + "/ea)" + (taxTrap ? "  ⚠tax" : "");
 			JLabel sub = new JLabel(line2);
 			sub.setFont(FontManager.getRunescapeSmallFont());
 			sub.setForeground(profit ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.PROGRESS_ERROR_COLOR);
 			p.add(sub, BorderLayout.SOUTH);
 			p.setToolTipText("You hold " + h.qty + " at ~" + gp(h.avgCost) + " each. List a sell at ~"
-				+ gp(h.sellHint) + " to fill; " + (profit ? "that's a profit." : "that's a LOSS — decide cut vs hold."));
+				+ gp(h.sellHint) + " to fill; "
+				+ (taxTrap ? "raw spread is positive but the 2% tax (" + gp(tax) + ") eats it — this can only lose. Hold for a wider gap or cut."
+					: profit ? "that's a profit." : "that's a LOSS — decide cut vs hold."));
 		}
 		else
 		{

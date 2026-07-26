@@ -61,6 +61,15 @@ public interface GeflipConfig extends Config
 	default int rows() { return 30; }
 
 	@ConfigItem(
+		keyName = "dumpAlerts",
+		name = "Crash alerts (held items)",
+		description = "Notify when something you're HOLDING crashes below your buy price, so you "
+			+ "can cut it before it falls further. Respects your RuneLite notification settings.",
+		position = 6
+	)
+	default boolean dumpAlerts() { return true; }
+
+	@ConfigItem(
 		keyName = "useTrends",
 		name = "Death-spiral filter",
 		description = "Haircut items in a steep long-term decline, using geflip's data/trends.json.",
