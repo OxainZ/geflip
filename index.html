@@ -918,8 +918,17 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     const gpPerMil = roiHr*1e6;   // gp/hour earned per 1m deployed
     const cycleProfit = margin*qty, gph = cycleProfit/effCycleH;
 
+    // WHY this pick ranks — the honest per-pick rationale no paid black box shows
+    const fp = Math.round(fillProb*100);
+    const why = wontFill ? "Thin market — may sit unfilled (little counter-flow)"
+      : (trendPen<1) ? "Margin is real but it's sliding intra-hour — risky"
+      : (spikePen<1) ? "Spread far wider than its 24h norm — likely a spike, treated cautiously"
+      : (stab<0.7) ? "Wide instant spread the 1h avg doesn't confirm — cautious"
+      : (fillProb>=0.7) ? `Solid: ~${fp}% fill, spread corroborated by the 1h average`
+      : `OK: ~${fp}% fill — decent margin, watch the fill time`;
+
     out.push({ id, name:meta.name, members:meta.members, exempt:meta.exempt,
-      buy, sell, tax:saleTax(sell,meta.exempt), margin, instant, hourly, roi,
+      buy, sell, tax:saleTax(sell,meta.exempt), margin, instant, hourly, roi, why,
       touchBuy, touchSell, touchMargin,
       limit, through, quantity:qty, capital:qty*buy, cycleProfit,
       gph, expGph:gph*conf, roiHr, gpPerMil, confidence:conf, fresh, volS, stab, trendPen,

@@ -298,7 +298,10 @@ class GeflipPanel extends PluginPanel
 		name.setForeground(f.decliner ? ColorScheme.PROGRESS_ERROR_COLOR
 			: f.dumping ? ColorScheme.BRAND_ORANGE : ColorScheme.TEXT_COLOR);
 		JLabel gph = new JLabel(gp((long) f.expGph) + "/h");
-		gph.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		// colour the headline by fill confidence — the honest signal: a fat gp/h in orange/red
+		// means it probably won't fill. Green = reliable, orange = so-so, red = thin.
+		gph.setForeground(f.wontFill || f.fillProb < 0.4 ? ColorScheme.PROGRESS_ERROR_COLOR
+			: f.fillProb < 0.7 ? ColorScheme.PROGRESS_INPROGRESS_COLOR : ColorScheme.GRAND_EXCHANGE_PRICE);
 		gph.setHorizontalAlignment(JLabel.RIGHT);
 		top.add(name, BorderLayout.CENTER);
 		top.add(gph, BorderLayout.EAST);
@@ -324,6 +327,7 @@ class GeflipPanel extends PluginPanel
 
 		// full plain-English explanation of this row on hover
 		StringBuilder tip = new StringBuilder("<html><b>").append(f.name).append("</b><br>");
+		if (f.why != null && !f.why.isEmpty()) tip.append("<i>").append(f.why).append("</i><br>");
 		tip.append("Buy at ").append(gp(f.buy)).append(", sell at ").append(gp(f.sell))
 			.append(" → ").append(gp(f.margin)).append(" profit each after tax<br>");
 		tip.append("Buy up to ").append(f.quantity).append(" (bankroll/limit/volume capped)<br>");

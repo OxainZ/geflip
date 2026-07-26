@@ -54,6 +54,7 @@ class GeflipScanner
 		boolean dumping;      // cheap right now vs its recent norm — a dip/buy signal
 		double fillProb;      // P(the round-trip actually completes in a 4h cycle), 0..1
 		boolean wontFill;     // too little counter-flow — expect slow/failed fills
+		String why = "";      // one-line plain-English rationale (the transparency edge)
 	}
 
 	/** Item name from the cached mapping (null if not loaded / unknown). */
@@ -376,6 +377,14 @@ class GeflipScanner
 			f.expGph = f.gph * conf * pen;   // short-term confidence x long-term trend penalty
 			f.confidence = conf * pen; f.t90 = t90; f.decliner = pen < 1.0; f.dumping = dumping;
 			f.fillProb = fillProb; f.wontFill = wontFill;
+			// WHY this pick ranks where it does — the honest, per-pick rationale no paid black box shows
+			int fp = (int) Math.round(fillProb * 100);
+			if (wontFill) f.why = "Thin market — may sit unfilled (little counter-flow)";
+			else if (pen < 1.0) f.why = "Margin is real but it's in a long-term decline — risky hold";
+			else if (dumping) f.why = "Dip: cheap vs its recent norm, ~" + fp + "% fill — buy-the-dip";
+			else if (stab < 0.7) f.why = "Wide instant spread the 1h avg doesn't confirm — treated cautiously";
+			else if (fillProb >= 0.7) f.why = "Solid: ~" + fp + "% fill, spread corroborated by the 1h average";
+			else f.why = "OK: ~" + fp + "% fill — decent margin, watch the fill time";
 			out.add(f);
 		}
 		// same tiebreak order as the web: expGph desc, confidence desc, name asc
