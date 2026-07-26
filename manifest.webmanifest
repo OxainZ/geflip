@@ -1,0 +1,15 @@
+{
+  "name": "GE Flip Terminal",
+  "short_name": "GE Flip",
+  "description": "OSRS Grand Exchange flip finder — ranked gp/hour, tax & buy-limits priced in.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14100c",
+  "theme_color": "#14100c",
+  "icons": [
+    { "src": "geflip_icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "geflip_icon.png", "sizes": "any", "type": "image/png", "purpose": "maskable" }
+  ]
+}

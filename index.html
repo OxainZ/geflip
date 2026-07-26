@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="GE Flip">
 <meta name="theme-color" content="#14100c">
 <meta name="description" content="Rank OSRS Grand Exchange flips by expected gp per hour, tax and buy limits included.">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAADJUlEQVR4nO3dMU4bQRiA0SFKSYEUuEzukDp9ToE4AOIU6VPnDrkM4gykAQksReDYO7t8fq9babWe4tOvlT3ynF1enD8OiPi09gLgmARNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgibl89oL4HD3d19eXV9dP6y0kvWZ0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNypmzvrdvdzfdIeo78UzojTtmzEs8b2sEvWFLxVeOWtAbtXR01agFvUGzYitGLWhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFCfJ7uH25ser65vbnyuthH8xoUkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFLvtXtjdTXfI/XbircOEfrJvzLOfx/sIeiwXn6jnO/mgl45O1HOddNCzYhP1PCcdND2CJkXQpAiaFEGTsslfCr9/+/rq+tfvPyuthI/GhCZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUlbZbbe7m+6Q++3E46XpE3rfmGc/j49tatBLxSdqnk0LeunoRM0Yk4KeFZuo8S0HKYImRdAbdHX9kPqcmQS9UUvHVox5DEFv2lLRVWMeQ9Cbd+z4yjGPsdE/muG1tyK8v/uy1/1lJjQpgiZF0KQImhRBkyJoUgRNykkHPev4Ysckz3PSQY+xfGxinuvkgx5juejEPJ+gnxw7PjGvw16OF96KcPeIY9FujwlNigkdcMq763aZ0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk3J2eXH+OOODZvwZuQOEmDahl45NzIwx+ZVjqejEzLPp79DHjk/MvDTtHXofu+/bouW9fMtBiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KRscrcd/C8TmhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpfwHPzW/tey49QwAAAABJRU5ErkJggg==">
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAADJUlEQVR4nO3dMU4bQRiA0SFKSYEUuEzukDp9ToE4AOIU6VPnDrkM4gykAQksReDYO7t8fq9babWe4tOvlT3ynF1enD8OiPi09gLgmARNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgibl89oL4HD3d19eXV9dP6y0kvWZ0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNypmzvrdvdzfdIeo78UzojTtmzEs8b2sEvWFLxVeOWtAbtXR01agFvUGzYitGLWhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFCfJ7uH25ser65vbnyuthH8xoUkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFLvtXtjdTXfI/XbircOEfrJvzLOfx/sIeiwXn6jnO/mgl45O1HOddNCzYhP1PCcdND2CJkXQpAiaFEGTsslfCr9/+/rq+tfvPyuthI/GhCZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUlbZbbe7m+6Q++3E46XpE3rfmGc/j49tatBLxSdqnk0LeunoRM0Yk4KeFZuo8S0HKYImRdAbdHX9kPqcmQS9UUvHVox5DEFv2lLRVWMeQ9Cbd+z4yjGPsdE/muG1tyK8v/uy1/1lJjQpgiZF0KQImhRBkyJoUgRNykkHPev4Ysckz3PSQY+xfGxinuvkgx5juejEPJ+gnxw7PjGvw16OF96KcPeIY9FujwlNigkdcMq763aZ0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBk3J2eXH+OOODZvwZuQOEmDahl45NzIwx+ZVjqejEzLPp79DHjk/MvDTtHXofu+/bouW9fMtBiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KRscrcd/C8TmhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpfwHPzW/tey49QwAAAABJRU5ErkJggg==">
 <style>
@@ -194,6 +195,7 @@
     <button class="primary" id="btnScan">Scan market</button>
     <button class="ghost" id="btnDeep" title="Check the shortlist against 48h of history">deep</button>
     <button class="ghost" id="btnAuto" title="Auto-refresh every 60s">auto ⟳</button>
+    <button class="ghost" id="btnAlerts" title="Notify me when a strong flip appears (needs auto ⟳ running)">🔔 alerts</button>
   </div>
   <div class="strip" id="scanStrip"></div>
   <div class="searchrow" style="margin:0 0 6px"><input id="filterBox" placeholder="Filter results… (e.g. rune, seed)" inputmode="search"></div>
@@ -1639,6 +1641,7 @@ async function doScan(){
             raw:{latest, h1, d24}};
     expandedId = null;
     renderScan(); renderSlots();
+    maybeNotify(cands);   // ping the phone if a strong flip just appeared
     await journalScan(cands, alloc); await renderBook(); renderNext();
     status(`<span class="live">● live</span> · ${Object.keys(latest).length.toLocaleString()} items · ${cands.length} pass`);
   }catch(e){
@@ -2497,7 +2500,75 @@ function renderLive(session, fills, source, offers){
     cloudStatus('pulling…'); cloudPull();
     setInterval(()=>{ if (cloudReady() && !BRIDGE) cloudPull(); }, 12000);  // keep the phone live
   } else cloudStatus('not configured');
+  initPWA();             // installable app + notifications (no-op on file://)
 })();
+
+/* --------------------------- PWA + alerts --------------------------- */
+// Service worker makes the app installable on a phone and lets a backgrounded PWA post
+// notifications. Registration is silent and only works over https/localhost (not file://).
+function initPWA(){
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')){
+    navigator.serviceWorker.register('sw.js').catch(e => console.debug('sw register skipped', e));
+  }
+  const b = $('btnAlerts');
+  if (!b) return;
+  ALERTS.on = !!(CFG && CFG.alerts);
+  paintAlertBtn();
+  b.onclick = async () => {
+    if (!ALERTS.on){
+      if (!('Notification' in window)){ banner('This browser has no notifications.'); return; }
+      let perm = Notification.permission;
+      if (perm === 'default') perm = await Notification.requestPermission();
+      if (perm !== 'granted'){ banner('Notifications are blocked — allow them for this site to get flip alerts.'); return; }
+      ALERTS.on = true;
+      banner('Alerts on — while <b>auto ⟳</b> is running you’ll be pinged when a flip beats your gp/h threshold. '
+           + 'Add the page to your home screen so it can alert in the background.');
+    } else { ALERTS.on = false; }
+    CFG.alerts = ALERTS.on; await store.set('settings', CFG);
+    paintAlertBtn();
+  };
+}
+const ALERTS = { on:false, sent:new Map(), min:0 };   // sent: id -> lastFiredMs (re-arm hourly)
+function paintAlertBtn(){
+  const b = $('btnAlerts'); if (!b) return;
+  b.classList.toggle('on', ALERTS.on);
+  b.textContent = ALERTS.on ? '🔔 alerts on' : '🔔 alerts';
+}
+async function postNote(title, body, tag){
+  try{
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    // prefer the SW registration so it works when the PWA is backgrounded/installed
+    if ('serviceWorker' in navigator){
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && reg.showNotification){
+        reg.showNotification(title, { body, tag, icon:'geflip_icon.png', badge:'geflip_icon.png' });
+        return;
+      }
+    }
+    new Notification(title, { body, tag, icon:'geflip_icon.png' });
+  }catch(e){ console.debug('note failed', e); }
+}
+// Fire on the strongest flips of a scan that clear the user's gp/h threshold. Deduped per item
+// with an hourly re-arm so you get told once when an opportunity opens, not every 60s.
+function maybeNotify(cands){
+  if (!ALERTS.on || !cands || !cands.length) return;
+  // threshold: the user's minGph config if set, else a sane floor tuned to bankroll (0.2%/h).
+  const floor = Math.max(Number(CFG.minGph)||0, Math.round((Number(CFG.bankroll)||0)*0.002));
+  const now = Date.now();
+  for (const [id, t] of ALERTS.sent) if (now - t > 3600_000) ALERTS.sent.delete(id);  // re-arm hourly
+  let fired = 0;
+  for (const c of cands){
+    if (fired >= 3) break;                       // don't spam — top 3 fresh hits per scan
+    const g = Math.round(c.expGph||0);
+    if (g < floor || floor <= 0) continue;
+    if (ALERTS.sent.has(c.id)) continue;
+    ALERTS.sent.set(c.id, now);
+    postNote(`Flip: ${c.name}`,
+      `≈${gpTxt(g)}/h · buy ${gpTxt(Math.round(c.buy))} → sell ${gpTxt(Math.round(c.sell))}`,
+      'flip-'+c.id);
+    fired++;
+  }
+}
 </script>
 </body>
 </html>
