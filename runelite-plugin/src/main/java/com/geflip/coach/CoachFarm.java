@@ -26,51 +26,58 @@ final class CoachFarm
 	private static final Object[][] BUSH = {
 		{"Redberry", 10}, {"Cadava", 22}, {"Dwellberry", 36}, {"Jangerberry", 48},
 		{"Whiteberry", 59}, {"Poison ivy", 70} };
-	private static final Object[][] SPECIAL = {
-		{"Cactus", 55}, {"Calquat", 72}, {"Spirit tree", 83}, {"Celastrus", 85}, {"Redwood", 90} };
 
-	private static String pick(Object[][] tbl, int lvl)
+	private static String bare(Object[][] tbl, int lvl)   // the seed you'd plant at this level
 	{
-		String best = null; int nextName = -1; String next = null;
-		for (Object[] row : tbl)
-		{
-			int req = (int) row[1];
-			if (lvl >= req) best = (String) row[0];
-			else if (next == null) { next = (String) row[0]; nextName = req; }
-		}
-		if (best == null) return next != null ? "none yet (first is " + next + " @ " + nextName + ")" : "—";
-		return best + (next != null ? "  (next: " + next + " @ " + nextName + ")" : "  (max tier)");
+		String best = "—";
+		for (Object[] row : tbl) if (lvl >= (int) row[1]) best = (String) row[0];
+		return best;
 	}
 
+	/** A step-by-step combined herb + tree + fruit-tree run for the player's level: what to bring,
+	 *  then a numbered route (teleport → patch → do), then the tips. Repeatable each cycle — every
+	 *  stop is the same loop: harvest → clear → ultracompost → plant → pay to protect. */
 	static List<String> plan(int farmingLevel)
 	{
-		List<String> out = new ArrayList<>();
-		out.add("Your Farming: " + farmingLevel + ". Plant the highest tier you meet; rotate a run every ~80 min.");
-		out.add("");
-		out.add("HERBS → " + pick(HERBS, farmingLevel));
-		out.add("  patches: Ardougne (Ardy cloak), Catherby (Camelot tele), Falador (Explorer's ring),");
-		out.add("  Hosidius (Xeric's talisman), Farming Guild (Skills necklace, 45 Farm), Weiss/Troll (quests).");
-		out.add("  ranarr/snapdragon/torstol = the money herbs; ALWAYS ultracompost + pay/protect.");
-		out.add("");
-		out.add("TREES → " + pick(TREES, farmingLevel));
-		out.add("  patches: Lumbridge, Varrock, Falador, Taverley, Gnome Stronghold, Farming Guild.");
-		out.add("  huge XP — plant the best you can, pay the farmer to protect, come back next run.");
-		out.add("");
-		out.add("FRUIT TREES → " + pick(FRUIT, farmingLevel));
-		out.add("  patches: Gnome Stronghold, Tree Gnome Village, Brimhaven, Catherby, Lletya, Farming Guild.");
-		out.add("  (use spirit tree / royal seed pod to hop between the gnome patches fast.)");
-		out.add("");
-		out.add("BUSHES → " + pick(BUSH, farmingLevel));
-		out.add("  patches: Champions' Guild, Rimmington, Etceteria, Ardougne.");
-		out.add("");
-		out.add("SPECIAL → " + pick(SPECIAL, farmingLevel));
-		out.add("  Hespori (anima cave, no level), Calquat (Tai Bwo Wannai), Cactus (Al Kharid), Redwood (Farming Guild).");
-		out.add("");
-		out.add("RUN KIT: ultracompost / bottomless bucket, Magic secateurs, full Farmer's outfit (yield+XP),");
-		out.add("  teleport tablets for each patch, and Resurrect Crops (Arceuus) to save a dead herb.");
-		out.add("DIARIES that help: Ardougne (disease-free herb), Falador, Kandarin, Kourend — do these when you can.");
-		if (farmingLevel < 45) out.add("NEXT UNLOCK: 45 Farming opens the Farming Guild (mid tier) — a big convenience jump.");
-		else if (farmingLevel < 65) out.add("NEXT UNLOCK: 65 Farming opens the Farming Guild high tier (herb+tree+fruit in one spot).");
-		return out;
+		String herb = bare(HERBS, farmingLevel), tree = bare(TREES, farmingLevel),
+			fruit = bare(FRUIT, farmingLevel), bush = bare(BUSH, farmingLevel);
+		boolean guild = farmingLevel >= 45;   // Farming Guild opens at 45 (mid tier)
+		List<String> o = new ArrayList<>();
+
+		o.add("FARM RUN — Farming " + farmingLevel + " (herbs + trees + fruit trees)");
+		o.add("Herb=" + herb + " · Tree=" + tree + " · Fruit=" + fruit + " · Bush=" + bush);
+		o.add("");
+		o.add("BRING:");
+		o.add("• " + (guild ? 6 : 5) + "x " + herb + " (herb) seeds");
+		o.add("• 5x " + tree + " saplings  +  4x " + fruit + " saplings");
+		o.add("• Ultracompost (or a Bottomless bucket) — one per herb/allotment patch");
+		o.add("• Rake (skip if you have any diary that clears weeds), spade, seed dibber, secateurs");
+		o.add("• Protection pay: coins + baskets of fruit / veg for the tree & fruit-tree gardeners");
+		o.add("• GEAR: Magic secateurs (+10% herb yield), full Farmer's outfit (XP), Ectophial/teleports");
+		o.add("");
+		o.add("TELEPORTS to carry: Ardougne cloak, Camelot tab, Explorer's ring, Ring of wealth,");
+		o.add("  Xeric's talisman, Varrock tab, Home tele" + (guild ? ", Skills necklace" : "")
+			+ ", Spirit tree / Royal seed pod, Icy basalt (Weiss), Quetzal whistle (Varlamore).");
+		o.add("");
+		o.add("STEPS — each stop: HARVEST → clear → ULTRACOMPOST → PLANT → PAY to protect:");
+		int n = 1;
+		o.add(n++ + ") Home tele → LUMBRIDGE: tree patch (" + tree + ").");
+		o.add(n++ + ") Varrock tab → VARROCK palace: tree patch.");
+		o.add(n++ + ") Explorer's ring → FALADOR: herb patch (" + herb + "). Then Ring of wealth → FALADOR PARK: tree patch.");
+		o.add(n++ + ") Camelot tab → CATHERBY: herb + fruit tree + allotment.");
+		o.add(n++ + ") Ardougne cloak → ARDOUGNE: herb + allotment + flower.");
+		o.add(n++ + ") Xeric's talisman (Glade) → run S to HOSIDIUS: herb + allotment.");
+		if (guild) o.add(n++ + ") Skills necklace → FARMING GUILD: herb + tree + fruit tree + bush (one-stop!).");
+		o.add(n++ + ") Spirit tree / Royal seed pod → GNOME STRONGHOLD: fruit tree + tree.");
+		o.add(n++ + ") Spirit tree → TREE GNOME VILLAGE: fruit tree.");
+		o.add(n++ + ") Icy basalt → WEISS: herb (disease-free) — needs Making Friends with My Arm.");
+		o.add(n++ + ") Quetzal whistle → CIVITAS ILLA FORTIS (Varlamore): herb — needs Varlamore access.");
+		o.add("");
+		if (!guild) o.add("LOCKED FOR YOU: Farming Guild (needs 45 Farming) — your next big convenience unlock.");
+		o.add("SKIP any stop you can't reach yet (Weiss/Varlamore/gnome = quest/access gated) — the rest still pays.");
+		o.add("TIPS: ultracompost + Ardougne Medium diary = disease-free herbs. Resurrect Crops (78 Magic,");
+		o.add("  Arceuus) revives a dead herb. NEVER skip paying a tree/fruit gardener — a dead sapling is a big loss.");
+		o.add("CADENCE: herbs ~80 min, trees/fruit ~ once a day — so do the herb loop often, trees on the daily pass.");
+		return o;
 	}
 }
