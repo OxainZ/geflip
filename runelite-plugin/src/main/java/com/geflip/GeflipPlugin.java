@@ -84,6 +84,14 @@ public class GeflipPlugin extends Plugin
 	// when the CURRENT offer in each slot was first seen (ms), to flag stale unfilled offers
 	private final long[] slotSince = new long[8];
 	private final String[] slotKey = new String[8];
+	// per-slot INCREMENTAL fill high-water mark: how much of the CURRENT offer in each slot has
+	// already been booked as fills (cumulative units + gp). Each offer event reports CUMULATIVE
+	// progress, so the delta since this mark is the newly-filled portion — that's how a PARTIAL
+	// sell/buy shows up in P&L and To-sell the instant it fills, not only when the offer completes.
+	// Persisted with the fills so a restart / login-replay re-books nothing and misses nothing
+	// (GE offers keep filling while you're logged out).
+	private final int[] slotBookedQty = new int[8];
+	private final long[] slotBookedSpent = new long[8];
 	private int tickCounter;   // paces the periodic offer-age refresh
 	// per-item 4h buy-limit window: id -> [windowStartMs, unitsBoughtThisWindow]
 	private final java.util.Map<Integer, long[]> buyWindows = new java.util.concurrent.ConcurrentHashMap<>();
@@ -436,6 +444,7 @@ public class GeflipPlugin extends Plugin
 	private static final class Persist
 	{
 		java.util.List<Fill> fills; String[] slotSig, slotKey; long[] slotSince;
+		int[] slotBookedQty; long[] slotBookedSpent;   // incremental-fill high-water marks
 		java.util.Map<Integer, long[]> buyWindows;
 		java.util.Map<Integer, Long> costOverride;
 		java.util.List<Integer> watchlist;
@@ -457,6 +466,10 @@ public class GeflipPlugin extends Plugin
 				for (int i = 0; i < slotKey.length && i < p.slotKey.length; i++) slotKey[i] = p.slotKey[i];
 			if (p.slotSince != null)
 				for (int i = 0; i < slotSince.length && i < p.slotSince.length; i++) slotSince[i] = p.slotSince[i];
+			if (p.slotBookedQty != null)
+				for (int i = 0; i < slotBookedQty.length && i < p.slotBookedQty.length; i++) slotBookedQty[i] = p.slotBookedQty[i];
+			if (p.slotBookedSpent != null)
+				for (int i = 0; i < slotBookedSpent.length && i < p.slotBookedSpent.length; i++) slotBookedSpent[i] = p.slotBookedSpent[i];
 			if (p.buyWindows != null) buyWindows.putAll(p.buyWindows);
 			if (p.costOverride != null) costOverride.putAll(p.costOverride);
 			if (p.watchlist != null) watchlist.addAll(p.watchlist);
@@ -467,6 +480,12 @@ public class GeflipPlugin extends Plugin
 	/** Persist a client-thread SNAPSHOT (never the live arrays/list) to avoid a data race. */
 	private synchronized void saveFills(java.util.List<Fill> fillSnap, String[] sig, String[] key, long[] since,
 		java.util.Map<Integer, long[]> windows)
+	{
+		saveFills(fillSnap, sig, key, since, windows, slotBookedQty.clone(), slotBookedSpent.clone());
+	}
+
+	private synchronized void saveFills(java.util.List<Fill> fillSnap, String[] sig, String[] key, long[] since,
+		java.util.Map<Integer, long[]> windows, int[] booked, long[] bookedSpent)
 	{
 		try
 		{
@@ -480,6 +499,8 @@ public class GeflipPlugin extends Plugin
 			p.slotSig = sig;
 			p.slotKey = key;
 			p.slotSince = since;
+			p.slotBookedQty = booked;
+			p.slotBookedSpent = bookedSpent;
 			p.buyWindows = windows;
 			p.costOverride = new java.util.HashMap<>(costOverride);
 			p.watchlist = new java.util.ArrayList<>(watchlist);
@@ -680,7 +701,13 @@ public class GeflipPlugin extends Plugin
 			else
 			{
 				String key = o.getItemId() + ":" + o.getPrice() + ":" + o.getTotalQuantity();
-				if (!key.equals(slotKey[slot])) { slotKey[slot] = key; slotSince[slot] = System.currentTimeMillis(); }
+				// a genuinely NEW offer took this slot → reset both the age clock and the fill
+				// high-water mark (a matching key on login-replay is the SAME offer — keep the mark)
+				if (!key.equals(slotKey[slot]))
+				{
+					slotKey[slot] = key; slotSince[slot] = System.currentTimeMillis();
+					slotBookedQty[slot] = 0; slotBookedSpent[slot] = 0;
+				}
 			}
 		}
 		// build the offer snapshot HERE (client thread) and publish it for the panel + bridge/cloud
@@ -692,49 +719,51 @@ public class GeflipPlugin extends Plugin
 		// rebuild To-sell now: buildHoldings() subtracts listedForSaleQty() from what's shown.
 		refreshHoldingsView();
 
-		// a collected/empty slot clears its dedup marker so the NEXT offer in that slot is
-		// recorded even if it looks identical. (Cancels are NOT cleared here — we record
-		// their filled portion below, then EMPTY clears the marker on collection.)
-		if (slot >= 0 && slot < slotSig.length && st == GrandExchangeOfferState.EMPTY)
+		if (slot < 0 || slot >= slotBookedQty.length) return;
+
+		// a collected/empty slot resets its fill high-water mark (and the old dedup marker) so the
+		// next offer to occupy the slot starts clean.
+		if (st == GrandExchangeOfferState.EMPTY)
 		{
-			slotSig[slot] = null;
+			slotBookedQty[slot] = 0; slotBookedSpent[slot] = 0;
+			if (slot < slotSig.length) slotSig[slot] = null;
+			return;
 		}
 
-		// Record the FILLED portion of any offer that's done moving gp: a full buy/sell,
-		// OR a cancelled offer that partially filled first (else those units become phantom
-		// profit when you later sell them — they'd have no cost basis in the ledger).
-		boolean buy = st == GrandExchangeOfferState.BOUGHT || st == GrandExchangeOfferState.CANCELLED_BUY;
-		boolean sell = st == GrandExchangeOfferState.SOLD || st == GrandExchangeOfferState.CANCELLED_SELL;
-		if (!buy && !sell) return;
+		// INCREMENTAL BOOKING. quantitySold/spent are CUMULATIVE for the offer; book only the
+		// delta since we last saw this slot. This captures a PARTIAL buy/sell the moment units
+		// fill — the whole point: "sold a little" now moves P&L and drops off To-sell right away.
+		// It also naturally dedups login-replays (same numbers ⇒ zero delta) and books the tail
+		// of a cancelled offer (its filled units) before EMPTY clears the slot.
+		boolean isBuy = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.BOUGHT
+			|| st == GrandExchangeOfferState.CANCELLED_BUY;
+		boolean isSell = st == GrandExchangeOfferState.SELLING || st == GrandExchangeOfferState.SOLD
+			|| st == GrandExchangeOfferState.CANCELLED_SELL;
+		if (!isBuy && !isSell) return;
 
-		long spent = o.getSpent();          // gp moved so far on this offer
-		int qty = o.getQuantitySold();      // filled units
-		if (qty <= 0) return;               // a cancel with nothing filled — nothing to record
-		int unit = (int) (spent / qty);
-
-		// dedup: a completed/cancelled offer re-fires with identical numbers on login replay
-		String sig = st.name() + ":" + o.getItemId() + ":" + qty + ":" + spent;
-		if (slot >= 0 && slot < slotSig.length)
-		{
-			if (sig.equals(slotSig[slot])) return;   // already recorded this one
-			slotSig[slot] = sig;
-		}
+		int soldNow = o.getQuantitySold();
+		long spentNow = o.getSpent();
+		int deltaQty = soldNow - slotBookedQty[slot];
+		long deltaSpent = spentNow - slotBookedSpent[slot];
+		if (deltaQty <= 0 || deltaSpent <= 0) return;   // nothing new filled since the last event
+		int unit = (int) (deltaSpent / deltaQty);        // avg price of just the newly-filled units
+		slotBookedQty[slot] = soldNow; slotBookedSpent[slot] = spentNow;   // advance the high-water mark
 
 		long now = System.currentTimeMillis() / 1000;
-		if (buy)
+		if (isBuy)
 		{
-			fills.add(new Fill(o.getItemId(), "BUY", unit, qty, 0, now));
-			// advance the item's rolling 4h buy-limit window
+			fills.add(new Fill(o.getItemId(), "BUY", unit, deltaQty, 0, now));
+			// advance the item's rolling 4h buy-limit window by the units that just filled
 			long nowMs = System.currentTimeMillis();
 			long[] w = buyWindows.get(o.getItemId());
 			// replace-on-write (never mutate a shared array in place — it's read off-thread)
-			if (w == null || nowMs - w[0] >= BUY_WINDOW_MS) buyWindows.put(o.getItemId(), new long[]{ nowMs, qty });
-			else buyWindows.put(o.getItemId(), new long[]{ w[0], w[1] + qty });
+			if (w == null || nowMs - w[0] >= BUY_WINDOW_MS) buyWindows.put(o.getItemId(), new long[]{ nowMs, deltaQty });
+			else buyWindows.put(o.getItemId(), new long[]{ w[0], w[1] + deltaQty });
 		}
-		else // sell — record the 2% tax the GE takes on the sale (respecting tax-exempt items)
+		else // sell — record the 2% tax the GE takes on just the newly-sold units
 		{
-			int tax = GeflipScanner.saleTax(unit, scanner.isExempt(o.getItemId())) * qty;
-			fills.add(new Fill(o.getItemId(), "SELL", unit, qty, tax, now));
+			int tax = GeflipScanner.saleTax(unit, scanner.isExempt(o.getItemId())) * deltaQty;
+			fills.add(new Fill(o.getItemId(), "SELL", unit, deltaQty, tax, now));
 		}
 		if (fills.size() > 3000) fills.remove(0);   // keep it bounded
 		// snapshot the mutable state HERE (client thread), then persist + re-match off-thread
@@ -742,8 +771,9 @@ public class GeflipPlugin extends Plugin
 		java.util.List<Fill> fillSnap = new java.util.ArrayList<>(fills);
 		String[] sigSnap = slotSig.clone(), keySnap = slotKey.clone();
 		long[] sinceSnap = slotSince.clone();
+		int[] bookedSnap = slotBookedQty.clone(); long[] bookedSpentSnap = slotBookedSpent.clone();
 		java.util.Map<Integer, long[]> winSnap = deepCopyWindows();
-		executor.submit(() -> { saveFills(fillSnap, sigSnap, keySnap, sinceSnap, winSnap); recompute(); });
+		executor.submit(() -> { saveFills(fillSnap, sigSnap, keySnap, sinceSnap, winSnap, bookedSnap, bookedSpentSnap); recompute(); });
 	}
 
 	/**
