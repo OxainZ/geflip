@@ -52,6 +52,7 @@ class GeflipScanner
 		double roi, gph, expGph, confidence, fillHours; Double t90, t180; boolean decliner;
 		int resetMins = -1;   // minutes until this item's 4h buy window resets (−1 = none active)
 		boolean dumping;      // cheap right now vs its recent norm — a dip/buy signal
+		boolean unstable;     // price swings exceed the margin — it may flip red before you sell
 		double fillProb;      // P(the round-trip actually completes in a 4h cycle), 0..1
 		boolean wontFill;     // too little counter-flow — expect slow/failed fills
 		String why = "";      // one-line plain-English rationale (the transparency edge)
@@ -576,13 +577,27 @@ class GeflipScanner
 			double trendPen = (mid1h != null && (midNow - mid1h) / mid1h < -0.03) ? 0.8 : 1.0;
 
 			double roi = (double) marginComp / bidComp;
-			// adverse-selection guard: a margin far wider than its 24h norm is usually a
-			// transient spike that collapses before you sell — demote it (web scoreAll spikePen).
+
+			// FALLING-KNIFE REJECT: if the price is actively dropping this hour, the margin you see now
+			// won't survive the round-trip — you buy green and sell red (the Larran's-key / dragon-metal
+			// -sheet trap). Skip these entirely unless the user opts back in.
+			boolean falling = mid1h != null && (midNow - mid1h) / mid1h < -0.03;
+			if (falling && cfg.hideFalling()) continue;
+
+			// adverse-selection guard: a margin far wider than its 24h norm is usually a transient
+			// spike that collapses before you sell. >3x norm ⇒ reject (opt-out); 2.5-3x ⇒ demote.
 			double spikePen = 1.0;
+			boolean unstable = false;
 			if (w24 != null && !w24.get("avgHighPrice").isJsonNull() && !w24.get("avgLowPrice").isJsonNull())
 			{
-				int m24 = netMargin(w24.get("avgLowPrice").getAsInt(), w24.get("avgHighPrice").getAsInt(), meta.exempt);
+				int aLo = w24.get("avgLowPrice").getAsInt(), aHi = w24.get("avgHighPrice").getAsInt();
+				int m24 = netMargin(aLo, aHi, meta.exempt);
+				if (m24 > 0 && marginComp > 3.0 * m24 && cfg.hideSpikes()) continue;   // illusory spike
 				if (m24 > 0 && marginComp > 2.5 * m24) spikePen = 0.7;
+				// VOLATILITY: if the price has drifted from its 24h norm by MORE than your margin,
+				// normal swings can erase the flip before you sell — warn (Larran's/dragon-metal-sheet).
+				double mid24 = (aLo + aHi) / 2.0;
+				if (mid24 > 0 && Math.abs(midNow - mid24) / mid24 > 1.5 * roi) unstable = true;
 			}
 			// confidence = quality * stability * intra-hour-trend * spike-guard (web scoreAll conf)
 			double fresh = Math.exp(-age / TAU_S);
@@ -606,12 +621,13 @@ class GeflipScanner
 			f.roi = roi; f.fillHours = fillH;
 			f.gph = (double) marginComp * qty / effCycleH;
 			f.expGph = f.gph * conf * pen;   // short-term confidence x long-term trend penalty
-			f.confidence = conf * pen; f.t90 = t90; f.decliner = pen < 1.0; f.dumping = dumping;
+			f.confidence = conf * pen; f.t90 = t90; f.decliner = pen < 1.0; f.dumping = dumping; f.unstable = unstable;
 			f.fillProb = fillProb; f.wontFill = wontFill;
 			// WHY this pick ranks where it does — the honest, per-pick rationale no paid black box shows
 			int fp = (int) Math.round(fillProb * 100);
 			if (wontFill) f.why = "Thin market — may sit unfilled (little counter-flow)";
 			else if (pen < 1.0) f.why = "Margin is real but it's in a long-term decline — risky hold";
+			else if (unstable) f.why = "Volatile — price swings are bigger than the margin, it can flip red before you sell";
 			else if (dumping) f.why = "Dip: cheap vs its recent norm, ~" + fp + "% fill — buy-the-dip";
 			else if (stab < 0.7) f.why = "Wide instant spread the 1h avg doesn't confirm — treated cautiously";
 			else if (fillProb >= 0.7) f.why = "Solid: ~" + fp + "% fill, spread corroborated by the 1h average";

@@ -79,7 +79,7 @@ class GeflipPanel extends PluginPanel
 		calib.setFont(FontManager.getRunescapeSmallFont());
 		legend.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		legend.setFont(FontManager.getRunescapeSmallFont());
-		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · %fill · 🔥dip · ⚠falling · ⏳low</span></html>");
+		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · %fill · 🔥dip · ⚠decline · ⚡volatile · ⏳low</span></html>");
 
 		// --- top: rescan + status + legend ---
 		JButton refresh = new JButton("Rescan");
@@ -642,9 +642,10 @@ class GeflipPanel extends PluginPanel
 		// --- line 1: item name (left, clips if long) + gp/hour headline (right) ---
 		JPanel top = new JPanel(new BorderLayout(6, 0));
 		top.setOpaque(false);
-		String tag = (f.dumping ? "🔥 " : "") + (f.decliner ? "⚠ " : "");
+		String tag = (f.dumping ? "🔥 " : "") + (f.decliner ? "⚠ " : "") + (f.unstable ? "⚡ " : "");
 		JLabel name = new JLabel(tag + f.name);
 		name.setForeground(f.decliner ? ColorScheme.PROGRESS_ERROR_COLOR
+			: f.unstable ? ColorScheme.PROGRESS_INPROGRESS_COLOR
 			: f.dumping ? ColorScheme.BRAND_ORANGE : ColorScheme.TEXT_COLOR);
 		JLabel gph = new JLabel(gp((long) f.expGph) + "/h");
 		// colour the headline by fill confidence — the honest signal: a fat gp/h in orange/red

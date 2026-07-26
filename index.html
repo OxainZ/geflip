@@ -592,6 +592,7 @@ const DEF_CFG = { bankroll:50_000_000, slots:8, members:true, minVol:20, minVol2
   lite:false, swingMinPrice:500, swingMinVol24:200, swingDepth:20, swingHoldHours:48,
   swingMinRR:1.0, swingMinProfit:50000, calibratedN:0,
   horizon:8, journal:true, tauS:1200, volSat:200, haircut:0.5, cycleH:4,
+  hideFalling:true, hideSpikes:true,
   cloudUrl:'', cloudId:'' };
 let CFG = {...DEF_CFG};
 
@@ -887,6 +888,9 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     // Only penalise a sharp intra-hour slide: you would be buying a falling knife
     // and holding it through your own sell leg.
     const trendPen = (trend1h!=null && trend1h < -0.03) ? 0.8 : 1;
+    // FALLING-KNIFE REJECT: an item dropping >3% this hour is the "green now, red after you buy"
+    // trap — the margin won't survive your sell leg. Skip unless the user opts in.
+    if (cfg.hideFalling !== false && trend1h!=null && trend1h < -0.03){ R('falling — price sliding this hour'); continue; }
 
     // ---- Observed slippage: quoted price vs what actually traded ----
     // You buy at `low`. If real insta-sells averaged ABOVE that print, the quote
@@ -935,6 +939,7 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     let spikePen = 1;
     if (w24 && w24.avgHighPrice!=null && w24.avgLowPrice!=null){
       const m24 = netMargin(w24.avgLowPrice, w24.avgHighPrice, meta.exempt);
+      if (m24 > 0 && margin > 3.0*m24 && cfg.hideSpikes !== false){ R('spike — margin >3x its 24h norm'); continue; }
       if (m24 > 0 && margin > 2.5*m24) spikePen = 0.7;
     }
     const conf  = Math.max(0, Math.min(1, quality * stab * trendPen * spikePen));
@@ -950,11 +955,16 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     const gpPerMil = roiHr*1e6;   // gp/hour earned per 1m deployed
     const cycleProfit = margin*qty, gph = cycleProfit/effCycleH;
 
+    // VOLATILITY: price drifted from its 24h norm by more than the margin → swings can erase the
+    // flip before you sell (the "green now, red mid-trade" items). Warn (don't reject).
+    const unstable = mid24!=null && mid24>0 && Math.abs(midNow-mid24)/mid24 > 1.5*roi;
+
     // WHY this pick ranks — the honest per-pick rationale no paid black box shows
     const fp = Math.round(fillProb*100);
     const why = wontFill ? "Thin market — may sit unfilled (little counter-flow)"
       : (trendPen<1) ? "Margin is real but it's sliding intra-hour — risky"
       : (spikePen<1) ? "Spread far wider than its 24h norm — likely a spike, treated cautiously"
+      : unstable ? "Volatile — price swings exceed the margin, it can flip red before you sell"
       : (stab<0.7) ? "Wide instant spread the 1h avg doesn't confirm — cautious"
       : (fillProb>=0.7) ? `Solid: ~${fp}% fill, spread corroborated by the 1h average`
       : `OK: ~${fp}% fill — decent margin, watch the fill time`;
@@ -963,7 +973,7 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
       buy, sell, tax:saleTax(sell,meta.exempt), margin, instant, hourly, roi, why,
       touchBuy, touchSell, touchMargin,
       limit, through, quantity:qty, capital:qty*buy, cycleProfit,
-      gph, expGph:gph*conf, roiHr, gpPerMil, confidence:conf, fresh, volS, stab, trendPen,
+      gph, expGph:gph*conf, roiHr, gpPerMil, confidence:conf, fresh, volS, stab, trendPen, unstable,
       bidComp, askComp, marginComp, checkCost, tkB, tkS,
       sellersHr, buyersHr, fillBuyMin, fillSellMin, fillHours:effCycleH, fillProb, wontFill, bottleneck, flowSkew,
       trend1h, trend24, activity, flowFcast, slipObs, limitResetAt, buy_limit_total:meta.limit,

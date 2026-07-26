@@ -77,6 +77,25 @@ public interface GeflipConfig extends Config
 	)
 	default boolean useTrends() { return true; }
 
+	@ConfigItem(
+		keyName = "hideFalling",
+		name = "Hide falling items",
+		description = "DON'T recommend items whose price is actively dropping this hour (>3%). These "
+			+ "are the 'green now, red after you buy' traps — the margin looks real but the price "
+			+ "keeps falling, so your sell ends up below your buy. Turn off to see them (flagged ⚠).",
+		position = 61
+	)
+	default boolean hideFalling() { return true; }
+
+	@ConfigItem(
+		keyName = "hideSpikes",
+		name = "Hide spike margins",
+		description = "DON'T recommend a margin far wider than the item's own 24h norm (>3x). A spread "
+			+ "that big is almost always a transient spike that collapses before you can sell it.",
+		position = 62
+	)
+	default boolean hideSpikes() { return true; }
+
 	@Range(min = 60, max = 900)
 	@ConfigItem(
 		keyName = "refreshSec",
