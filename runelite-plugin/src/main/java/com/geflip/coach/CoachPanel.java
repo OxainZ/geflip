@@ -35,12 +35,14 @@ class CoachPanel extends PluginPanel
 	private final JPanel nextBox = new JPanel();
 	private final JPanel goalsBox = new JPanel();
 	private final JPanel blockedBox = new JPanel();
+	private final JPanel farmBox = new JPanel();
 	private final JTextField askInput = new JTextField();
 	private final JTextArea askResult = new JTextArea();
 
 	private final JButton tabNext = new JButton("Next");
 	private final JButton tabGoals = new JButton("Goals");
 	private final JButton tabBlocked = new JButton("Blocked");
+	private final JButton tabFarm = new JButton("Farm");
 	private final JButton tabAsk = new JButton("Ask");
 	private final JPanel cards = new JPanel(new java.awt.CardLayout());
 
@@ -67,22 +69,24 @@ class CoachPanel extends PluginPanel
 		top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 		top.add(refresh); top.add(status); top.add(summary);
 
-		JPanel tabBar = new JPanel(new GridLayout(1, 4, 2, 0));
+		JPanel tabBar = new JPanel(new GridLayout(1, 5, 2, 0));
 		tabBar.setBorder(BorderFactory.createEmptyBorder(6, 0, 4, 0));
-		tabBar.add(tabNext); tabBar.add(tabGoals); tabBar.add(tabBlocked); tabBar.add(tabAsk);
-		for (JButton b : new JButton[]{ tabNext, tabGoals, tabBlocked, tabAsk })
+		tabBar.add(tabNext); tabBar.add(tabGoals); tabBar.add(tabBlocked); tabBar.add(tabFarm); tabBar.add(tabAsk);
+		for (JButton b : new JButton[]{ tabNext, tabGoals, tabBlocked, tabFarm, tabAsk })
 			b.setMargin(new java.awt.Insets(2, 1, 2, 1));
 		tabNext.addActionListener(e -> show("next"));
 		tabGoals.addActionListener(e -> show("goals"));
 		tabBlocked.addActionListener(e -> show("blocked"));
+		tabFarm.addActionListener(e -> show("farm"));
 		tabAsk.addActionListener(e -> show("ask"));
 
-		for (JPanel p : new JPanel[]{ nextBox, goalsBox, blockedBox })
+		for (JPanel p : new JPanel[]{ nextBox, goalsBox, blockedBox, farmBox })
 			p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 
 		cards.add(scroll(nextBox), "next");
 		cards.add(scroll(goalsBox), "goals");
 		cards.add(scroll(blockedBox), "blocked");
+		cards.add(scroll(farmBox), "farm");
 		cards.add(askCard(), "ask");
 
 		JPanel north = new JPanel(new BorderLayout());
@@ -138,6 +142,7 @@ class CoachPanel extends PluginPanel
 		tabNext.setForeground("next".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabGoals.setForeground("goals".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabBlocked.setForeground("blocked".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+		tabFarm.setForeground("farm".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabAsk.setForeground("ask".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 	}
 
@@ -183,6 +188,17 @@ class CoachPanel extends PluginPanel
 				for (String d : diaries) goalsBox.add(hint(d));
 			}
 			goalsBox.revalidate(); goalsBox.repaint();
+		});
+	}
+
+	void setFarm(List<String> lines)
+	{
+		SwingUtilities.invokeLater(() -> {
+			farmBox.removeAll();
+			if (lines == null || lines.isEmpty())
+				farmBox.add(hint("Enable 'Farming run helper' in Config to see what to plant + where."));
+			else for (String l : lines) farmBox.add(l.isEmpty() ? hint(" ") : hint(l));
+			farmBox.revalidate(); farmBox.repaint();
 		});
 	}
 

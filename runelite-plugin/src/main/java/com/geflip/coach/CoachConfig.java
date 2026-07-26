@@ -12,6 +12,12 @@ public interface CoachConfig extends Config
 		description = "How often to re-read your account and re-rank goals.", position = 1)
 	default int refreshSec() { return 20; }
 
+	@ConfigItem(keyName = "farmingHelper", name = "Farming run helper",
+		description = "Show a Farm tab: what to plant in each patch for your level, where the patches "
+			+ "are + how to teleport. Off by default — turn it on only when you're doing a farm run.",
+		position = 2)
+	default boolean farmingHelper() { return false; }
+
 	@ConfigSection(name = "Ask (LLM coach)", description = "Optional: ask a live-context question about your account.",
 		position = 10, closedByDefault = true)
 	String ask = "ask";

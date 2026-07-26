@@ -101,6 +101,7 @@ public class CoachPlugin extends Plugin
 			p.setNext(CoachEngine.doNext(all));
 			p.setGoals(all, questLines(st), diaryLines());
 			p.setBlocked(CoachEngine.blocked(all));
+			p.setFarm(config.farmingHelper() ? CoachFarm.plan(st.level(Skill.FARMING)) : null);
 		});
 	}
 
