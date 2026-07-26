@@ -27,6 +27,7 @@ class GeflipPanel extends PluginPanel
 	private final JLabel status = new JLabel("idle");
 	private final JLabel combined = new JLabel(" ");   // real earn rate = top slots summed
 	private final JLabel bankLabel = new JLabel(" ");  // the bankroll being used (your coins)
+	private final JLabel capitalLabel = new JLabel(" ");  // capital working vs idle + slots in use
 	private final JLabel session = new JLabel("session: —");
 	private final JLabel calib = new JLabel(" ");      // your ACTUAL results (win% / hold)
 	private final JLabel legend = new JLabel(" ");     // what the row symbols mean
@@ -88,6 +89,9 @@ class GeflipPanel extends PluginPanel
 		bankLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		bankLabel.setFont(FontManager.getRunescapeSmallFont());
 		bankLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		capitalLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		capitalLabel.setFont(FontManager.getRunescapeSmallFont());
+		capitalLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		// price-check: type ANY item to see its recommended buy/sell (works for anything,
 		// not just holdings/scan) — fixes "I can't see what to sell X at".
 		priceResult.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
@@ -115,6 +119,7 @@ class GeflipPanel extends PluginPanel
 		top.add(status);
 		top.add(combined);
 		top.add(bankLabel);
+		top.add(capitalLabel);
 		top.add(priceRow);
 		top.add(priceResult);
 		top.add(legend);
@@ -197,6 +202,27 @@ class GeflipPanel extends PluginPanel
 	{
 		SwingUtilities.invokeLater(() ->
 			bankLabel.setText("bankroll: " + gp(gp) + (auto ? " (your coins)" : " (manual)")));
+	}
+
+	/** Capital-utilization meter: how much of the bankroll is WORKING (pending buys + held stock)
+	 *  vs idle coins, and how many of the 8 GE slots are in use. Idle capital / idle slots are the
+	 *  #1 throughput leak in flipping, so this makes them visible. */
+	void setCapital(long working, long bankroll, int slotsUsed)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			if (bankroll <= 0) { capitalLabel.setText(" "); return; }
+			int pct = (int) Math.round(100.0 * Math.min(working, bankroll) / bankroll);
+			long idle = Math.max(0, bankroll - working);
+			capitalLabel.setText("capital: " + gp(working) + " working (" + pct + "%) · "
+				+ gp(idle) + " idle · " + slotsUsed + "/8 slots");
+			// nudge orange when you're leaving a lot on the table (idle coins AND free slots)
+			boolean leak = slotsUsed < 8 && pct < 60;
+			capitalLabel.setForeground(leak ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+			capitalLabel.setToolTipText("Working = gp tied up in pending buys + stock you hold. Idle = coins "
+				+ "sitting in your pocket. Slots = GE offers in use of 8. Idle capital and free slots are "
+				+ "unearned gp/hr — fill them to raise your rate.");
+		});
 	}
 
 	void setSession(GeflipLedger l)

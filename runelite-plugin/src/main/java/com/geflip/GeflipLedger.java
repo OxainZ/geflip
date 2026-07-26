@@ -29,7 +29,8 @@ final class GeflipLedger
 	long firstTs, lastTs;    // span of the fill log (secs), for the realized gp/day rate
 	// what you're still holding (bought, not yet sold): item id -> [qty, totalCost]
 	final java.util.Map<Integer, long[]> holdings = new HashMap<>();
-	// realized performance per item: id -> [realizedProfit, completedFlips] — journal analytics
+	// realized performance per item — the proof-of-edge journal:
+	// id -> [realizedProfit, completedFlips, winningFlips, holdSecSum, matchedUnits]
 	final java.util.Map<Integer, long[]> byItem = new HashMap<>();
 
 	/** Your ACTUAL win-rate on completed flips (0..1). */
@@ -70,6 +71,7 @@ final class GeflipLedger
 				if (skip) { l.keptNet -= net * f.qty; continue; }
 				int remaining = f.qty;
 				long sellProfit = 0; int matchedThisSell = 0;   // this round-trip's realized profit
+				long sellHoldSec = 0;                            // unit-weighted hold time of THIS sell
 				Deque<long[]> dq = lots.get(f.id);
 				while (remaining > 0 && dq != null && !dq.isEmpty())
 				{
@@ -77,17 +79,20 @@ final class GeflipLedger
 					int m = (int) Math.min(remaining, lot[1]);
 					sellProfit += (net - lot[0]) * m;
 					matchedThisSell += m;
-					l.holdSecSum += Math.max(0, f.ts - lot[2]) * (long) m;   // buy->sell duration, unit-weighted
+					sellHoldSec += Math.max(0, f.ts - lot[2]) * (long) m;   // buy->sell duration, unit-weighted
 					lot[1] -= m; remaining -= m;
 					if (lot[1] <= 0) dq.pollFirst();
 				}
+				l.holdSecSum += sellHoldSec;
 				l.realizedFlip += sellProfit;
 				l.matchedUnits += matchedThisSell;
 				if (matchedThisSell > 0)
 				{
 					l.flips++; if (sellProfit > 0) l.wins++;
-					long[] bi = l.byItem.computeIfAbsent(f.id, k -> new long[2]);
-					bi[0] += sellProfit; bi[1]++;   // per-item realized profit + flip count
+					long[] bi = l.byItem.computeIfAbsent(f.id, k -> new long[5]);
+					bi[0] += sellProfit; bi[1]++;                    // realized profit + flip count
+					if (sellProfit > 0) bi[2]++;                     // winning flips
+					bi[3] += sellHoldSec; bi[4] += matchedThisSell;  // hold time + units, for velocity
 				}
 				if (remaining > 0)                            // sold something we never logged buying
 				{

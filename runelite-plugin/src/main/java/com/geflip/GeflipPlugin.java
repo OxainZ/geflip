@@ -329,6 +329,14 @@ public class GeflipPlugin extends Plugin
 
 	private static String gpn(long v) { return String.format("%,d", v); }
 
+	/** Compact human duration from seconds: "45s" / "38m" / "2.4h". */
+	private static String fmtDur(double sec)
+	{
+		if (sec < 90) return Math.round(sec) + "s";
+		if (sec < 5400) return Math.round(sec / 60.0) + "m";
+		return String.format("%.1fh", sec / 3600.0);
+	}
+
 	/** Set your true average cost for a held item (fixes a mis-captured cost). cost<=0 clears it. */
 	void setCost(int id, long cost)
 	{
@@ -421,13 +429,20 @@ public class GeflipPlugin extends Plugin
 		java.util.List<java.util.Map.Entry<Integer, long[]>> items = new java.util.ArrayList<>(ledger.byItem.entrySet());
 		items.sort((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]));
 		java.util.List<String> lines = new java.util.ArrayList<>();
-		for (int i = 0; i < items.size() && i < 6; i++)
+		for (int i = 0; i < items.size() && i < 8; i++)
 		{
 			java.util.Map.Entry<Integer, long[]> e = items.get(i);
 			String nm = scanner.nameFor(e.getKey());
-			long profit = e.getValue()[0];
+			long[] v = e.getValue();
+			long profit = v[0]; long flips = v[1];
+			long wins = v.length > 2 ? v[2] : 0;
+			long holdSec = v.length > 3 ? v[3] : 0;
+			long units = v.length > 4 ? v[4] : 0;
+			int winPct = flips > 0 ? (int) Math.round(100.0 * wins / flips) : 0;
+			String hold = units > 0 ? fmtDur(holdSec / (double) units) : "?";
 			lines.add((nm != null ? nm : "#" + e.getKey()) + ": "
-				+ (profit >= 0 ? "+" : "") + gpn(profit) + " (" + e.getValue()[1] + " flips)");
+				+ (profit >= 0 ? "+" : "") + gpn(profit)
+				+ " (" + flips + " flips, " + winPct + "% win, ~" + hold + " hold)");
 		}
 		return lines;
 	}
@@ -437,7 +452,20 @@ public class GeflipPlugin extends Plugin
 	{
 		java.util.Set<Integer> excluded = scanner.idsForNames(excludeLowered());
 		ledger = GeflipLedger.compute(fills, excluded, costOverride);
-		if (panel != null) { panel.setSession(ledger); panel.setHoldings(buildHoldings()); panel.setTopItems(topItems()); panel.setWatch(buildWatch()); }
+		if (panel != null)
+		{
+			panel.setSession(ledger); panel.setHoldings(buildHoldings());
+			panel.setTopItems(topItems()); panel.setWatch(buildWatch());
+			// capital-utilization meter: stock held + gp tied up in pending buys, vs bankroll
+			long working = ledger.inventoryCost;
+			int slotsUsed = 0;
+			for (Offer o : offerSnapshot)
+			{
+				slotsUsed++;
+				if ("BUYING".equals(o.state)) working += (long) o.price * Math.max(0, o.qtyTotal - o.qtySold);
+			}
+			panel.setCapital(working, bankrollGp(), slotsUsed);
+		}
 	}
 
 	/** On-disk shape: the fill log, per-slot dedup markers, offer-age clocks, buy windows. */
