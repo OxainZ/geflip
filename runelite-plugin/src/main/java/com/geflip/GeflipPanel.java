@@ -243,7 +243,7 @@ class GeflipPanel extends PluginPanel
 			if (l.flips > 0)
 			{
 				double h = l.avgHoldHours();
-				String hold = h >= 24 ? String.format("%.1fd", h / 24) : h >= 1 ? Math.round(h) + "h" : Math.max(1, (int) Math.round(h * 60)) + "m";
+				String hold = h >= 24 ? String.format("%.1fd", h / 24) : h >= 1 ? Math.round(h) + "h" : Math.max(1, (int) Math.round(h * 60)) + "min";
 				long perDay = l.realizedPerDay();
 				String rate = perDay != 0 ? " · " + gp(perDay) + "/day" : "";
 				calib.setText("record: " + gp(l.realizedFlip) + " over " + l.flips + " flips · "

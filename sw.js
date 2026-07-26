@@ -26,9 +26,11 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || isApi || url.origin !== self.location.origin) return;
   e.respondWith(
     fetch(e.request).then((res) => {
-      // keep the shell copy fresh in the background
-      const clone = res.clone();
-      caches.open(SHELL).then((c) => c.put(e.request, clone)).catch(() => {});
+      // only cache a good response — never persist a transient 404/500 as the offline shell
+      if (res && res.ok) {
+        const clone = res.clone();
+        caches.open(SHELL).then((c) => c.put(e.request, clone)).catch(() => {});
+      }
       return res;
     }).catch(() => caches.match(e.request).then((m) => m || caches.match('index.html')))
   );

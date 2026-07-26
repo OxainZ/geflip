@@ -92,6 +92,10 @@ public class GeflipPlugin extends Plugin
 	// (GE offers keep filling while you're logged out).
 	private final int[] slotBookedQty = new int[8];
 	private final long[] slotBookedSpent = new long[8];
+	// one-time upgrade guard: an old save lacks the fill marks. Until each slot is seeded once,
+	// treat an in-slot offer that matches the saved key as already-booked (its fills are on disk).
+	private volatile boolean upgradeMode = false;
+	private final boolean[] slotSeeded = new boolean[8];
 	private int tickCounter;   // paces the periodic offer-age refresh
 	// per-item 4h buy-limit window: id -> [windowStartMs, unitsBoughtThisWindow]
 	private final java.util.Map<Integer, long[]> buyWindows = new java.util.concurrent.ConcurrentHashMap<>();
@@ -256,8 +260,9 @@ public class GeflipPlugin extends Plugin
 			if (fills.size() > 3000) fills.remove(0);
 			java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
 			String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
+			int[] bk = slotBookedQty.clone(); long[] bks = slotBookedSpent.clone();
 			java.util.Map<Integer, long[]> win = deepCopyWindows();
-			executor.submit(() -> { saveFills(snap, sig, key, since, win); recompute(); });
+			executor.submit(() -> { saveFills(snap, sig, key, since, win, bk, bks); recompute(); });
 		});
 	}
 
@@ -329,11 +334,12 @@ public class GeflipPlugin extends Plugin
 
 	private static String gpn(long v) { return String.format("%,d", v); }
 
-	/** Compact human duration from seconds: "45s" / "38m" / "2.4h". */
+	/** Compact human duration from seconds. Uses "min"/"h" NOT "m" — in this app "m" means
+	 *  MILLIONS of gp, so "25m hold" read as 25M; "25min" can't be misread. */
 	private static String fmtDur(double sec)
 	{
 		if (sec < 90) return Math.round(sec) + "s";
-		if (sec < 5400) return Math.round(sec / 60.0) + "m";
+		if (sec < 5400) return Math.round(sec / 60.0) + "min";
 		return String.format("%.1fh", sec / 3600.0);
 	}
 
@@ -347,8 +353,9 @@ public class GeflipPlugin extends Plugin
 		{
 			java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
 			String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
+			int[] bk = slotBookedQty.clone(); long[] bks = slotBookedSpent.clone();
 			java.util.Map<Integer, long[]> win = deepCopyWindows();
-			executor.submit(() -> { saveFills(snap, sig, key, since, win); recompute(); });
+			executor.submit(() -> { saveFills(snap, sig, key, since, win, bk, bks); recompute(); });
 		});
 	}
 
@@ -418,8 +425,9 @@ public class GeflipPlugin extends Plugin
 		{
 			java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
 			String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
+			int[] bk = slotBookedQty.clone(); long[] bks = slotBookedSpent.clone();
 			java.util.Map<Integer, long[]> win = deepCopyWindows();
-			executor.submit(() -> saveFills(snap, sig, key, since, win));
+			executor.submit(() -> saveFills(snap, sig, key, since, win, bk, bks));
 		});
 	}
 
@@ -498,6 +506,9 @@ public class GeflipPlugin extends Plugin
 				for (int i = 0; i < slotBookedQty.length && i < p.slotBookedQty.length; i++) slotBookedQty[i] = p.slotBookedQty[i];
 			if (p.slotBookedSpent != null)
 				for (int i = 0; i < slotBookedSpent.length && i < p.slotBookedSpent.length; i++) slotBookedSpent[i] = p.slotBookedSpent[i];
+			// no marks in the save = a pre-mark version wrote it → enter one-time upgrade mode so the
+			// first sight of each still-open offer seeds (not re-books) its already-recorded fills.
+			upgradeMode = (p.slotBookedQty == null || p.slotBookedSpent == null) && p.fills != null && !p.fills.isEmpty();
 			if (p.buyWindows != null) buyWindows.putAll(p.buyWindows);
 			if (p.costOverride != null) costOverride.putAll(p.costOverride);
 			if (p.watchlist != null) watchlist.addAll(p.watchlist);
@@ -785,14 +796,31 @@ public class GeflipPlugin extends Plugin
 		GrandExchangeOfferState st = o.getState();
 		if (st == GrandExchangeOfferState.EMPTY)
 		{
+			// clearing the mark MUST be persisted — otherwise a restart (you shut the PC down
+			// nightly) restores the old key+mark, and re-buying the SAME item at the SAME price
+			// matches that key so delta stays ≤0 and the whole new offer books nothing.
+			boolean hadState = slotKey[slot] != null || slotBookedQty[slot] != 0 || slotBookedSpent[slot] != 0;
 			slotSince[slot] = 0; slotKey[slot] = null;
 			slotBookedQty[slot] = 0; slotBookedSpent[slot] = 0;
 			if (slot < slotSig.length) slotSig[slot] = null;
-			return false;
+			return hadState;   // return true so the caller persists the cleared slot
+		}
+		String key = o.getItemId() + ":" + o.getPrice() + ":" + o.getTotalQuantity();
+		// ONE-TIME UPGRADE: an old save has no fill marks (they load as 0). A slot still holding the
+		// SAME offer as at last save already has its filled units in `fills`, so seed the mark to the
+		// current cumulative — don't re-book them (that was the double-count bug). A different offer
+		// (key mismatch) is new and books normally through the reset below.
+		if (upgradeMode && !slotSeeded[slot])
+		{
+			slotSeeded[slot] = true;
+			if (key.equals(slotKey[slot]))
+			{
+				slotBookedQty[slot] = o.getQuantitySold(); slotBookedSpent[slot] = o.getSpent();
+				return true;   // persist the seeded mark; book nothing this pass
+			}
 		}
 		// a genuinely NEW offer in this slot → reset the age clock + fill mark (a matching key on
 		// login-replay is the SAME offer, so we keep the mark and don't re-book what we already had)
-		String key = o.getItemId() + ":" + o.getPrice() + ":" + o.getTotalQuantity();
 		if (!key.equals(slotKey[slot]))
 		{
 			slotKey[slot] = key; slotSince[slot] = System.currentTimeMillis();
@@ -809,7 +837,7 @@ public class GeflipPlugin extends Plugin
 		int deltaQty = soldNow - slotBookedQty[slot];
 		long deltaSpent = spentNow - slotBookedSpent[slot];
 		if (deltaQty <= 0 || deltaSpent <= 0) return false;   // nothing new filled since last seen
-		int unit = (int) (deltaSpent / deltaQty);              // avg price of just the new units
+		int unit = (int) Math.round((double) deltaSpent / deltaQty);   // avg price of the new units (round, no cost-basis drift)
 		slotBookedQty[slot] = soldNow; slotBookedSpent[slot] = spentNow;
 
 		long now = System.currentTimeMillis() / 1000;
