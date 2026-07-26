@@ -43,9 +43,13 @@ public class GeflipPlugin extends Plugin
 	@Inject private ScheduledExecutorService executor;
 	@Inject private net.runelite.client.Notifier notifier;
 	@Inject private net.runelite.client.callback.ClientThread clientThread;
+	@Inject private net.runelite.client.config.ConfigManager configManager;
 
 	// held items we've already crash-alerted on, so we don't spam (re-armed on recovery)
 	private final java.util.Set<Integer> dumpAlerted = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	// your manual cost corrections (id -> real avg cost) for holdings the plugin mis-costed
+	// because it didn't see every buy (mobile / offline). Persisted.
+	private final java.util.Map<Integer, Long> costOverride = new java.util.concurrent.ConcurrentHashMap<>();
 
 	// live coins you actually have (inventory + bank when opened); −1 = unknown yet
 	private volatile long liveGp = -1;
@@ -181,12 +185,19 @@ public class GeflipPlugin extends Plugin
 			int id = e.getKey();
 			int qty = (int) e.getValue()[0];
 			if (qty <= 0) continue;
-			long avg = e.getValue()[1] / qty;
-			if (invKnown && !inActiveGe(id))
+			// cost per unit: your manual correction if you set one, else the FIFO average
+			long avg = costOverride.containsKey(id) ? costOverride.get(id) : e.getValue()[1] / qty;
+			if (invKnown)
 			{
 				int have = possessed(id);
-				if (have <= 0) { if (bankKnown) continue; /* provably gone → drop */ }
-				else if (have < qty) qty = have;   // you sold some — show only what's left
+				if (have <= 0)
+				{
+					if (inActiveBuy(id)) { /* uncollected buy — still yours, keep */ }
+					else if (inActiveSell(id)) continue;   // already LISTED for sale — not "to sell" anymore
+					else if (bankKnown) continue;           // provably no longer held
+					// else bank unknown & not in GE → keep (safe; ✓ is the manual fallback)
+				}
+				else if (have < qty) qty = have;   // some sold/listed — show only what's actually in hand
 			}
 			String nm = scanner.nameFor(id);
 			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id), scanner.isExempt(id)));
@@ -286,6 +297,29 @@ public class GeflipPlugin extends Plugin
 
 	private static String gpn(long v) { return String.format("%,d", v); }
 
+	/** Set your true average cost for a held item (fixes a mis-captured cost). cost<=0 clears it. */
+	void setCost(int id, long cost)
+	{
+		if (cost > 0) costOverride.put(id, cost);
+		else costOverride.remove(id);
+		recompute();
+	}
+
+	/** Mark an item as PERSONAL USE (not a flip): adds it to the exclude list so it leaves
+	 *  "To sell" and stays out of your flip P&L. */
+	void markPersonalUse(int id)
+	{
+		String nm = scanner.nameFor(id);
+		if (nm == null) return;
+		String cur = config.excludeItems() == null ? "" : config.excludeItems().trim();
+		// don't double-add
+		for (String p : cur.split(",")) if (p.trim().equalsIgnoreCase(nm)) { recompute(); return; }
+		String next = cur.isEmpty() ? nm : cur + ", " + nm;
+		configManager.setConfiguration("geflip", "excludeItems", next);
+		if (panel != null) panel.setStatus("kept \"" + nm + "\" — personal use, hidden from flips");
+		recompute();
+	}
+
 	/** Rebuild the flip ledger from the raw fills + current exclude list, and refresh the panel. */
 	private void recompute()
 	{
@@ -299,6 +333,7 @@ public class GeflipPlugin extends Plugin
 	{
 		java.util.List<Fill> fills; String[] slotSig, slotKey; long[] slotSince;
 		java.util.Map<Integer, long[]> buyWindows;
+		java.util.Map<Integer, Long> costOverride;
 	}
 
 	private void loadFills()
@@ -318,6 +353,7 @@ public class GeflipPlugin extends Plugin
 			if (p.slotSince != null)
 				for (int i = 0; i < slotSince.length && i < p.slotSince.length; i++) slotSince[i] = p.slotSince[i];
 			if (p.buyWindows != null) buyWindows.putAll(p.buyWindows);
+			if (p.costOverride != null) costOverride.putAll(p.costOverride);
 		}
 		catch (Exception e) { log.debug("geflip: could not load fills history", e); }
 	}
@@ -339,6 +375,7 @@ public class GeflipPlugin extends Plugin
 			p.slotKey = key;
 			p.slotSince = since;
 			p.buyWindows = windows;
+			p.costOverride = new java.util.HashMap<>(costOverride);
 			java.nio.file.Files.write(fillsFile.toPath(),
 				new com.google.gson.Gson().toJson(p).getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		}
@@ -438,7 +475,8 @@ public class GeflipPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new GeflipPanel(this::triggerScan, this::clearHolding, this::priceCheck);
+		panel = new GeflipPanel(this::triggerScan, this::clearHolding, this::priceCheck,
+			(id, cost) -> setCost(id, cost), this::markPersonalUse);
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/geflip_icon.png");
 		navButton = NavigationButton.builder()
 			.tooltip("Geflip")
@@ -639,6 +677,21 @@ public class GeflipPlugin extends Plugin
 	private boolean inActiveGe(int id)
 	{
 		for (Offer o : offerSnapshot) if (o.id == id) return true;
+		return false;
+	}
+
+	/** Are you currently BUYING this item (uncollected buy — still yours to sell later)? */
+	private boolean inActiveBuy(int id)
+	{
+		for (Offer o : offerSnapshot) if (o.id == id && o.state != null && o.state.contains("BUY")) return true;
+		return false;
+	}
+
+	/** Have you already LISTED this item for sale (so it's not "to sell" anymore)? */
+	private boolean inActiveSell(int id)
+	{
+		for (Offer o : offerSnapshot)
+			if (o.id == id && o.state != null && (o.state.contains("SELL") || o.state.equals("SOLD"))) return true;
 		return false;
 	}
 

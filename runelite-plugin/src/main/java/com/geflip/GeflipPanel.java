@@ -43,12 +43,18 @@ class GeflipPanel extends PluginPanel
 	private final JLabel priceResult = new JLabel(" ");
 	private final java.util.function.IntConsumer onClearHold;
 	private final java.util.function.Function<String, String> onPriceCheck;
+	private final java.util.function.ObjLongConsumer<Integer> onEditCost;
+	private final java.util.function.IntConsumer onPersonalUse;
 
 	GeflipPanel(Runnable onRefresh, java.util.function.IntConsumer onClearHold,
-		java.util.function.Function<String, String> onPriceCheck)
+		java.util.function.Function<String, String> onPriceCheck,
+		java.util.function.ObjLongConsumer<Integer> onEditCost,
+		java.util.function.IntConsumer onPersonalUse)
 	{
 		this.onClearHold = onClearHold;
 		this.onPriceCheck = onPriceCheck;
+		this.onEditCost = onEditCost;
+		this.onPersonalUse = onPersonalUse;
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
@@ -244,14 +250,24 @@ class GeflipPanel extends PluginPanel
 			p.add(sub, BorderLayout.SOUTH);
 		}
 		p.add(name, BorderLayout.CENTER);
-		// "✓" = I already sold this (plugin missed it — mobile/offline). Records the sale + clears it.
-		JButton sold = new JButton("✓");
-		sold.setToolTipText("Mark as sold — use if you sold it and it's still listed here "
-			+ "(e.g. sold on mobile). Records the sale at the current market price and clears it.");
-		sold.setMargin(new java.awt.Insets(0, 4, 0, 4));
-		sold.setFont(FontManager.getRunescapeSmallFont());
+		// row actions: ✓ sold · ✎ fix cost · ⊘ personal use
+		JPanel actions = new JPanel(new GridLayout(1, 3, 2, 0));
+		actions.setOpaque(false);
+		JButton sold = mini("✓", "Mark as sold — records the sale (e.g. you sold it on mobile) and clears it.");
 		sold.addActionListener(e -> { if (onClearHold != null) onClearHold.accept(h.id); });
-		p.add(sold, BorderLayout.EAST);
+		JButton edit = mini("✎", "Fix the cost — enter what you ACTUALLY paid per item if the number's wrong.");
+		edit.addActionListener(e -> {
+			String in = javax.swing.JOptionPane.showInputDialog(this, "Your real cost per " + h.name + " (gp):", h.avgCost);
+			if (in != null && onEditCost != null)
+			{
+				try { onEditCost.accept(h.id, Long.parseLong(in.trim().replaceAll("[,_ ]", ""))); }
+				catch (NumberFormatException ignored) { }
+			}
+		});
+		JButton keep = mini("⊘", "Personal use — I don't flip this (e.g. Purple sweets). Hide it from To sell + flip P&L.");
+		keep.addActionListener(e -> { if (onPersonalUse != null) onPersonalUse.accept(h.id); });
+		actions.add(sold); actions.add(edit); actions.add(keep);
+		p.add(actions, BorderLayout.EAST);
 		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
@@ -412,6 +428,15 @@ class GeflipPanel extends PluginPanel
 		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
+	}
+
+	private static JButton mini(String text, String tip)
+	{
+		JButton b = new JButton(text);
+		b.setToolTipText(tip);
+		b.setMargin(new java.awt.Insets(0, 2, 0, 2));
+		b.setFont(FontManager.getRunescapeSmallFont());
+		return b;
 	}
 
 	private static String gp(long v)
