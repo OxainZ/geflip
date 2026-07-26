@@ -14,7 +14,8 @@ public class GeflipPluginTest
 {
 	public static void main(String[] args) throws Exception
 	{
-		ExternalPluginManager.loadBuiltin(GeflipPlugin.class, com.geflip.jad.JadPrayerPlugin.class);
+		ExternalPluginManager.loadBuiltin(GeflipPlugin.class, com.geflip.jad.JadPrayerPlugin.class,
+			com.geflip.coach.CoachPlugin.class);
 		RuneLite.main(args);
 	}
 }
