@@ -38,7 +38,7 @@ public class CoachEngineTest
 		owned.add(CoachGoals.BLOWPIPE_CHARGED);               // "i have toxic blow pipe"
 
 		int cb = CoachState.combat(75, 71, 70, 78, 84, 63, 69);
-		return new CoachState(lv, 225, q, owned, true, 40_000_000L, cb, true);
+		return new CoachState(lv, 225, q, owned, true, 40_000_000L, 46_000_000L, cb, true);
 	}
 
 	@Test

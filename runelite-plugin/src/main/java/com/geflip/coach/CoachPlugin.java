@@ -65,6 +65,8 @@ public class CoachPlugin extends Plugin
 	private final Set<String> lastReady = new HashSet<>();
 	private final Set<String> lastQuestReady = new HashSet<>();
 	private boolean primed = false;   // skip the very first scan so we don't alert your whole backlog
+	// session efficiency: baseline XP/wealth/time snapped on the first logged-in read
+	private long sessStartMs = 0, sessStartXp = 0, sessStartWealth = -1;
 
 	@Provides
 	CoachConfig provideConfig(net.runelite.client.config.ConfigManager cm) { return cm.getConfig(CoachConfig.class); }
@@ -78,6 +80,7 @@ public class CoachPlugin extends Plugin
 		clientToolbar.addNavigation(navButton);
 		int s = Math.max(10, config.refreshSec());
 		refresh = executor.scheduleWithFixedDelay(this::rescan, 3, s, TimeUnit.SECONDS);
+		executor.scheduleWithFixedDelay(this::fetchPrices, 0, 600, TimeUnit.SECONDS);   // net-worth prices
 	}
 
 	@Override
@@ -102,9 +105,10 @@ public class CoachPlugin extends Plugin
 			p.setStatus("read " + timeShort());
 			String ca = caTier();
 			p.setSummary("combat " + st.combatLevel + " · " + st.qp + " QP"
-				+ (st.coins >= 0 ? " · " + CoachGoals.gp(st.coins) + " gp" : "")
+				+ (st.wealth >= 0 ? " · " + CoachGoals.gp(st.wealth) + " net" : st.coins >= 0 ? " · " + CoachGoals.gp(st.coins) + " gp" : "")
 				+ (ca != null ? " · CA " + ca : "")
-				+ (st.bankKnown ? "" : " · (open bank for gear)"));
+				+ (st.bankKnown ? "" : " · (open bank for full net worth)"));
+			p.setSessionStats(sessionStats(st));
 			p.setNext(CoachEngine.doNext(all));
 			p.setGoals(all, questLines(st), diaryLines());
 			p.setBlocked(CoachEngine.blocked(all));
@@ -118,7 +122,7 @@ public class CoachPlugin extends Plugin
 	{
 		if (client.getGameState() != GameState.LOGGED_IN)
 			return new CoachState(new EnumMap<>(Skill.class), 0, new EnumMap<>(Quest.class),
-				new HashSet<>(), false, -1, 0, false);
+				new HashSet<>(), false, -1, -1, 0, false);
 
 		Map<Skill, Integer> levels = new EnumMap<>(Skill.class);
 		for (Skill sk : Skill.values())
@@ -137,32 +141,62 @@ public class CoachPlugin extends Plugin
 		Set<Integer> keyIds = new HashSet<>();
 		for (int id : CoachGoals.KEY_ITEMS) keyIds.add(id);
 		Set<Integer> owned = new HashSet<>();
-		long coins = 0;
-		coins += scan(InventoryID.EQUIPMENT, keyIds, owned);
-		coins += scan(InventoryID.INVENTORY, keyIds, owned);
+		long[] acc = new long[2];   // [0]=coins, [1]=GE value of everything (net worth)
+		scan(InventoryID.EQUIPMENT, keyIds, owned, acc);
+		scan(InventoryID.INVENTORY, keyIds, owned, acc);
 		boolean bankKnown = client.getItemContainer(InventoryID.BANK) != null;
-		coins += scan(InventoryID.BANK, keyIds, owned);
+		scan(InventoryID.BANK, keyIds, owned, acc);
+		long wealth = prices != null ? acc[1] : -1;   // −1 until the price table has loaded
 
 		int combat = CoachState.combat(get(levels, Skill.ATTACK), get(levels, Skill.STRENGTH),
 			get(levels, Skill.DEFENCE), get(levels, Skill.HITPOINTS), get(levels, Skill.RANGED),
 			get(levels, Skill.PRAYER), get(levels, Skill.MAGIC));
-		return new CoachState(levels, qp, quests, owned, bankKnown, coins, combat, true);
+		return new CoachState(levels, qp, quests, owned, bankKnown, acc[0], wealth, combat, true);
 	}
 
-	/** Scan a container: record any KEY_ITEMS present into `owned`, and return coins (id 995) found. */
-	private long scan(InventoryID which, Set<Integer> keyIds, Set<Integer> owned)
+	/** Scan a container: record KEY_ITEMS into `owned`, and accumulate acc[0]=coins, acc[1]=GE value
+	 *  (qty × live wiki mid-price) of every item — that's the net-worth figure. */
+	private void scan(InventoryID which, Set<Integer> keyIds, Set<Integer> owned, long[] acc)
 	{
 		ItemContainer c = client.getItemContainer(which);
-		if (c == null) return 0;
-		long coins = 0;
+		if (c == null) return;
+		Map<Integer, Integer> px = prices;
 		for (Item it : c.getItems())
 		{
 			if (it == null) continue;
-			int id = it.getId();
-			if (id == 995) coins += it.getQuantity();
-			else if (keyIds.contains(id)) owned.add(id);
+			int id = it.getId(), qty = it.getQuantity();
+			if (id == 995) { acc[0] += qty; acc[1] += qty; continue; }   // coins are worth 1 each
+			if (keyIds.contains(id)) owned.add(id);
+			if (px != null) { Integer p = px.get(id); if (p != null) acc[1] += (long) p * qty; }
 		}
-		return coins;
+	}
+
+	// --- live wiki price table (for net worth) -------------------------------
+	private volatile Map<Integer, Integer> prices;   // item id -> mid price (avg of instant buy/sell)
+
+	/** Pull the OSRS wiki real-time prices so we can value your whole bank. Polite: one call every
+	 *  ~10 min, off the client thread, descriptive User-Agent per the wiki API rules. */
+	private void fetchPrices()
+	{
+		try
+		{
+			HttpURLConnection c = (HttpURLConnection) new URL("https://prices.runescape.wiki/api/v1/osrs/latest").openConnection();
+			c.setRequestProperty("User-Agent", "geflip-coach - net worth valuation");
+			c.setConnectTimeout(15000); c.setReadTimeout(30000);
+			String resp = new String(readAll(c.getInputStream()), StandardCharsets.UTF_8);
+			JsonObject data = new JsonParser().parse(resp).getAsJsonObject().getAsJsonObject("data");
+			Map<Integer, Integer> m = new java.util.HashMap<>(data.size() * 2);
+			for (Map.Entry<String, com.google.gson.JsonElement> e : data.entrySet())
+			{
+				JsonObject o = e.getValue().getAsJsonObject();
+				Integer hi = o.has("high") && !o.get("high").isJsonNull() ? o.get("high").getAsInt() : null;
+				Integer lo = o.has("low") && !o.get("low").isJsonNull() ? o.get("low").getAsInt() : null;
+				int mid = hi != null && lo != null ? (hi + lo) / 2 : hi != null ? hi : lo != null ? lo : 0;
+				if (mid > 0) m.put(Integer.parseInt(e.getKey()), mid);
+			}
+			prices = m;
+		}
+		catch (Exception e) { log.debug("coach: price fetch failed", e); }
 	}
 
 	private static int get(Map<Skill, Integer> m, Skill s) { Integer v = m.get(s); return v != null ? v : 1; }
@@ -213,6 +247,31 @@ public class CoachPlugin extends Plugin
 		lastReady.clear(); lastReady.addAll(ready);
 		lastQuestReady.clear(); lastQuestReady.addAll(qReady);
 		primed = true;
+	}
+
+	/** Live session rates — XP/hr overall and gp/hr (net-worth delta). Baseline snaps on first read. */
+	private String sessionStats(CoachState st)
+	{
+		long now = System.currentTimeMillis(), xp = totalXp();
+		if (sessStartMs == 0) { sessStartMs = now; sessStartXp = xp; sessStartWealth = st.wealth; return "session: tracking…"; }
+		if (sessStartWealth < 0 && st.wealth >= 0) sessStartWealth = st.wealth;   // baseline once prices load
+		double hrs = (now - sessStartMs) / 3_600_000.0;
+		if (hrs < 1.0 / 60) return "session: warming up…";
+		long xpH = Math.round((xp - sessStartXp) / hrs);
+		String s = "session: " + CoachGoals.gp(xpH) + " xp/hr";
+		if (st.wealth >= 0 && sessStartWealth >= 0)
+		{
+			long gpH = Math.round((st.wealth - sessStartWealth) / hrs);
+			s += " · " + (gpH >= 0 ? "+" : "-") + CoachGoals.gp(Math.abs(gpH)) + " gp/hr";
+		}
+		return s;
+	}
+
+	private long totalXp()
+	{
+		long t = 0;
+		for (Skill sk : Skill.values()) if (sk != Skill.OVERALL) t += client.getSkillExperience(sk);
+		return t;
 	}
 
 	private static final int[] CA_TIERS = {

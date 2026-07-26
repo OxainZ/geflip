@@ -32,6 +32,7 @@ class CoachPanel extends PluginPanel
 {
 	private final JLabel status = new JLabel("log in to begin");
 	private final JLabel summary = new JLabel(" ");
+	private final JLabel sessionStats = new JLabel(" ");
 	private final JPanel nextBox = new JPanel();
 	private final JPanel goalsBox = new JPanel();
 	private final JPanel blockedBox = new JPanel();
@@ -58,8 +59,11 @@ class CoachPanel extends PluginPanel
 		status.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		summary.setForeground(ColorScheme.BRAND_ORANGE);
 		summary.setFont(FontManager.getRunescapeSmallFont());
+		sessionStats.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		sessionStats.setFont(FontManager.getRunescapeSmallFont());
 		status.setAlignmentX(Component.LEFT_ALIGNMENT);
 		summary.setAlignmentX(Component.LEFT_ALIGNMENT);
+		sessionStats.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		JButton refresh = new JButton("Rescan account");
 		refresh.addActionListener(e -> onRefresh.run());
@@ -67,7 +71,7 @@ class CoachPanel extends PluginPanel
 
 		JPanel top = new JPanel();
 		top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
-		top.add(refresh); top.add(status); top.add(summary);
+		top.add(refresh); top.add(status); top.add(summary); top.add(sessionStats);
 
 		JPanel tabBar = new JPanel(new GridLayout(1, 5, 2, 0));
 		tabBar.setBorder(BorderFactory.createEmptyBorder(6, 0, 4, 0));
@@ -160,6 +164,7 @@ class CoachPanel extends PluginPanel
 	// --- setters (all EDT-safe) ----------------------------------------------
 	void setStatus(String s) { SwingUtilities.invokeLater(() -> status.setText(s)); }
 	void setSummary(String s) { SwingUtilities.invokeLater(() -> summary.setText(s)); }
+	void setSessionStats(String s) { SwingUtilities.invokeLater(() -> sessionStats.setText(s)); }
 	void setAskResult(String s) { SwingUtilities.invokeLater(() -> askResult.setText(s)); }
 
 	void setNext(List<CoachEngine.Scored> rows)
