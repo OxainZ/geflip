@@ -55,11 +55,16 @@ public class CoachPlugin extends Plugin
 	@Inject private CoachConfig config;
 	@Inject private ScheduledExecutorService executor;
 	@Inject private ClientThread clientThread;
+	@Inject private net.runelite.client.Notifier notifier;
 
 	private CoachPanel panel;
 	private NavigationButton navButton;
 	private ScheduledFuture<?> refresh;
 	private volatile CoachState lastState;
+	// what was READY / do-now last scan, so we can PING you the instant something new unlocks
+	private final Set<String> lastReady = new HashSet<>();
+	private final Set<String> lastQuestReady = new HashSet<>();
+	private boolean primed = false;   // skip the very first scan so we don't alert your whole backlog
 
 	@Provides
 	CoachConfig provideConfig(net.runelite.client.config.ConfigManager cm) { return cm.getConfig(CoachConfig.class); }
@@ -95,13 +100,16 @@ public class CoachPlugin extends Plugin
 			if (!st.loggedIn) { p.setStatus("log in to read your account"); return; }
 			List<CoachEngine.Scored> all = CoachEngine.evaluate(st);
 			p.setStatus("read " + timeShort());
+			String ca = caTier();
 			p.setSummary("combat " + st.combatLevel + " · " + st.qp + " QP"
 				+ (st.coins >= 0 ? " · " + CoachGoals.gp(st.coins) + " gp" : "")
+				+ (ca != null ? " · CA " + ca : "")
 				+ (st.bankKnown ? "" : " · (open bank for gear)"));
 			p.setNext(CoachEngine.doNext(all));
 			p.setGoals(all, questLines(st), diaryLines());
 			p.setBlocked(CoachEngine.blocked(all));
 			p.setFarm(config.farmingHelper() ? CoachFarm.plan(st.level(Skill.FARMING)) : null);
+			fireUnlockAlerts(all, st);
 		});
 	}
 
@@ -186,6 +194,39 @@ public class CoachPlugin extends Plugin
 				+ (qs.ready ? " — do now" : " — " + String.join(", ", qs.gaps)));
 		if (out.isEmpty()) out.add("all tracked quests done — nice");
 		return out;
+	}
+
+	/** PROACTIVE: ping the moment a goal (or a curated quest) becomes newly available. Skips the
+	 *  first scan so it doesn't dump your whole backlog at you on login. Runs on the client thread. */
+	private void fireUnlockAlerts(List<CoachEngine.Scored> all, CoachState st)
+	{
+		Set<String> ready = new HashSet<>();
+		for (CoachEngine.Scored sc : all) if (sc.status == CoachEngine.Status.READY) ready.add(sc.goal.name);
+		Set<String> qReady = new HashSet<>();
+		for (CoachEngine.QuestScored qs : CoachEngine.quests(st)) if (qs.ready) qReady.add(CoachGoals.pretty(qs.rec.q));
+
+		if (primed && config.unlockAlerts())
+		{
+			for (String g : ready) if (!lastReady.contains(g)) notifier.notify("Geflip Coach: \"" + g + "\" is now available!");
+			for (String q : qReady) if (!lastQuestReady.contains(q)) notifier.notify("Geflip Coach: you can now start \"" + q + "\"");
+		}
+		lastReady.clear(); lastReady.addAll(ready);
+		lastQuestReady.clear(); lastQuestReady.addAll(qReady);
+		primed = true;
+	}
+
+	private static final int[] CA_TIERS = {
+		Varbits.COMBAT_ACHIEVEMENT_TIER_EASY, Varbits.COMBAT_ACHIEVEMENT_TIER_MEDIUM,
+		Varbits.COMBAT_ACHIEVEMENT_TIER_HARD, Varbits.COMBAT_ACHIEVEMENT_TIER_ELITE,
+		Varbits.COMBAT_ACHIEVEMENT_TIER_MASTER, Varbits.COMBAT_ACHIEVEMENT_TIER_GRANDMASTER };
+	private static final String[] CA_NAMES = { "Easy", "Medium", "Hard", "Elite", "Master", "Grandmaster" };
+
+	/** Highest Combat Achievement tier completed (varbit == 2), or null if none. */
+	private String caTier()
+	{
+		int highest = -1;
+		for (int i = 0; i < CA_TIERS.length; i++) if (client.getVarbitValue(CA_TIERS[i]) >= 2) highest = i;
+		return highest < 0 ? null : CA_NAMES[highest];
 	}
 
 	private List<String> diaryLines()

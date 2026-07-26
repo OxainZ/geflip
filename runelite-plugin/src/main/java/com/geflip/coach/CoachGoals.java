@@ -123,6 +123,20 @@ final class CoachGoals
 			skill(Skill.RANGED, 92), skill(Skill.MAGIC, 90), skill(Skill.DEFENCE, 82), skill(Skill.HITPOINTS, 90),
 			skill(Skill.PRAYER, 77)));
 
+		// --- QoL unlocks + raids -----------------------------------------------
+		GOALS.add(new Goal("Fairy rings (travel QoL)", 4, "medium", "Fairytale II (partial) — the game's best teleport network. Huge time-saver for slayer/farming/bossing.",
+			quest(Quest.FAIRYTALE_II__CURE_A_QUEEN)));
+		GOALS.add(new Goal("Rune pouch", 4, "medium", "Enter the Abyss miniquest (or 750 Slayer points). Carry 3-4 rune types — needed to barrage/alch on the go.",
+			quest(Quest.ENTER_THE_ABYSS)));
+		GOALS.add(new Goal("Book of the Dead (thralls)", 4, "long", "A Kingdom Divided — undead thralls are a big FREE DPS boost across almost all PvM.",
+			quest(Quest.A_KINGDOM_DIVIDED)));
+		GOALS.add(new Goal("Barrows (ranged gear + money)", 3, "quick", "Priest in Peril for Morytania access — Karil's ranged gear + steady GP, no combat gate.",
+			quest(Quest.PRIEST_IN_PERIL)));
+		GOALS.add(new Goal("Tombs of Amascut (ToA)", 4, "grind", "Beneath Cursed Sands — a SCALABLE raid, ranged-friendly; you pick the difficulty. Great loot.",
+			quest(Quest.BENEATH_CURSED_SANDS), skill(Skill.RANGED, 80), skill(Skill.PRAYER, 74)));
+		GOALS.add(new Goal("Armadyl (Kree'arra, GWD)", 3, "long", "70 Ranged — armadyl armour + crossbow for a ranger. Team, or solo with good gear.",
+			skill(Skill.RANGED, 70), skill(Skill.PRAYER, 70)));
+
 		// --- long-term gateways -------------------------------------------------
 		GOALS.add(new Goal("Monkey Madness 2", 3, "medium", "Unlocks demonic gorillas (zenyte drops) + is a prereq for later content.",
 			quest(Quest.MONKEY_MADNESS_I), skill(Skill.SLAYER, 69), skill(Skill.CRAFTING, 70),
@@ -172,6 +186,13 @@ final class CoachGoals
 			skill(Skill.AGILITY, 70), skill(Skill.CONSTRUCTION, 70), skill(Skill.FARMING, 70), skill(Skill.HERBLORE, 70),
 			skill(Skill.HUNTER, 70), skill(Skill.MINING, 70), skill(Skill.SMITHING, 70), skill(Skill.THIEVING, 70),
 			skill(Skill.WOODCUTTING, 70), skill(Skill.CRAFTING, 70)));
+		// QoL / prerequisite quests worth surfacing
+		QUESTS.add(new QuestRec(Quest.NATURE_SPIRIT, "Morytania access (→ Barrows, Ectophial herb patch).", quest(Quest.PRIEST_IN_PERIL)));
+		QUESTS.add(new QuestRec(Quest.FAIRYTALE_I__GROWING_PAINS, "Step 1 toward fairy rings (the best teleport network)."));
+		QUESTS.add(new QuestRec(Quest.FAIRYTALE_II__CURE_A_QUEEN, "Unlocks FAIRY RINGS (partial completion). Top-tier travel QoL.",
+			quest(Quest.FAIRYTALE_I__GROWING_PAINS)));
+		QUESTS.add(new QuestRec(Quest.A_KINGDOM_DIVIDED, "Book of the Dead — undead thralls (free DPS everywhere).", quest(Quest.CLIENT_OF_KOUREND)));
+		QUESTS.add(new QuestRec(Quest.BENEATH_CURSED_SANDS, "Unlocks Tombs of Amascut (scalable ranged-friendly raid)."));
 	}
 
 	// --- helpers --------------------------------------------------------------

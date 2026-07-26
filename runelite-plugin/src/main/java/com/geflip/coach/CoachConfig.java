@@ -18,6 +18,12 @@ public interface CoachConfig extends Config
 		position = 2)
 	default boolean farmingHelper() { return false; }
 
+	@ConfigItem(keyName = "unlockAlerts", name = "Goal-unlock alerts",
+		description = "Ping me the moment a goal becomes available — e.g. the instant you hit 55 Slayer "
+			+ "for the slayer helm, or finish a quest that opens the next one. Proactive, not just a panel.",
+		position = 3)
+	default boolean unlockAlerts() { return true; }
+
 	@ConfigSection(name = "Ask (LLM coach)", description = "Optional: ask a live-context question about your account.",
 		position = 10, closedByDefault = true)
 	String ask = "ask";
