@@ -679,6 +679,10 @@ public class GeflipPlugin extends Plugin
 		java.util.List<Offer> snap = buildOffers();
 		offerSnapshot = snap;
 		if (panel != null) panel.setOffers(snap);
+		// the offer set just changed — maybe you LISTED part of a holding for sale (state SELLING,
+		// not SOLD). That never reaches recompute() below (it returns early on a non-fill), so
+		// rebuild To-sell now: buildHoldings() subtracts listedForSaleQty() from what's shown.
+		refreshHoldingsView();
 
 		// a collected/empty slot clears its dedup marker so the NEXT offer in that slot is
 		// recorded even if it looks identical. (Cancels are NOT cleared here — we record
@@ -813,6 +817,15 @@ public class GeflipPlugin extends Plugin
 		java.util.List<Offer> snap = buildOffers();
 		offerSnapshot = snap;
 		if (panel != null) panel.setOffers(snap);
+		refreshHoldingsView();   // keep To-sell in step with partial fills / newly-listed units
+	}
+
+	/** Rebuild the To-sell list from the CURRENT ledger + offer snapshot, WITHOUT re-matching the
+	 *  fill log. Use when only what's listed on the GE changed (a listing / partial fill / cancel),
+	 *  so the sold-off or now-listed portion drops off To-sell immediately instead of on next scan. */
+	private void refreshHoldingsView()
+	{
+		if (panel != null) panel.setHoldings(buildHoldings());
 	}
 
 	private static String timeNow()
