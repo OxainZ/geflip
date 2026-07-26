@@ -211,6 +211,27 @@ public class GeflipPlugin extends Plugin
 		executor.submit(() -> { saveFills(snap, sig, key, since, win); recompute(); });
 	}
 
+	/** Look up the recommended buy/sell for ANY item by name — for the panel's price-check box. */
+	String priceCheck(String name)
+	{
+		if (name == null || name.trim().isEmpty()) return "type an item name";
+		int id = scanner.idForName(name);
+		if (id < 0) return "\"" + name.trim() + "\" not found — check spelling / rescan";
+		String nm = scanner.nameFor(id);
+		int buy = scanner.buyHint(id), sell = scanner.sellHint(id);
+		if (buy <= 0 && sell <= 0) return (nm != null ? nm : name) + ": no live price — hit Rescan first";
+		StringBuilder s = new StringBuilder(nm != null ? nm : name).append(": ");
+		if (buy > 0) s.append("buy ~").append(gpn(buy)).append("   ");
+		if (sell > 0)
+		{
+			int net = sell - GeflipScanner.saleTax(sell, scanner.isExempt(id));
+			s.append("sell ~").append(gpn(sell)).append(" (net ").append(gpn(net)).append(")");
+		}
+		return s.toString();
+	}
+
+	private static String gpn(long v) { return String.format("%,d", v); }
+
 	/** Rebuild the flip ledger from the raw fills + current exclude list, and refresh the panel. */
 	private void recompute()
 	{
@@ -363,7 +384,7 @@ public class GeflipPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new GeflipPanel(this::triggerScan, this::clearHolding);
+		panel = new GeflipPanel(this::triggerScan, this::clearHolding, this::priceCheck);
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/geflip_icon.png");
 		navButton = NavigationButton.builder()
 			.tooltip("Geflip")

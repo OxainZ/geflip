@@ -163,6 +163,38 @@ class GeflipScanner
 	// raw quotes from the last scan, so we can price any held item on demand
 	private volatile JsonObject lastLatest, lastM5, lastH1;
 
+	/** Find an item id by name (exact case-insensitive first, then contains). −1 if unknown. */
+	int idForName(String name)
+	{
+		if (mapping == null || name == null || name.trim().isEmpty()) return -1;
+		String n = name.trim().toLowerCase();
+		for (Meta m : mapping.values()) if (m.name.toLowerCase().equals(n)) return m.id;
+		for (Meta m : mapping.values()) if (m.name.toLowerCase().contains(n)) return m.id;
+		return -1;
+	}
+
+	/** Recommended price to PLACE A BUY at for any item (one tick over the realistic low). */
+	int buyHint(int id)
+	{
+		JsonObject latest = lastLatest, m5 = lastM5, h1 = lastH1;
+		if (latest == null) return -1;
+		String k = String.valueOf(id);
+		Integer lo = null;
+		if (latest.has(k))
+		{
+			JsonObject q = latest.getAsJsonObject(k);
+			if (q.has("low") && !q.get("low").isJsonNull()) lo = q.get("low").getAsInt();
+		}
+		Integer avgLo = null;
+		JsonObject g = (m5 != null && m5.has(k)) ? m5.getAsJsonObject(k)
+			: (h1 != null && h1.has(k) ? h1.getAsJsonObject(k) : null);
+		if (g != null && g.has("avgLowPrice") && !g.get("avgLowPrice").isJsonNull())
+			avgLo = g.get("avgLowPrice").getAsInt();
+		Integer buy = (lo != null && avgLo != null) ? Math.max(lo, avgLo) : lo != null ? lo : avgLo;
+		if (buy == null || buy <= 0) return -1;
+		return buy + tickSize(buy);   // overcut a tick so a resting buy actually fills
+	}
+
 	/** Recommended price to LIST A SELL at for any item (one tick under the realistic high),
 	 *  even if it's not in the ranked flip list. −1 if we have no recent quote. */
 	int sellHint(int id)

@@ -39,11 +39,16 @@ class GeflipPanel extends PluginPanel
 	private final JButton tabFlips = new JButton("Flips");
 	private final JButton tabDips = new JButton("Dips");
 	private final JButton tabYou = new JButton("You");
+	private final javax.swing.JTextField priceInput = new javax.swing.JTextField();
+	private final JLabel priceResult = new JLabel(" ");
 	private final java.util.function.IntConsumer onClearHold;
+	private final java.util.function.Function<String, String> onPriceCheck;
 
-	GeflipPanel(Runnable onRefresh, java.util.function.IntConsumer onClearHold)
+	GeflipPanel(Runnable onRefresh, java.util.function.IntConsumer onClearHold,
+		java.util.function.Function<String, String> onPriceCheck)
 	{
 		this.onClearHold = onClearHold;
+		this.onPriceCheck = onPriceCheck;
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
@@ -66,12 +71,27 @@ class GeflipPanel extends PluginPanel
 		bankLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		bankLabel.setFont(FontManager.getRunescapeSmallFont());
 		bankLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		// price-check: type ANY item to see its recommended buy/sell (works for anything,
+		// not just holdings/scan) — fixes "I can't see what to sell X at".
+		priceResult.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		priceResult.setFont(FontManager.getRunescapeSmallFont());
+		priceResult.setAlignmentX(Component.LEFT_ALIGNMENT);
+		priceInput.setToolTipText("Type any item name → its recommended buy/sell price");
+		priceInput.putClientProperty("JTextField.placeholderText", "price-check any item…");
+		priceInput.setMaximumSize(new Dimension(Integer.MAX_VALUE, priceInput.getPreferredSize().height));
+		priceInput.setAlignmentX(Component.LEFT_ALIGNMENT);
+		priceInput.addActionListener(e -> {
+			if (onPriceCheck != null) priceResult.setText("<html>" + onPriceCheck.apply(priceInput.getText()) + "</html>");
+		});
+
 		JPanel top = new JPanel();
 		top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 		top.add(refresh);
 		top.add(status);
 		top.add(combined);
 		top.add(bankLabel);
+		top.add(priceInput);
+		top.add(priceResult);
 		top.add(legend);
 
 		// --- tab bar: Flips | Dips | You ---
