@@ -25,6 +25,7 @@ import net.runelite.client.ui.PluginPanel;
 class GeflipPanel extends PluginPanel
 {
 	private final JLabel status = new JLabel("idle");
+	private final JLabel combined = new JLabel(" ");   // real earn rate = top slots summed
 	private final JLabel session = new JLabel("session: —");
 	private final JLabel calib = new JLabel(" ");      // your ACTUAL results (win% / hold)
 	private final JLabel legend = new JLabel(" ");     // what the row symbols mean
@@ -57,10 +58,13 @@ class GeflipPanel extends PluginPanel
 		refresh.setAlignmentX(Component.LEFT_ALIGNMENT);
 		status.setAlignmentX(Component.LEFT_ALIGNMENT);
 		legend.setAlignmentX(Component.LEFT_ALIGNMENT);
+		combined.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		combined.setAlignmentX(Component.LEFT_ALIGNMENT);
 		JPanel top = new JPanel();
 		top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 		top.add(refresh);
 		top.add(status);
+		top.add(combined);
 		top.add(legend);
 
 		// --- tab bar: Flips | Dips | You ---
@@ -265,11 +269,17 @@ class GeflipPanel extends PluginPanel
 			rows.removeAll();
 			dipsRows.removeAll();
 			int dips = 0;
+			double top8 = 0; int slots = 0;
 			for (GeflipScanner.Flip f : flips)
 			{
 				rows.add(rowFor(f));
+				if (slots < 8) { top8 += f.expGph; slots++; }        // real rate = your 8 slots combined
 				if (f.dumping) { dipsRows.add(rowFor(f)); dips++; }   // 🔥 cheap vs its recent norm
 			}
+			combined.setText(slots > 0 ? "≈ " + gp((long) top8) + "/hr across " + slots + " slots" : " ");
+			combined.setToolTipText("Your realistic earn rate = the top " + slots + " flips run at once "
+				+ "(one per GE slot). Per-item gp/h looks small; the 8-slot total is the real number. "
+				+ "Raise your Bankroll in config to unlock bigger per-slot flips.");
 			if (dips == 0)
 			{
 				JLabel none = new JLabel("no dips right now — nothing's trading below its norm");

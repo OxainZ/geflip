@@ -30,7 +30,7 @@ class GeflipScanner
 	private static final int TAX_CAP = 5_000_000;
 	// scoring constants — kept identical to the web app's DEF_CFG so the panel and site agree
 	private static final int MIN_VOL24 = 500;    // 24h liquidity gate
-	private static final double PART = 0.15;      // share of a side's flow we realistically capture
+	private static final double PART = 0.20;      // share of a side's flow we realistically capture
 	private static final double TAU_S = 1200.0;   // staleness decay
 	private static final double VOL_SAT = 200.0;  // volume-quality saturation
 
