@@ -79,9 +79,9 @@ public class JadPrayerOverlay extends Overlay
 				Color col = colorFor(a);
 				int w = (icon != null ? icon.getWidth() : 34) * s;
 				int h = (icon != null ? icon.getHeight() : 34) * s;
-				boolean isJad = npc == plugin.activeJad;   // only Jad gets the countdown + flash
-				int ticks = isJad ? plugin.ticksToHit() : -1;
-				drawOverHead(g, npc, icon, col, labelFor(a), w, h, ticks, isJad && plugin.flashing());
+				// each Jad has its OWN countdown/flash (triple-Jad wave); fixed monsters return -1/false
+				int ticks = plugin.ticksToHit(npc);
+				drawOverHead(g, npc, icon, col, labelFor(a), w, h, ticks, plugin.flashing(npc));
 			}
 		}
 		return null;
@@ -100,7 +100,7 @@ public class JadPrayerOverlay extends Overlay
 			g.fillOval(x - 3, y - 3, w + 6, h + 6);
 			g.drawImage(icon, x, y, w, h, null);
 		}
-		else drawBadge(g, icon, "TEST", MAGE_COL, x, y, w, h);
+		else drawBadge(g, icon, "TEST", MAGE_COL, x, y, w, h, false);
 		g.setFont(g.getFont().deriveFont(Font.BOLD, 13f));
 		g.setColor(Color.BLACK); g.drawString("TEST sample — turn off before your run", x + 1, y + h + 15);
 		g.setColor(Color.WHITE); g.drawString("TEST sample — turn off before your run", x, y + h + 14);
@@ -130,7 +130,7 @@ public class JadPrayerOverlay extends Overlay
 			g.fillOval(x - 3, y - 3, w + 6, h + 6);
 			g.drawImage(icon, x, y, w, h, null);
 		}
-		else drawBadge(g, icon, fallbackLabel, col, x, y, w, h);   // fallback if sprite not loaded
+		else drawBadge(g, icon, fallbackLabel, col, x, y, w, h, flash);   // fallback if sprite not loaded
 		if (ticks >= 0) drawTicks(g, ticks, Color.WHITE, x + w / 2, y - 8);
 	}
 
@@ -174,9 +174,8 @@ public class JadPrayerOverlay extends Overlay
 	}
 
 	private void drawBadge(Graphics2D g, BufferedImage icon, String label, Color col,
-		int x, int y, int w, int h)
+		int x, int y, int w, int h, boolean flash)
 	{
-		boolean flash = plugin.flashing();
 		Stroke old = g.getStroke();
 		g.setStroke(new BasicStroke(flash ? 5f : 3f));
 		g.setColor(col);

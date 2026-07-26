@@ -60,6 +60,14 @@ public class JadPrayerPlugin extends Plugin
 		for (int id : new int[]{2193, 2194, 3121, 3122}) STYLE.put(id, Attack.RANGE);       // Tok-Xil
 		for (int id : new int[]{3123, 3124}) STYLE.put(id, Attack.MELEE);                   // Yt-MejKot (heals)
 		for (int id : new int[]{3125, 3126}) STYLE.put(id, Attack.MAGE);                    // Ket-Zek
+		// --- INFERNO fixed-style monsters (NpcID verified vs runelite-api 1.12.33) ---
+		STYLE.put(7694, Attack.MAGE);                                                       // Jal-AkRek-Mej
+		STYLE.put(7695, Attack.RANGE);                                                      // Jal-AkRek-Xil
+		STYLE.put(7696, Attack.MELEE);                                                      // Jal-AkRek-Ket
+		STYLE.put(7697, Attack.MELEE);                                                      // Jal-ImKot (meleer)
+		for (int id : new int[]{7698, 7702}) STYLE.put(id, Attack.RANGE);                   // Jal-Xil (ranger)
+		for (int id : new int[]{7699, 7703}) STYLE.put(id, Attack.MAGE);                    // Jal-Zek (mager)
+		STYLE.put(7708, Attack.MAGE);                                                       // Jal-MejJak (Zuk minion)
 	}
 
 	@Inject private OverlayManager overlayManager;
@@ -70,9 +78,10 @@ public class JadPrayerPlugin extends Plugin
 	private final Set<NPC> healers = new HashSet<>();
 	// every combat monster we can advise on -> the prayer to use against it right now
 	private final Map<NPC, Attack> targets = new ConcurrentHashMap<>();
-	public volatile NPC activeJad;       // the Jad whose latest attack drives the tick countdown/flash
-	public volatile long switchedAtMs;   // when Jad last changed attack (for the flash)
-	public volatile int hitTicks;        // ticks until Jad's current attack lands (0 = landed)
+	// PER-JAD timing (Inferno wave 68/69 spawns THREE Jads on independent cadences): NPC -> {ticks
+	// until this Jad's current attack lands, ms it last switched}. Keyed per-NPC so each Jad gets its
+	// own countdown + flash, not one shared counter that only tracks whoever attacked last.
+	private final Map<NPC, long[]> jadTiming = new ConcurrentHashMap<>();
 	public volatile boolean healersUp;
 
 	public BufferedImage mageSprite, rangeSprite, meleeSprite;
@@ -95,8 +104,7 @@ public class JadPrayerPlugin extends Plugin
 		overlayManager.remove(overlay);
 		targets.clear();
 		healers.clear();
-		activeJad = null;
-		hitTicks = 0;
+		jadTiming.clear();
 		healersUp = false;
 	}
 
@@ -122,7 +130,7 @@ public class JadPrayerPlugin extends Plugin
 	{
 		NPC n = e.getNpc();
 		if (isHealer(n)) { healers.add(n); healersUp = true; return; }
-		if (isJad(n)) { activeJad = n; return; }   // Jad's style is unknown until its first attack animation
+		if (isJad(n)) return;   // Jad's style is unknown until its first attack animation
 		Attack st = STYLE.get(n.getId());
 		if (st != null) targets.put(n, st);        // fixed-style wave monster — show its prayer immediately
 	}
@@ -132,20 +140,21 @@ public class JadPrayerPlugin extends Plugin
 	{
 		NPC n = e.getNpc();
 		targets.remove(n);
-		if (n == activeJad) { activeJad = null; hitTicks = 0; }
+		jadTiming.remove(n);
 		if (healers.remove(n)) healersUp = !healers.isEmpty();
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick e)
 	{
-		if (hitTicks > 0) hitTicks--;
+		for (long[] t : jadTiming.values()) if (t[0] > 0) t[0]--;   // count each Jad down independently
 	}
 
-	/** Ticks until Jad's current attack lands (-1 once landed / none) — for the countdown. */
-	public int ticksToHit()
+	/** Ticks until THIS Jad's current attack lands (-1 if not a Jad / already landed). */
+	public int ticksToHit(NPC npc)
 	{
-		return (activeJad != null && hitTicks > 0) ? hitTicks : -1;
+		long[] t = jadTiming.get(npc);
+		return (t != null && t[0] > 0) ? (int) t[0] : -1;
 	}
 
 	@Subscribe
@@ -168,9 +177,8 @@ public class JadPrayerPlugin extends Plugin
 		if (a != null)
 		{
 			targets.put(npc, a);            // update THIS Jad's prayer instantly on the switch
-			activeJad = npc;
-			switchedAtMs = System.currentTimeMillis();
-			hitTicks = inferno ? JALTOK_JAD_HIT_TICKS : TZTOK_JAD_HIT_TICKS;
+			jadTiming.put(npc, new long[]{ inferno ? JALTOK_JAD_HIT_TICKS : TZTOK_JAD_HIT_TICKS,
+				System.currentTimeMillis() });
 		}
 	}
 
@@ -187,9 +195,10 @@ public class JadPrayerPlugin extends Plugin
 	/** Snapshot of the live healers, for the overlay to outline each one. */
 	public java.util.List<NPC> healerNpcs() { return new java.util.ArrayList<>(healers); }
 
-	/** True briefly after Jad switches attack — drives the flash on Jad's icon. */
-	public boolean flashing()
+	/** True briefly after THIS Jad switched attack — drives the flash on its icon. */
+	public boolean flashing(NPC npc)
 	{
-		return config.flash() && System.currentTimeMillis() - switchedAtMs < 700;
+		long[] t = jadTiming.get(npc);
+		return config.flash() && t != null && System.currentTimeMillis() - t[1] < 700;
 	}
 }
