@@ -73,6 +73,24 @@ class GeflipServer
 			t.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8));
 	}
 
+	/** True if the request came from the bridge's OWN page (or a non-browser client with no
+	 *  Origin/Referer). Blocks a drive-by website from POSTing into your journal when the token
+	 *  is empty. A browser always sends Origin on a cross-origin POST. */
+	private boolean sameOrigin(HttpExchange ex)
+	{
+		String src = ex.getRequestHeaders().getFirst("Origin");
+		if (src == null) src = ex.getRequestHeaders().getFirst("Referer");
+		if (src == null) return true;   // curl / native app — the token still gates it
+		String host = ex.getRequestHeaders().getFirst("Host");   // e.g. "192.168.1.168:7777"
+		try
+		{
+			java.net.URI u = java.net.URI.create(src);
+			String srcHost = u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "");
+			return host != null && (host.equalsIgnoreCase(srcHost) || host.equalsIgnoreCase(u.getHost()));
+		}
+		catch (Exception e) { return false; }
+	}
+
 	/** Value of a single query param, URL-decoded (null if absent). */
 	private static String param(String query, String key)
 	{
@@ -99,6 +117,10 @@ class GeflipServer
 		if (!authed(ex)) { respond(ex, 401, "{\"ok\":false,\"error\":\"token\"}"); return; }
 		if (ex.getRequestMethod().equalsIgnoreCase("POST"))
 		{
+			// CSRF guard: a POST is a "simple" cross-origin request (no preflight), so with the
+			// default empty token any site you visit could write to your journal. Reject unless the
+			// request originates from the bridge's own page (Origin/Referer host == our Host).
+			if (!sameOrigin(ex)) { respond(ex, 403, "{\"ok\":false,\"error\":\"origin\"}"); return; }
 			String body = read(ex.getRequestBody());
 			try { onPost.accept(body); respond(ex, 200, "{\"ok\":true}"); }
 			catch (Exception e) { respond(ex, 400, "{\"ok\":false}"); }

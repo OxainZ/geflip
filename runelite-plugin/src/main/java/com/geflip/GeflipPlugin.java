@@ -257,7 +257,7 @@ public class GeflipPlugin extends Plugin
 			if (price <= 0) price = (int) (h[1] / Math.max(1, h[0]));   // no quote → book flat at cost
 			int tax = GeflipScanner.saleTax(price, scanner.isExempt(id)) * qty;
 			fills.add(new Fill(id, "SELL", price, qty, tax, System.currentTimeMillis() / 1000));
-			if (fills.size() > 3000) fills.remove(0);
+			pruneFills();
 			java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
 			String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
 			int[] bk = slotBookedQty.clone(); long[] bks = slotBookedSpent.clone();
@@ -430,6 +430,15 @@ public class GeflipPlugin extends Plugin
 	{
 		clientThread.invoke(() ->
 		{
+			// MUST be able to read the live offers to seed ongoing ones — otherwise a wipe persisted
+			// while logged out (null offers) leaves in-flight offers unseeded, and on next login their
+			// already-filled units get re-booked as "new", re-adding exactly what we wiped. Refuse.
+			GrandExchangeOffer[] live = client.getGrandExchangeOffers();
+			if (live == null)
+			{
+				if (panel != null) panel.setStatus("log in first, then reset — can't read your live offers");
+				return;
+			}
 			fills.clear();
 			costOverride.clear();
 			buyWindows.clear();
@@ -442,17 +451,15 @@ public class GeflipPlugin extends Plugin
 			upgradeMode = false;
 			// seed marks from the CURRENT live offers so an in-progress offer tracks from now, not
 			// re-booking the portion that filled before the reset.
-			GrandExchangeOffer[] live = client.getGrandExchangeOffers();
-			if (live != null)
-				for (int i = 0; i < live.length && i < slots.length; i++)
-				{
-					GrandExchangeOffer o = live[i];
-					if (o == null || o.getState() == GrandExchangeOfferState.EMPTY) continue;
-					slotKey[i] = o.getItemId() + ":" + o.getPrice() + ":" + o.getTotalQuantity();
-					slotBookedQty[i] = o.getQuantitySold();
-					slotBookedSpent[i] = o.getSpent();
-					slotSince[i] = System.currentTimeMillis();
-				}
+			for (int i = 0; i < live.length && i < slots.length; i++)
+			{
+				GrandExchangeOffer o = live[i];
+				if (o == null || o.getState() == GrandExchangeOfferState.EMPTY) continue;
+				slotKey[i] = o.getItemId() + ":" + o.getPrice() + ":" + o.getTotalQuantity();
+				slotBookedQty[i] = o.getQuantitySold();
+				slotBookedSpent[i] = o.getSpent();
+				slotSince[i] = System.currentTimeMillis();
+			}
 			java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
 			String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
 			int[] bk = slotBookedQty.clone(); long[] bks = slotBookedSpent.clone();
@@ -561,12 +568,6 @@ public class GeflipPlugin extends Plugin
 	}
 
 	/** Persist a client-thread SNAPSHOT (never the live arrays/list) to avoid a data race. */
-	private synchronized void saveFills(java.util.List<Fill> fillSnap, String[] sig, String[] key, long[] since,
-		java.util.Map<Integer, long[]> windows)
-	{
-		saveFills(fillSnap, sig, key, since, windows, slotBookedQty.clone(), slotBookedSpent.clone());
-	}
-
 	private synchronized void saveFills(java.util.List<Fill> fillSnap, String[] sig, String[] key, long[] since,
 		java.util.Map<Integer, long[]> windows, int[] booked, long[] bookedSpent)
 	{
@@ -857,12 +858,15 @@ public class GeflipPlugin extends Plugin
 		// (key mismatch) is new and books normally through the reset below.
 		if (upgradeMode && !slotSeeded[slot])
 		{
+			// First sight of this slot after an upgrade: treat whatever has filled so far as ALREADY
+			// accounted (an old save booked completed offers to `fills`; re-booking them would double).
+			// Seed UNCONDITIONALLY — a save from before slotKey existed loads key=null, so a key match
+			// can't be relied on. You place fresh offers after login (first sight at qty≈0), so this
+			// loses nothing real; it only suppresses re-booking a pre-upgrade completed offer.
 			slotSeeded[slot] = true;
-			if (key.equals(slotKey[slot]))
-			{
-				slotBookedQty[slot] = o.getQuantitySold(); slotBookedSpent[slot] = o.getSpent();
-				return true;   // persist the seeded mark; book nothing this pass
-			}
+			slotKey[slot] = key; slotSince[slot] = System.currentTimeMillis();
+			slotBookedQty[slot] = o.getQuantitySold(); slotBookedSpent[slot] = o.getSpent();
+			return true;   // persist the seeded mark; book nothing this pass
 		}
 		// a genuinely NEW offer in this slot → reset the age clock + fill mark (a matching key on
 		// login-replay is the SAME offer, so we keep the mark and don't re-book what we already had)
@@ -880,9 +884,10 @@ public class GeflipPlugin extends Plugin
 		int soldNow = o.getQuantitySold();
 		long spentNow = o.getSpent();
 		int deltaQty = soldNow - slotBookedQty[slot];
-		long deltaSpent = spentNow - slotBookedSpent[slot];
-		if (deltaQty <= 0 || deltaSpent <= 0) return false;   // nothing new filled since last seen
-		int unit = (int) Math.round((double) deltaSpent / deltaQty);   // avg price of the new units (round, no cost-basis drift)
+		long deltaSpent = Math.max(0, spentNow - slotBookedSpent[slot]);
+		if (deltaQty <= 0) return false;   // no NEW units filled since last seen (gate on qty alone so a
+		                                    // lagging spend can't drop the units permanently)
+		int unit = (int) Math.round((double) deltaSpent / deltaQty);   // avg price of the new units (rounded; ≤½gp/event basis drift)
 		slotBookedQty[slot] = soldNow; slotBookedSpent[slot] = spentNow;
 
 		long now = System.currentTimeMillis() / 1000;
@@ -899,8 +904,24 @@ public class GeflipPlugin extends Plugin
 			int tax = GeflipScanner.saleTax(unit, scanner.isExempt(o.getItemId())) * deltaQty;
 			fills.add(new Fill(o.getItemId(), "SELL", unit, deltaQty, tax, now));
 		}
-		if (fills.size() > 3000) fills.remove(0);
+		pruneFills();
 		return true;
+	}
+
+	private static final int FILL_CAP = 5000;
+
+	/** Keep the fill log bounded WITHOUT corrupting P&L. A blind remove(0) could drop a BUY whose
+	 *  SELL is still in the log → that sell becomes an unmatched "pure-profit" phantom (overstated
+	 *  P&L) and the held lot vanishes. Instead, once over the cap, drop only items with a FLAT net
+	 *  position (fully bought AND sold) — their buys and sells leave together, so nothing is
+	 *  orphaned. Open positions are always kept; if everything is open we let the log grow rather
+	 *  than risk corruption. removeIf on the CopyOnWriteArrayList is an atomic array swap. Client thread. */
+	private void pruneFills()
+	{
+		if (fills.size() <= FILL_CAP) return;
+		java.util.Map<Integer, Integer> net = new java.util.HashMap<>();
+		for (Fill f : fills) net.merge(f.id, "BUY".equals(f.side) ? f.qty : -f.qty, Integer::sum);
+		fills.removeIf(f -> net.getOrDefault(f.id, 0) == 0);
 	}
 
 	/** Snapshot the fill/slot state on the CLIENT thread, then persist + re-match off-thread

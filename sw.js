@@ -3,12 +3,16 @@
  * (2) host notifications so a backgrounded/installed PWA can still alert.
  * Prices are ALWAYS fetched live from the network — we never cache API data,
  * only the app shell, so a stale flip is impossible. */
-const SHELL = 'geflip-shell-v1';
-const SHELL_FILES = ['.', 'index.html', 'manifest.webmanifest', 'geflip_icon.png'];
+const SHELL = 'geflip-shell-v2';
+const SHELL_FILES = ['.', 'index.html', 'manifest.webmanifest',
+  'geflip_icon.png', 'geflip_icon_192.png', 'geflip_icon_512.png'];
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES).catch(() => {})));
+  // cache each file independently — addAll is atomic, so one missing/renamed asset would
+  // silently break the WHOLE offline shell. allSettled lets the rest cache regardless.
+  e.waitUntil(caches.open(SHELL).then((c) =>
+    Promise.allSettled(SHELL_FILES.map((f) => c.add(f)))));
 });
 
 self.addEventListener('activate', (e) => {

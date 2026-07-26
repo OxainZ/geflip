@@ -671,9 +671,9 @@ class GeflipPanel extends PluginPanel
 		col.add(sub);
 		p.add(col, BorderLayout.CENTER);
 
-		// full plain-English explanation of this row on hover
-		StringBuilder tip = new StringBuilder("<html><b>").append(f.name).append("</b><br>");
-		if (f.why != null && !f.why.isEmpty()) tip.append("<i>").append(f.why).append("</i><br>");
+		// full plain-English explanation of this row on hover (escape name/why — this is an HTML label)
+		StringBuilder tip = new StringBuilder("<html><b>").append(esc(f.name)).append("</b><br>");
+		if (f.why != null && !f.why.isEmpty()) tip.append("<i>").append(esc(f.why)).append("</i><br>");
 		tip.append("Buy at ").append(gp(f.buy)).append(", sell at ").append(gp(f.sell))
 			.append(" → ").append(gp(f.margin)).append(" profit each after tax<br>");
 		tip.append("Buy up to ").append(f.quantity).append(" (bankroll/limit/volume capped)<br>");
@@ -711,6 +711,14 @@ class GeflipPanel extends PluginPanel
 		b.setMargin(new java.awt.Insets(0, 2, 0, 2));
 		b.setFont(FontManager.getRunescapeSmallFont());
 		return b;
+	}
+
+	/** Escape the HTML-special chars so an item name (a stray &, or a future non-Jagex source)
+	 *  can't break or inject into a Swing &lt;html&gt; label. */
+	private static String esc(String s)
+	{
+		if (s == null) return "";
+		return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 	}
 
 	private static String gp(long v)

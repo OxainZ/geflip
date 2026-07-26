@@ -595,6 +595,23 @@ const DEF_CFG = { bankroll:50_000_000, slots:8, members:true, minVol:20, minVol2
   cloudUrl:'', cloudId:'' };
 let CFG = {...DEF_CFG};
 
+/* Clamp an EXTERNAL config blob (cloud/bridge/localStorage — any of which a bad actor or a
+ * corrupt store could poison) so a 0/negative/NaN divisor can't reach the Deep column
+ * (cycleH) or the Slots tab (swingHoldHours) and spew Infinity/NaN gp/h. scoreAll re-clamps
+ * its own copy, but these fields are read directly elsewhere. */
+function sanitizeCfg(c){
+  if (!c || typeof c !== 'object') return {};
+  const num = (v, d, min) => { const x = Number(v); return Number.isFinite(x) && x >= min ? x : d; };
+  const o = {...c};
+  o.cycleH = num(o.cycleH, 4, 0.1);
+  o.swingHoldHours = num(o.swingHoldHours, 48, 1);
+  if ('bankroll' in o) o.bankroll = num(o.bankroll, 50_000_000, 1);
+  if ('slots' in o)    o.slots = Math.min(8, Math.max(1, Math.round(num(o.slots, 8, 1))));
+  if ('maxFrac' in o)  o.maxFrac = Math.min(1, Math.max(0.01, num(o.maxFrac, 0.25, 0.01)));
+  if ('part' in o)     o.part = Math.min(1, Math.max(0.01, num(o.part, 0.20, 0.01)));
+  return o;
+}
+
 const $ = id => document.getElementById(id);
 function cfgToForm(){
   $('cfg-bankroll').value = gpTxt(CFG.bankroll).replace(/(\.\d*?)0+([bmk])/,'$1$2').replace(/\.([bmk])/,'$1');
@@ -774,11 +791,14 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     // REALISTIC fill prices: q.high is the last INSTANT-BUY print (a buyer crossing the
     // spread up) — a sell offer placed there often won't fill. Guard both legs with the
     // 5m volume-weighted average so the SELL price is one buyers actually pay.
+    // prefer the 5m VWAP; fall back to the 1h VWAP when there's no 5m print, so an illiquid
+    // item isn't guarded by a lone (up-to-1h-stale) instant price — matches the plugin exactly.
     const w5 = m5?.[idStr];
+    const guard = (w5 && (w5.avgHighPrice!=null || w5.avgLowPrice!=null)) ? w5 : (h1?.[idStr] || null);
     let rHigh = q.high, rLow = q.low;
-    if (w5){
-      if (w5.avgHighPrice!=null) rHigh = Math.min(q.high, w5.avgHighPrice);
-      if (w5.avgLowPrice!=null)  rLow  = Math.max(q.low,  w5.avgLowPrice);
+    if (guard){
+      if (guard.avgHighPrice!=null) rHigh = Math.min(q.high, guard.avgHighPrice);
+      if (guard.avgLowPrice!=null)  rLow  = Math.max(q.low,  guard.avgLowPrice);
     }
     let buy  = cfg.slip>0 ? Math.ceil(rLow *(1+cfg.slip)) : rLow;   // reassigned to the undercut price below
     let sell = cfg.slip>0 ? Math.floor(rHigh*(1-cfg.slip)) : rHigh;
@@ -2283,7 +2303,7 @@ async function importAll(text){
   if (!data || data.format !== 'geflip-backup'){
     return {ok:false, msg:'That file is not a GE Flip backup.'};
   }
-  if (data.settings) { CFG = {...DEF_CFG, ...data.settings}; await store.set('settings', CFG); }
+  if (data.settings) { CFG = {...DEF_CFG, ...sanitizeCfg(data.settings)}; await store.set('settings', CFG); }
   if (data.journal?.recs)   await store.set('journal', data.journal);
   if (data.positions?.rows) await store.set('positions', data.positions);
   cfgToForm(); await renderBook();
@@ -2411,7 +2431,7 @@ async function cloudPull(){
     const blob = await r.json();
     if (blob && Array.isArray(blob.fills)) LIVE_FILLS = blob.fills;  // real fills (plugin-sourced)
     if (blob && blob.config && blob.updated && blob.updated > (CFG._cloudSeen||0)){
-      CFG = {...CFG, ...blob.config}; CFG._cloudSeen = blob.updated; cfgToForm();
+      CFG = {...CFG, ...sanitizeCfg(blob.config)}; CFG._cloudSeen = blob.updated; cfgToForm();
       await store.set('settings', CFG);   // persist pulled config so it survives reload
     }
     cloudStatus('<span class="live">● synced</span> · '+((blob.fills||[]).length)+' fills');
@@ -2492,7 +2512,7 @@ function renderLive(session, fills, source, offers){
     memory:   '<span class="warn">not saved</span> — this browser blocks storage, so config and journal reset on reload.'
   }[BACKEND];
   const saved = await store.get('settings');
-  if (saved) CFG = {...DEF_CFG, ...saved};
+  if (saved) CFG = {...DEF_CFG, ...sanitizeCfg(saved)};
   cfgToForm(); await renderBook(); renderNext();
   status('ready');
   bridgeInit();          // light up RuneLite sync if we're served by the bridge

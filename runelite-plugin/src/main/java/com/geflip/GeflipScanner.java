@@ -239,7 +239,7 @@ class GeflipScanner
 	{
 		String name, dir;       // e.g. "Bandos armour set", "buy pieces → sell set"
 		long buyTotal, sellNet; // cost of the buy side, net-of-tax proceeds of the sell side
-		int profit;
+		long profit;
 	}
 
 	// Sets defined by NAME (resolved to ids via the live mapping, so no hardcoded/guessable ids;
@@ -301,13 +301,13 @@ class GeflipScanner
 			SetFlip f = new SetFlip();
 			f.name = s[0];
 			if (combine >= split && combine >= Math.max(1, cfg.minMargin()))
-			{ f.dir = "buy pieces → sell set"; f.buyTotal = piecesBuy; f.sellNet = setSell - saleTax(setSell, setMeta != null && setMeta.exempt); f.profit = (int) combine; }
+			{ f.dir = "buy pieces → sell set"; f.buyTotal = piecesBuy; f.sellNet = setSell - saleTax(setSell, setMeta != null && setMeta.exempt); f.profit = combine; }
 			else if (split >= Math.max(1, cfg.minMargin()))
-			{ f.dir = "buy set → sell pieces"; f.buyTotal = setBuy; f.sellNet = piecesSellNet; f.profit = (int) split; }
+			{ f.dir = "buy set → sell pieces"; f.buyTotal = setBuy; f.sellNet = piecesSellNet; f.profit = split; }
 			else continue;
 			out.add(f);
 		}
-		out.sort(Comparator.<SetFlip>comparingInt(x -> -x.profit));
+		out.sort(Comparator.<SetFlip>comparingLong(x -> -x.profit));
 		return out;
 	}
 
