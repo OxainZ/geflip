@@ -549,6 +549,12 @@ class GeflipScanner
 			if (d24 != null && vol24 < MIN_VOL24) continue;
 			Double hourly24 = vol24 > 0 ? vol24 / 24.0 : null;
 			double flowFcast = hourly24 != null ? (vol1 + hourly24) / 2.0 : vol1;
+			// flow-forecast shrinkage, computed ONCE and used for BOTH fill-probability and fill-time
+			// (the web uses the shrunk forecast for both; the plugin used raw volume for fill-prob — a
+			// parity drift that made the panel's %fill disagree with the phone). vl=instant-sells,
+			// vh=instant-buys per hour.
+			double shrink = (hourly24 != null && vol1 > 0) ? flowFcast / vol1 : 1.0;
+			double sellersFc = vl * shrink, buyersFc = vh * shrink;
 
 			int limit = meta.limit;
 			Integer rem = remaining.get(id);   // units still buyable this 4h window (null = full)
@@ -563,8 +569,9 @@ class GeflipScanner
 			if (qty <= 0) continue;
 
 			// FILL PROBABILITY (Poisson): expected units arriving on the SLOWER side in one 4h
-			// cycle vs the qty you'd buy — how likely the round-trip actually completes.
-			double expUnits = PART * Math.min(vh, vl) * cycleH;
+			// cycle vs the qty you'd buy — how likely the round-trip actually completes. Uses the
+			// SHRUNK forecast (matches the web) so the panel's %fill agrees with the phone's.
+			double expUnits = PART * Math.min(sellersFc, buyersFc) * cycleH;
 			double zf = (expUnits - qty) / Math.sqrt(Math.max(1, expUnits));
 			double fillProb = 1.0 / (1.0 + Math.exp(-1.702 * zf));   // logistic approx of the normal CDF
 			boolean wontFill = Math.min(vh, vl) < 50 || fillProb < 0.15;   // too little counter-flow
@@ -594,10 +601,14 @@ class GeflipScanner
 				int m24 = netMargin(aLo, aHi, meta.exempt);
 				if (m24 > 0 && marginComp > 3.0 * m24 && cfg.hideSpikes()) continue;   // illusory spike
 				if (m24 > 0 && marginComp > 2.5 * m24) spikePen = 0.7;
-				// VOLATILITY: if the price has drifted from its 24h norm by MORE than your margin,
-				// normal swings can erase the flip before you sell — warn (Larran's/dragon-metal-sheet).
+				// VOLATILITY: measure the SWING across the 5m/1h/24h mids (not just the level drift,
+				// which the falling-knife check already covers). Flag only a genuine wide swing — >5%
+				// AND more than 2x the margin — so the ⚡ stays rare and meaningful, not on every row.
 				double mid24 = (aLo + aHi) / 2.0;
-				if (mid24 > 0 && Math.abs(midNow - mid24) / mid24 > 1.5 * roi) unstable = true;
+				double m1 = mid1h != null ? mid1h : midNow;
+				double swingLo = Math.min(midNow, Math.min(m1, mid24)), swingHi = Math.max(midNow, Math.max(m1, mid24));
+				double swing = swingHi > 0 ? (swingHi - swingLo) / swingHi : 0;
+				if (swing > 0.05 && swing > 2.0 * roi) unstable = true;
 			}
 			// confidence = quality * stability * intra-hour-trend * spike-guard (web scoreAll conf)
 			double fresh = Math.exp(-age / TAU_S);
@@ -610,10 +621,8 @@ class GeflipScanner
 			Flip f = new Flip();
 			f.id = id; f.name = meta.name; f.buy = bidComp; f.sell = askComp;
 			f.tax = saleTax(askComp, meta.exempt); f.margin = marginComp; f.quantity = qty; f.limit = limit;
-			// SIDE-SPECIFIC fill time with flow shrinkage: BUY fills against low-side volume,
-			// SELL against high-side volume; the two legs are sequential.
-			double shrink = (hourly24 != null && vol1 > 0) ? flowFcast / vol1 : 1.0;
-			double sellersFc = vl * shrink, buyersFc = vh * shrink;
+			// SIDE-SPECIFIC fill time (shrink/sellersFc/buyersFc computed above): BUY fills against
+			// low-side volume, SELL against high-side volume; the two legs are sequential.
 			double buyFillH = sellersFc > 0 ? f.quantity / (PART * sellersFc) : 999.0;
 			double sellFillH = buyersFc > 0 ? f.quantity / (PART * buyersFc) : 999.0;
 			double fillH = Math.min(999.0, buyFillH + sellFillH);
@@ -632,10 +641,13 @@ class GeflipScanner
 			else if (stab < 0.7) f.why = "Wide instant spread the 1h avg doesn't confirm — treated cautiously";
 			else if (fillProb >= 0.7) f.why = "Solid: ~" + fp + "% fill, spread corroborated by the 1h average";
 			else f.why = "OK: ~" + fp + "% fill — decent margin, watch the fill time";
+			// SAFE MODE: only clean flips — drop won't-fill / volatile / long-term-decline rows.
+			if (cfg.safeMode() && (f.wontFill || f.unstable || f.decliner)) continue;
 			out.add(f);
 		}
-		// same tiebreak order as the web: expGph desc, confidence desc, name asc
-		out.sort(Comparator.<Flip>comparingDouble(x -> -x.expGph)
+		// rank by expGph WEIGHTED by fill probability, so a fat margin that probably won't fill
+		// doesn't sit at #1 (the eye-catching-but-useless trap). Displayed gp/h is unchanged.
+		out.sort(Comparator.<Flip>comparingDouble(x -> -x.expGph * (0.6 + 0.4 * x.fillProb))
 			.thenComparing(Comparator.comparingDouble((Flip x) -> -x.confidence))
 			.thenComparing(x -> x.name));
 		int rows = Math.max(5, cfg.rows());

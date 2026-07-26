@@ -218,8 +218,11 @@ class GeflipPanel extends PluginPanel
 	void setStatus(String s) { SwingUtilities.invokeLater(() -> status.setText(s)); }
 
 	/** Show the bankroll the scan is sizing to (your real coins when auto is on). */
+	private volatile long bankrollGp = 0;   // last known bankroll, so the headline can cap by what you can fund
+
 	void setBankroll(long gp, boolean auto)
 	{
+		bankrollGp = gp;
 		SwingUtilities.invokeLater(() ->
 			bankLabel.setText("bankroll: " + gp(gp) + (auto ? " (your coins)" : " (manual)")));
 	}
@@ -487,17 +490,23 @@ class GeflipPanel extends PluginPanel
 			rows.removeAll();
 			dipsRows.removeAll();
 			int dips = 0;
-			double top8 = 0; int slots = 0;
+			// Headline = the realistic slate you can actually FUND and that will fill: fill the 8 slots
+			// top-down, skip won't-fill rows, and stop once the committed capital (qty*buy) reaches your
+			// bankroll — so the number isn't 8 flips each sized to 25% of your coins (a 200% fantasy).
+			double top = 0; int slots = 0; long spent = 0; long bank = bankrollGp;
 			for (GeflipScanner.Flip f : flips)
 			{
 				rows.add(rowFor(f));
-				if (slots < 8) { top8 += f.expGph; slots++; }        // real rate = your 8 slots combined
 				if (f.dumping) { dipsRows.add(rowFor(f)); dips++; }   // 🔥 cheap vs its recent norm
+				if (slots >= 8 || f.wontFill) continue;
+				long cost = (long) f.buy * f.quantity;
+				if (bank > 0 && spent + cost > bank && slots > 0) continue;   // can't fund this one — skip it
+				top += f.expGph; spent += cost; slots++;
 			}
-			combined.setText(slots > 0 ? "≈ " + gp((long) top8) + "/hr across " + slots + " slots" : " ");
-			combined.setToolTipText("Your realistic earn rate = the top " + slots + " flips run at once "
-				+ "(one per GE slot). Per-item gp/h looks small; the 8-slot total is the real number. "
-				+ "Raise your Bankroll in config to unlock bigger per-slot flips.");
+			combined.setText(slots > 0 ? "≈ " + gp((long) top) + "/hr across " + slots + " slots" : " ");
+			combined.setToolTipText("Your realistic earn rate = the flips you can actually run at once — capped "
+				+ "at your bankroll (" + gp(bank) + ") and skipping ones that likely won't fill. Raise your "
+				+ "Bankroll/coins to fund bigger or more slots.");
 			if (dips == 0)
 			{
 				JLabel none = new JLabel("no dips right now — nothing's trading below its norm");
@@ -662,7 +671,8 @@ class GeflipPanel extends PluginPanel
 		String reset = f.resetMins > 0 ? "   ↻" + (f.resetMins >= 60 ? (f.resetMins / 60) + "h" : f.resetMins + "m") : "";
 		String fill = f.wontFill ? "   ⏳low" : "   " + Math.round(f.fillProb * 100) + "% fill";
 		JLabel sub = new JLabel(gp(f.buy) + " → " + gp(f.sell)
-			+ "   +" + gp(f.margin) + "   ×" + f.quantity + (ft.isEmpty() ? "" : "   " + ft) + reset + fill);
+			+ "   +" + gp(f.margin) + "×" + f.quantity + " = +" + gp((long) f.margin * f.quantity)
+			+ (ft.isEmpty() ? "" : "   " + ft) + reset + fill);
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 

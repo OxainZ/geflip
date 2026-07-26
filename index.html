@@ -957,7 +957,11 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
 
     // VOLATILITY: price drifted from its 24h norm by more than the margin → swings can erase the
     // flip before you sell (the "green now, red mid-trade" items). Warn (don't reject).
-    const unstable = mid24!=null && mid24>0 && Math.abs(midNow-mid24)/mid24 > 1.5*roi;
+    // swing across the 5m/1h/24h mids (not just level drift, which trendPen already covers) — flag
+    // ⚡ only on a genuine wide swing (>5% AND >2x margin) so it stays rare/meaningful.
+    const m1v = mid1h!=null?mid1h:midNow, sLo = Math.min(midNow, m1v, mid24!=null?mid24:midNow),
+      sHi = Math.max(midNow, m1v, mid24!=null?mid24:midNow), swing = sHi>0 ? (sHi-sLo)/sHi : 0;
+    const unstable = mid24!=null && swing>0.05 && swing>2*roi;
 
     // WHY this pick ranks — the honest per-pick rationale no paid black box shows
     const fp = Math.round(fillProb*100);
@@ -983,7 +987,7 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
       alch:(meta.highalch&&natP&&buy>0)?(meta.highalch-natP-buy)/buy:null,
       bound });
   }
-  out.sort((a,b)=> b.expGph-a.expGph || b.confidence-a.confidence || a.name.localeCompare(b.name));
+  out.sort((a,b)=> (b.expGph*(0.6+0.4*b.fillProb))-(a.expGph*(0.6+0.4*a.fillProb)) || b.confidence-a.confidence || a.name.localeCompare(b.name));
   return {cands:out, rej};
 }
 
@@ -1026,7 +1030,7 @@ function applyTrends(cands, trends){
       c.expGph *= pen; c.roiHr *= pen; c.gpPerMil *= pen;
     }
   }
-  cands.sort((a,b)=> b.expGph-a.expGph || b.confidence-a.confidence || a.name.localeCompare(b.name));
+  cands.sort((a,b)=> (b.expGph*(0.6+0.4*b.fillProb))-(a.expGph*(0.6+0.4*a.fillProb)) || b.confidence-a.confidence || a.name.localeCompare(b.name));
   return cands;
 }
 

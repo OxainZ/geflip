@@ -96,6 +96,15 @@ public interface GeflipConfig extends Config
 	)
 	default boolean hideSpikes() { return true; }
 
+	@ConfigItem(
+		keyName = "safeMode",
+		name = "Safe mode",
+		description = "Only show flips that are clean — hide anything flagged won't-fill (⏳), volatile "
+			+ "(⚡) or in long-term decline (⚠). Fewer rows, but every one is a low-risk round-trip.",
+		position = 63
+	)
+	default boolean safeMode() { return false; }
+
 	@Range(min = 60, max = 900)
 	@ConfigItem(
 		keyName = "refreshSec",
