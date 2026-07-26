@@ -367,11 +367,11 @@ public class GeflipPlugin extends Plugin
 		if (nm == null) return;
 		String cur = config.excludeItems() == null ? "" : config.excludeItems().trim();
 		// don't double-add
-		for (String p : cur.split(",")) if (p.trim().equalsIgnoreCase(nm)) { recompute(); return; }
+		for (String p : cur.split(",")) if (p.trim().equalsIgnoreCase(nm)) { recomputeAsync(); return; }
 		String next = cur.isEmpty() ? nm : cur + ", " + nm;
 		configManager.setConfiguration("geflip", "excludeItems", next);
 		if (panel != null) panel.setStatus("kept \"" + nm + "\" — personal use, hidden from flips");
-		recompute();
+		recomputeAsync();
 	}
 
 	/** Add/remove the last price-checked item from your watchlist (☆ button). */
@@ -381,11 +381,15 @@ public class GeflipPlugin extends Plugin
 		if (id <= 0) { if (panel != null) panel.setStatus("price-check an item first, then ☆ to watch it"); return; }
 		if (!watchlist.remove(id)) watchlist.add(id);
 		persist();
-		recompute();
+		recomputeAsync();
 	}
 
 	/** Remove an item from the watchlist (✕ on a watch row). */
-	void unwatch(int id) { watchlist.remove(id); persist(); recompute(); }
+	void unwatch(int id) { watchlist.remove(id); persist(); recomputeAsync(); }
+
+	/** Run recompute() off the EDT (these are Swing button callbacks) so the ledger replay + the
+	 *  volatile ledger write happen on the executor, consistent with the scan/fill paths. */
+	private void recomputeAsync() { executor.submit(this::recompute); }
 
 	/** Live buy/sell for each watched item, cheap ones first. */
 	private java.util.List<Watch> buildWatch()
@@ -416,6 +420,46 @@ public class GeflipPlugin extends Plugin
 			}
 		}
 		watchAlerted.retainAll(cheapNow);
+	}
+
+	/** Wipe the realized-P&L journal: fill log + all slot marks + cost corrections + buy windows,
+	 *  then persist the empty state. KEEPS your watchlist and exclude list. Ongoing GE offers are
+	 *  seeded to "now" so their already-filled units aren't dumped back in — you start counting
+	 *  fresh from this moment. Runs on the client thread (needs the live slots). */
+	void resetJournal()
+	{
+		clientThread.invoke(() ->
+		{
+			fills.clear();
+			costOverride.clear();
+			buyWindows.clear();
+			java.util.Arrays.fill(slotSig, null);
+			java.util.Arrays.fill(slotKey, null);
+			java.util.Arrays.fill(slotSince, 0L);
+			java.util.Arrays.fill(slotBookedQty, 0);
+			java.util.Arrays.fill(slotBookedSpent, 0L);
+			java.util.Arrays.fill(slotSeeded, true);   // manual reset — never re-seed from a stale save
+			upgradeMode = false;
+			// seed marks from the CURRENT live offers so an in-progress offer tracks from now, not
+			// re-booking the portion that filled before the reset.
+			GrandExchangeOffer[] live = client.getGrandExchangeOffers();
+			if (live != null)
+				for (int i = 0; i < live.length && i < slots.length; i++)
+				{
+					GrandExchangeOffer o = live[i];
+					if (o == null || o.getState() == GrandExchangeOfferState.EMPTY) continue;
+					slotKey[i] = o.getItemId() + ":" + o.getPrice() + ":" + o.getTotalQuantity();
+					slotBookedQty[i] = o.getQuantitySold();
+					slotBookedSpent[i] = o.getSpent();
+					slotSince[i] = System.currentTimeMillis();
+				}
+			java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
+			String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
+			int[] bk = slotBookedQty.clone(); long[] bks = slotBookedSpent.clone();
+			java.util.Map<Integer, long[]> win = deepCopyWindows();
+			executor.submit(() -> { saveFills(snap, sig, key, since, win, bk, bks); recompute(); });
+		});
+		if (panel != null) panel.setStatus("journal reset — P&L cleared");
 	}
 
 	/** Persist the fill log + markers off-thread (snapshots taken on the client thread). */
@@ -643,7 +687,8 @@ public class GeflipPlugin extends Plugin
 	protected void startUp()
 	{
 		panel = new GeflipPanel(this::triggerScan, this::clearHolding, this::priceCheck,
-			(id, cost) -> setCost(id, cost), this::markPersonalUse, this::toggleWatchLast, this::unwatch);
+			(id, cost) -> setCost(id, cost), this::markPersonalUse, this::toggleWatchLast, this::unwatch,
+			this::resetJournal);
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/geflip_icon.png");
 		navButton = NavigationButton.builder()
 			.tooltip("Geflip")
@@ -705,7 +750,7 @@ public class GeflipPlugin extends Plugin
 				for (GeflipScanner.Flip f : flips) f.resetMins = limitResetMins(f.id);   // buy-limit timer
 				if (p != null) p.setBankroll(bank, config.autoBankroll() && liveGp >= 0);
 				lastFlips = flips;                       // share with the bridge/cloud
-				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " flips · " + timeNow()); }
+				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " finds · " + timeNow()); }
 				if (p != null) p.setDecants(scanner.scanDecants(config));   // decanting opportunities
 				if (p != null) p.setSets(scanner.scanSets(config));         // set-exchange arbitrage
 				recompute();   // mapping is loaded now → exclude list resolves, P&L reflows

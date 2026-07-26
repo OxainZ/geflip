@@ -96,8 +96,13 @@ final class GeflipLedger
 				}
 				if (remaining > 0)                            // sold something we never logged buying
 				{
-					l.realizedFlip += net * remaining;
+					long proceeds = net * remaining;
+					l.realizedFlip += proceeds;
 					l.unmatchedSellUnits += remaining;
+					// fold the proceeds into the per-item journal too, so "Best items" reconciles
+					// with the session realized total. NOT counted as a completed flip/win — there's
+					// no cost basis to judge it, only known proceeds.
+					l.byItem.computeIfAbsent(f.id, k -> new long[5])[0] += proceeds;
 				}
 			}
 		}

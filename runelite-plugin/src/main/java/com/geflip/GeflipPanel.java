@@ -53,13 +53,15 @@ class GeflipPanel extends PluginPanel
 	private final java.util.function.IntConsumer onPersonalUse;
 	private final Runnable onWatchLast;
 	private final java.util.function.IntConsumer onUnwatch;
+	private final Runnable onResetJournal;
 	private final JPanel watchBox = new JPanel();      // "Watch" — pinned items + live prices (You tab)
 
 	GeflipPanel(Runnable onRefresh, java.util.function.IntConsumer onClearHold,
 		java.util.function.Function<String, String> onPriceCheck,
 		java.util.function.ObjLongConsumer<Integer> onEditCost,
 		java.util.function.IntConsumer onPersonalUse,
-		Runnable onWatchLast, java.util.function.IntConsumer onUnwatch)
+		Runnable onWatchLast, java.util.function.IntConsumer onUnwatch,
+		Runnable onResetJournal)
 	{
 		this.onClearHold = onClearHold;
 		this.onPriceCheck = onPriceCheck;
@@ -67,6 +69,7 @@ class GeflipPanel extends PluginPanel
 		this.onPersonalUse = onPersonalUse;
 		this.onWatchLast = onWatchLast;
 		this.onUnwatch = onUnwatch;
+		this.onResetJournal = onResetJournal;
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
@@ -166,6 +169,23 @@ class GeflipPanel extends PluginPanel
 		youBox.add(watchBox);
 		youBox.add(perfBox);
 		youBox.add(offersBox);
+		// reset the realized-P&L journal (keeps watchlist + exclude list). Confirmed first — it wipes
+		// your fill history, used when the numbers got polluted (e.g. a one-time upgrade double-book).
+		JButton resetBtn = new JButton("reset journal");
+		resetBtn.setFont(FontManager.getRunescapeSmallFont());
+		resetBtn.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		resetBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+		resetBtn.setToolTipText("Wipe realized P&L + fill history and start the stats clean. Your watchlist "
+			+ "and \"not a flip\" exclude list are kept. This cannot be undone.");
+		resetBtn.addActionListener(e -> {
+			int r = javax.swing.JOptionPane.showConfirmDialog(this,
+				"Wipe your flip journal (all recorded fills + realized P&L) and start clean?\n"
+				+ "Your watchlist and exclude list are kept. This cannot be undone.",
+				"Reset journal", javax.swing.JOptionPane.YES_NO_OPTION, javax.swing.JOptionPane.WARNING_MESSAGE);
+			if (r == javax.swing.JOptionPane.YES_OPTION && onResetJournal != null) onResetJournal.run();
+		});
+		youBox.add(javax.swing.Box.createVerticalStrut(6));
+		youBox.add(resetBtn);
 
 		cardPanel.add(scrollOf(rows), "flips");
 		cardPanel.add(scrollOf(dipsRows), "dips");
