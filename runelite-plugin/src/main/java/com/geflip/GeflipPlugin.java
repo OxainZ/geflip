@@ -170,6 +170,27 @@ public class GeflipPlugin extends Plugin
 		return out;
 	}
 
+	/**
+	 * Mark a held item as sold — records the sale the plugin missed (sold on mobile / while
+	 * closed / a missed event) at the current market estimate, so it FIFO-matches the open
+	 * lots and drops off "To sell". Runs on the client thread (button click).
+	 */
+	void clearHolding(int id)
+	{
+		long[] h = ledger.holdings.get(id);
+		if (h == null || h[0] <= 0) return;
+		int qty = (int) h[0];
+		int price = scanner.sellHint(id);
+		if (price <= 0) price = (int) (h[1] / Math.max(1, h[0]));   // no quote → book flat at cost
+		int tax = GeflipScanner.saleTax(price, scanner.isExempt(id)) * qty;
+		fills.add(new Fill(id, "SELL", price, qty, tax, System.currentTimeMillis() / 1000));
+		if (fills.size() > 3000) fills.remove(0);
+		java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
+		String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
+		java.util.Map<Integer, long[]> win = new java.util.HashMap<>(buyWindows);
+		executor.submit(() -> { saveFills(snap, sig, key, since, win); recompute(); });
+	}
+
 	/** Rebuild the flip ledger from the raw fills + current exclude list, and refresh the panel. */
 	private void recompute()
 	{
@@ -322,7 +343,7 @@ public class GeflipPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new GeflipPanel(this::triggerScan);
+		panel = new GeflipPanel(this::triggerScan, this::clearHolding);
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/geflip_icon.png");
 		navButton = NavigationButton.builder()
 			.tooltip("Geflip")

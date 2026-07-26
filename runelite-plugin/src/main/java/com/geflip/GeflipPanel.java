@@ -39,9 +39,11 @@ class GeflipPanel extends PluginPanel
 	private final JButton tabFlips = new JButton("Flips");
 	private final JButton tabDips = new JButton("Dips");
 	private final JButton tabYou = new JButton("You");
+	private final java.util.function.IntConsumer onClearHold;
 
-	GeflipPanel(Runnable onRefresh)
+	GeflipPanel(Runnable onRefresh, java.util.function.IntConsumer onClearHold)
 	{
+		this.onClearHold = onClearHold;
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
@@ -218,6 +220,14 @@ class GeflipPanel extends PluginPanel
 			p.add(sub, BorderLayout.SOUTH);
 		}
 		p.add(name, BorderLayout.CENTER);
+		// "✓" = I already sold this (plugin missed it — mobile/offline). Records the sale + clears it.
+		JButton sold = new JButton("✓");
+		sold.setToolTipText("Mark as sold — use if you sold it and it's still listed here "
+			+ "(e.g. sold on mobile). Records the sale at the current market price and clears it.");
+		sold.setMargin(new java.awt.Insets(0, 4, 0, 4));
+		sold.setFont(FontManager.getRunescapeSmallFont());
+		sold.addActionListener(e -> { if (onClearHold != null) onClearHold.accept(h.id); });
+		p.add(sold, BorderLayout.EAST);
 		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
