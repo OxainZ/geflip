@@ -330,12 +330,29 @@ public class GeflipPlugin extends Plugin
 		recompute();
 	}
 
+	/** Your items ranked by realized profit — the journal analytics ("what actually pays me"). */
+	private java.util.List<String> topItems()
+	{
+		java.util.List<java.util.Map.Entry<Integer, long[]>> items = new java.util.ArrayList<>(ledger.byItem.entrySet());
+		items.sort((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]));
+		java.util.List<String> lines = new java.util.ArrayList<>();
+		for (int i = 0; i < items.size() && i < 6; i++)
+		{
+			java.util.Map.Entry<Integer, long[]> e = items.get(i);
+			String nm = scanner.nameFor(e.getKey());
+			long profit = e.getValue()[0];
+			lines.add((nm != null ? nm : "#" + e.getKey()) + ": "
+				+ (profit >= 0 ? "+" : "") + gpn(profit) + " (" + e.getValue()[1] + " flips)");
+		}
+		return lines;
+	}
+
 	/** Rebuild the flip ledger from the raw fills + current exclude list, and refresh the panel. */
 	private void recompute()
 	{
 		java.util.Set<Integer> excluded = scanner.idsForNames(excludeLowered());
 		ledger = GeflipLedger.compute(fills, excluded, costOverride);
-		if (panel != null) { panel.setSession(ledger); panel.setHoldings(buildHoldings()); }
+		if (panel != null) { panel.setSession(ledger); panel.setHoldings(buildHoldings()); panel.setTopItems(topItems()); }
 	}
 
 	/** On-disk shape: the fill log, per-slot dedup markers, offer-age clocks, buy windows. */

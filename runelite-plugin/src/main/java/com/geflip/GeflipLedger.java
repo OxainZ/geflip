@@ -29,6 +29,8 @@ final class GeflipLedger
 	long firstTs, lastTs;    // span of the fill log (secs), for the realized gp/day rate
 	// what you're still holding (bought, not yet sold): item id -> [qty, totalCost]
 	final java.util.Map<Integer, long[]> holdings = new HashMap<>();
+	// realized performance per item: id -> [realizedProfit, completedFlips] — journal analytics
+	final java.util.Map<Integer, long[]> byItem = new HashMap<>();
 
 	/** Your ACTUAL win-rate on completed flips (0..1). */
 	double winRate() { return flips > 0 ? (double) wins / flips : 0; }
@@ -81,7 +83,12 @@ final class GeflipLedger
 				}
 				l.realizedFlip += sellProfit;
 				l.matchedUnits += matchedThisSell;
-				if (matchedThisSell > 0) { l.flips++; if (sellProfit > 0) l.wins++; }
+				if (matchedThisSell > 0)
+				{
+					l.flips++; if (sellProfit > 0) l.wins++;
+					long[] bi = l.byItem.computeIfAbsent(f.id, k -> new long[2]);
+					bi[0] += sellProfit; bi[1]++;   // per-item realized profit + flip count
+				}
 				if (remaining > 0)                            // sold something we never logged buying
 				{
 					l.realizedFlip += net * remaining;

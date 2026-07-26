@@ -35,6 +35,7 @@ class GeflipPanel extends PluginPanel
 	private final JPanel decantRows = new JPanel();    // Decant tab (buy low-dose → sell (4))
 	private final JPanel offersBox = new JPanel();     // "Your GE" — live open offers (You tab)
 	private final JPanel holdBox = new JPanel();       // "To sell" — items you hold + sell price (You tab)
+	private final JPanel perfBox = new JPanel();       // "Best items" — realized per-item profit (You tab)
 	private final java.awt.CardLayout cards = new java.awt.CardLayout();
 	private final JPanel cardPanel = new JPanel(cards);
 	private final JButton tabFlips = new JButton("Flips");
@@ -122,17 +123,20 @@ class GeflipPanel extends PluginPanel
 		decantRows.setLayout(new BoxLayout(decantRows, BoxLayout.Y_AXIS));
 		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
 		holdBox.setLayout(new BoxLayout(holdBox, BoxLayout.Y_AXIS));
+		perfBox.setLayout(new BoxLayout(perfBox, BoxLayout.Y_AXIS));
 
-		// "You" card = session P&L + your record + what to sell + live GE offers
+		// "You" card = session P&L + your record + what to sell + best items + live GE offers
 		JPanel youBox = new JPanel();
 		youBox.setLayout(new BoxLayout(youBox, BoxLayout.Y_AXIS));
 		session.setAlignmentX(Component.LEFT_ALIGNMENT);
 		calib.setAlignmentX(Component.LEFT_ALIGNMENT);
 		offersBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		holdBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+		perfBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		youBox.add(session);
 		youBox.add(calib);
 		youBox.add(holdBox);
+		youBox.add(perfBox);
 		youBox.add(offersBox);
 
 		cardPanel.add(scrollOf(rows), "flips");
@@ -200,6 +204,34 @@ class GeflipPanel extends PluginPanel
 					+ " your log spans. This is the honest profitability number — use it over any estimate.");
 			}
 			else calib.setText("record: no completed flips yet — it fills in as you flip");
+		});
+	}
+
+	/** Render "Best items" — your realized profit per item (journal analytics). */
+	void setTopItems(List<String> lines)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			perfBox.removeAll();
+			if (lines != null && !lines.isEmpty())
+			{
+				JLabel hdr = new JLabel("Best items (realized)");
+				hdr.setForeground(ColorScheme.BRAND_ORANGE);
+				hdr.setBorder(BorderFactory.createEmptyBorder(6, 1, 2, 1));
+				hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
+				perfBox.add(hdr);
+				for (String s : lines)
+				{
+					JLabel l = new JLabel(s);
+					l.setFont(FontManager.getRunescapeSmallFont());
+					l.setForeground(s.contains(": +") ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.PROGRESS_ERROR_COLOR);
+					l.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
+					l.setAlignmentX(Component.LEFT_ALIGNMENT);
+					perfBox.add(l);
+				}
+			}
+			perfBox.revalidate();
+			perfBox.repaint();
 		});
 	}
 
