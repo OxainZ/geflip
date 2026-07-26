@@ -61,9 +61,10 @@ public class CoachEngineTest
 		assertEquals(CoachEngine.Status.READY, by.get("Zulrah (money boss)").status);
 		// Dizana's: 84 ranged but Children of the Sun not done → exactly 1 gap → ALMOST.
 		assertEquals(CoachEngine.Status.ALMOST, by.get("Dizana's quiver (BiS ranged cape)").status);
-		// Barrows gloves: only RFD missing → ALMOST, one gap.
+		// Barrows gloves: RFD not done + Agility 53<65 → ALMOST, two gaps (incl. Agility).
 		assertEquals(CoachEngine.Status.ALMOST, by.get("Barrows gloves").status);
-		assertEquals(1, by.get("Barrows gloves").gaps.size());
+		assertEquals(2, by.get("Barrows gloves").gaps.size());
+		assertTrue(by.get("Barrows gloves").gaps.stream().anyMatch(g -> g.contains("Agility")));
 		// Piety: prayer 63→70 is the only gap → ALMOST.
 		assertEquals(CoachEngine.Status.ALMOST, by.get("Piety (melee prayer)").status);
 		// DS2: many skill gaps → BLOCKED, and QP is NOT among them (225 >= 200).
@@ -72,8 +73,16 @@ public class CoachEngineTest
 		assertTrue(ds2.gaps.stream().noneMatch(g -> g.startsWith("QP")));
 		assertTrue(ds2.gaps.stream().anyMatch(g -> g.contains("Construction")));
 
-		// The headline list must lead with something actionable.
+		// THE FIX: a single huge gap is NOT "almost". Infernal (endgame) and +39-slayer Kraken
+		// must be BLOCKED, never ALMOST.
+		assertEquals(CoachEngine.Status.BLOCKED, by.get("Infernal cape").status);
+		assertEquals(CoachEngine.Status.BLOCKED, by.get("Kraken (slayer boss)").status);
+		// The headline list must lead with something actionable, and never surface Infernal near the top.
 		List<CoachEngine.Scored> next = CoachEngine.doNext(all);
 		assertTrue(next.get(0).status == CoachEngine.Status.READY);
+		assertTrue(next.stream().noneMatch(sc -> sc.goal.name.equals("Infernal cape")));
+
+		// Quest recommender knows what's done: RFD is NOT finished here → it must appear.
+		assertTrue(CoachEngine.quests(s).stream().anyMatch(qs -> qs.rec.q == net.runelite.api.Quest.RECIPE_FOR_DISASTER));
 	}
 }

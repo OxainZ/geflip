@@ -20,8 +20,16 @@ final class CoachGoals
 {
 	private CoachGoals() {}
 
-	/** A single requirement. Returns null if met, else a short human gap. */
-	interface Req { String gap(CoachState s); }
+	/** An unmet requirement: a short human label + a WEIGHT (roughly "how far", so the engine can
+	 *  tell a +1 gap from a +47 gap — a single huge gap is NOT "almost done"). */
+	static final class Gap
+	{
+		final String text; final int weight;
+		Gap(String text, int weight) { this.text = text; this.weight = weight; }
+	}
+
+	/** A single requirement. Returns null if met, else a Gap. */
+	interface Req { Gap gap(CoachState s); }
 
 	static final class Goal
 	{
@@ -30,18 +38,18 @@ final class CoachGoals
 		{ this.name = name; this.impact = impact; this.effort = effort; this.note = note; this.reqs = Arrays.asList(reqs); }
 	}
 
-	// --- requirement factories ------------------------------------------------
-	static Req skill(Skill sk, int lvl) { return s -> s.level(sk) >= lvl ? null : cap(sk.name()) + " +" + (lvl - s.level(sk)); }
-	static Req quest(Quest q)           { return s -> s.finished(q) ? null : "quest: " + pretty(q); }
-	static Req questStarted(Quest q)    { return s -> s.started(q) ? null : "start: " + pretty(q); }
-	static Req qp(int n)                { return s -> s.qp >= n ? null : "QP +" + (n - s.qp); }
-	static Req coins(long n)            { return s -> (s.coins < 0 || s.coins >= n) ? null : "need " + gp(n) + " gp"; }
+	// --- requirement factories (weight ≈ levels/effort remaining) --------------
+	static Req skill(Skill sk, int lvl) { return s -> s.level(sk) >= lvl ? null : new Gap(cap(sk.name()) + " +" + (lvl - s.level(sk)), lvl - s.level(sk)); }
+	static Req quest(Quest q)           { return s -> s.finished(q) ? null : new Gap("quest: " + pretty(q), 6); }
+	static Req questStarted(Quest q)    { return s -> s.started(q) ? null : new Gap("start: " + pretty(q), 4); }
+	static Req qp(int n)                { return s -> s.qp >= n ? null : new Gap("QP +" + (n - s.qp), Math.min(20, n - s.qp)); }
+	static Req coins(long n)            { return s -> (s.coins < 0 || s.coins >= n) ? null : new Gap("need " + gp(n) + " gp", 5); }
 	/** Item you should own; while the bank is unread we can't see banked items, so it stays a gap
 	 *  until you open your bank once (honest — better than a false "ready"). */
 	static Req item(String label, int... ids)
 	{
 		return s -> { for (int id : ids) if (s.owns(id)) return null;
-			return s.bankKnown ? "need " + label : "need " + label + " (open bank to confirm)"; };
+			return new Gap(s.bankKnown ? "need " + label : "need " + label + " (open bank to confirm)", 6); };
 	}
 
 	// --- key items the plugin scans equipment/inventory/bank for --------------
@@ -65,8 +73,8 @@ final class CoachGoals
 	static
 	{
 		// --- cheap, huge-value unlocks -----------------------------------------
-		GOALS.add(new Goal("Barrows gloves", 5, "quick", "Recipe for Disaster — near-BiS gloves, permanent, cheap. Best ROI unlock in the game.",
-			quest(Quest.RECIPE_FOR_DISASTER)));
+		GOALS.add(new Goal("Barrows gloves", 5, "medium", "Recipe for Disaster — near-BiS gloves, permanent, cheap. The last subquest (King Awowogei) needs ~65 Agility (boostable to 70 with a Summer pie).",
+			quest(Quest.RECIPE_FOR_DISASTER), skill(Skill.COOKING, 70), skill(Skill.AGILITY, 65)));
 		GOALS.add(new Goal("Void ranged set", 3, "quick", "Pest Control — cheap strong ranged armour; great for Zulrah/slayer while you save for better.",
 			skill(Skill.RANGED, 42), skill(Skill.DEFENCE, 42), skill(Skill.HITPOINTS, 42), skill(Skill.PRAYER, 22)));
 		GOALS.add(new Goal("Ancient Magicks (Barrage)", 4, "medium", "Desert Treasure I — unlocks Ice Barrage/Burst for AoE slayer (huge XP + money at nechs/dust devils).",
@@ -103,8 +111,9 @@ final class CoachGoals
 			skill(Skill.RANGED, 75), quest(Quest.CHILDREN_OF_THE_SUN)));
 		GOALS.add(new Goal("Amulet of anguish", 3, "medium", "Ranged BiS neck — big step up from fury for a ranger.",
 			item("Amulet of anguish", ANGUISH)));
-		GOALS.add(new Goal("Infernal cape", 4, "grind", "The Inferno — endgame cape. Realistically a near-max goal; long-term, not next.",
-			skill(Skill.RANGED, 90), skill(Skill.PRAYER, 74)));
+		GOALS.add(new Goal("Infernal cape", 4, "grind", "The Inferno — ENDGAME. One of the hardest solo challenges in the game; expect near-max stats, BiS gear, Rigour, and many attempts. Not a near-term goal.",
+			skill(Skill.RANGED, 92), skill(Skill.MAGIC, 90), skill(Skill.DEFENCE, 82), skill(Skill.HITPOINTS, 90),
+			skill(Skill.PRAYER, 77)));
 
 		// --- long-term gateways -------------------------------------------------
 		GOALS.add(new Goal("Monkey Madness 2", 3, "medium", "Unlocks demonic gorillas (zenyte drops) + is a prereq for later content.",
@@ -114,6 +123,40 @@ final class CoachGoals
 			skill(Skill.AGILITY, 70), skill(Skill.CONSTRUCTION, 70), skill(Skill.FARMING, 70), skill(Skill.HERBLORE, 70),
 			skill(Skill.HUNTER, 70), skill(Skill.MINING, 70), skill(Skill.SMITHING, 70), skill(Skill.THIEVING, 70),
 			skill(Skill.WOODCUTTING, 70), skill(Skill.CRAFTING, 70), skill(Skill.MAGIC, 70)));
+	}
+
+	// --- curated high-value quests (with their BINDING requirements) ----------
+	static final class QuestRec
+	{
+		final Quest q; final String note; final List<Req> reqs;
+		QuestRec(Quest q, String note, Req... reqs) { this.q = q; this.note = note; this.reqs = Arrays.asList(reqs); }
+	}
+	static final List<QuestRec> QUESTS = new ArrayList<>();
+	static
+	{
+		QUESTS.add(new QuestRec(Quest.DESERT_TREASURE_I, "Ancient Magicks (Ice Barrage/Burst) — turbo-charges Slayer.",
+			skill(Skill.FIREMAKING, 50), skill(Skill.MAGIC, 50), skill(Skill.SLAYER, 10)));
+		QUESTS.add(new QuestRec(Quest.MONKEY_MADNESS_I, "Dragon scimitar + opens MM2 and the RFD monkey subquest."));
+		QUESTS.add(new QuestRec(Quest.REGICIDE, "Access to Zul-Andra (Zulrah) + elf lands."));
+		QUESTS.add(new QuestRec(Quest.RECIPE_FOR_DISASTER, "Barrows gloves. NOTE: the King Awowogei subquest needs ~70 Agility (boostable).",
+			skill(Skill.COOKING, 70), skill(Skill.AGILITY, 65)));
+		QUESTS.add(new QuestRec(Quest.CHILDREN_OF_THE_SUN, "Short — unlocks Fortis Colosseum → Dizana's quiver."));
+		QUESTS.add(new QuestRec(Quest.LUNAR_DIPLOMACY, "Lunar spellbook (NPC Contact, Humidify, Vengeance later).",
+			skill(Skill.MAGIC, 65), skill(Skill.HERBLORE, 60), skill(Skill.CRAFTING, 55)));
+		QUESTS.add(new QuestRec(Quest.MONKEY_MADNESS_II, "Demonic gorillas (zenyte drops).",
+			quest(Quest.MONKEY_MADNESS_I), skill(Skill.SLAYER, 69), skill(Skill.CRAFTING, 70),
+			skill(Skill.HUNTER, 60), skill(Skill.AGILITY, 55), skill(Skill.THIEVING, 55), skill(Skill.FIREMAKING, 60)));
+		QUESTS.add(new QuestRec(Quest.DRAGON_SLAYER_II, "Vorkath (~3M/hr).",
+			qp(200), skill(Skill.MAGIC, 75), skill(Skill.SMITHING, 70), skill(Skill.MINING, 68),
+			skill(Skill.AGILITY, 62), skill(Skill.THIEVING, 60), skill(Skill.CONSTRUCTION, 60),
+			skill(Skill.HUNTER, 50), skill(Skill.HERBLORE, 50)));
+		QUESTS.add(new QuestRec(Quest.DESERT_TREASURE_II__THE_FALLEN_EMPIRE, "Ancient rings + BiS unlocks.",
+			skill(Skill.MAGIC, 75), skill(Skill.FIREMAKING, 90), skill(Skill.MINING, 62), skill(Skill.HERBLORE, 60),
+			skill(Skill.RUNECRAFT, 60), skill(Skill.CONSTRUCTION, 55), skill(Skill.AGILITY, 50), skill(Skill.THIEVING, 50)));
+		QUESTS.add(new QuestRec(Quest.SONG_OF_THE_ELVES, "Prifddinas + The Gauntlet (crystal gear) + Zalcano.",
+			skill(Skill.AGILITY, 70), skill(Skill.CONSTRUCTION, 70), skill(Skill.FARMING, 70), skill(Skill.HERBLORE, 70),
+			skill(Skill.HUNTER, 70), skill(Skill.MINING, 70), skill(Skill.SMITHING, 70), skill(Skill.THIEVING, 70),
+			skill(Skill.WOODCUTTING, 70), skill(Skill.CRAFTING, 70)));
 	}
 
 	// --- helpers --------------------------------------------------------------

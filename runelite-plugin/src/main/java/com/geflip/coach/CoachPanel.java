@@ -167,11 +167,16 @@ class CoachPanel extends PluginPanel
 		});
 	}
 
-	void setGoals(List<CoachEngine.Scored> rows, List<String> diaries)
+	void setGoals(List<CoachEngine.Scored> rows, List<String> quests, List<String> diaries)
 	{
 		SwingUtilities.invokeLater(() -> {
 			goalsBox.removeAll();
 			if (rows != null) for (CoachEngine.Scored sc : rows) goalsBox.add(row(sc));
+			if (quests != null && !quests.isEmpty())
+			{
+				goalsBox.add(header("Next quests"));
+				for (String q : quests) goalsBox.add(hint(q));
+			}
 			if (diaries != null && !diaries.isEmpty())
 			{
 				goalsBox.add(header("Achievement diaries"));

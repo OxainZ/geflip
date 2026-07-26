@@ -99,7 +99,7 @@ public class CoachPlugin extends Plugin
 				+ (st.coins >= 0 ? " · " + CoachGoals.gp(st.coins) + " gp" : "")
 				+ (st.bankKnown ? "" : " · (open bank for gear)"));
 			p.setNext(CoachEngine.doNext(all));
-			p.setGoals(all, diaryLines());
+			p.setGoals(all, questLines(st), diaryLines());
 			p.setBlocked(CoachEngine.blocked(all));
 		});
 	}
@@ -118,8 +118,12 @@ public class CoachPlugin extends Plugin
 			levels.put(sk, client.getRealSkillLevel(sk));
 		}
 		int qp = client.getVarpValue(VarPlayer.QUEST_POINTS);
+		// read EVERY quest's state so the coach knows what you've already done (and never suggests it)
 		Map<Quest, net.runelite.api.QuestState> quests = new EnumMap<>(Quest.class);
-		for (Quest q : CoachGoals.KEY_QUESTS) quests.put(q, q.getState(client));
+		for (Quest q : Quest.values())
+		{
+			try { quests.put(q, q.getState(client)); } catch (Exception ignored) { /* skip odd entries */ }
+		}
 
 		Set<Integer> keyIds = new HashSet<>();
 		for (int id : CoachGoals.KEY_ITEMS) keyIds.add(id);
@@ -171,6 +175,18 @@ public class CoachPlugin extends Plugin
 	};
 	private static final String[] TIER = { "Easy", "Medium", "Hard", "Elite" };
 
+	/** Curated high-value quests you HAVEN'T done, do-now first (reads every quest so it never lists
+	 *  one you've finished). */
+	private List<String> questLines(CoachState st)
+	{
+		List<String> out = new ArrayList<>();
+		for (CoachEngine.QuestScored qs : CoachEngine.quests(st))
+			out.add((qs.ready ? "✓ " : "○ ") + CoachGoals.pretty(qs.rec.q)
+				+ (qs.ready ? " — do now" : " — " + String.join(", ", qs.gaps)));
+		if (out.isEmpty()) out.add("all tracked quests done — nice");
+		return out;
+	}
+
 	private List<String> diaryLines()
 	{
 		List<String> out = new ArrayList<>();
@@ -208,6 +224,67 @@ public class CoachPlugin extends Plugin
 		for (CoachEngine.Scored sc : all) if (sc.status == CoachEngine.Status.ALMOST) b.append(sc.goal.name).append(" [").append(String.join(", ", sc.gaps)).append("]; ");
 		b.append("\nBlocked (long-term): ");
 		for (CoachEngine.Scored sc : CoachEngine.blocked(all)) b.append(sc.goal.name).append(" [").append(String.join(", ", sc.gaps)).append("]; ");
+		// QUESTS — the coach reads EVERY quest, so it knows what you've done and what's left that matters
+		int done = 0; for (Quest q : st.quests.keySet()) if (st.finished(q)) done++;
+		b.append("\n\nQUESTS (").append(done).append(" of ").append(st.quests.size()).append(" tracked done). High-value not-done:\n");
+		for (CoachEngine.QuestScored qs : CoachEngine.quests(st))
+			b.append("- ").append(CoachGoals.pretty(qs.rec.q)).append(qs.ready ? " — DO NOW" : " [" + String.join(", ", qs.gaps) + "]")
+				.append(" (").append(qs.rec.note).append(")\n");
+		return b.toString();
+	}
+
+	/** Deterministic answer from the coach's own brain — used when no LLM endpoint is set, so the Ask
+	 *  box always gives real advice instead of a dead message. Routes on the question's intent. */
+	private String localAnswer(String question)
+	{
+		CoachState st = lastState;
+		if (st == null || !st.loggedIn) return "Log in and rescan first, then ask again.";
+		String q = question.toLowerCase();
+		List<CoachEngine.Scored> all = CoachEngine.evaluate(st);
+		StringBuilder b = new StringBuilder();
+		if (q.contains("quest"))
+		{
+			b.append("Next quests for your stats:\n");
+			int n = 0;
+			for (CoachEngine.QuestScored qs : CoachEngine.quests(st))
+			{
+				if (n++ >= 8) break;
+				b.append(qs.ready ? "✓ DO NOW: " : "○ ").append(CoachGoals.pretty(qs.rec.q));
+				if (!qs.ready) b.append(" — needs ").append(String.join(", ", qs.gaps));
+				b.append("  · ").append(qs.rec.note).append('\n');
+			}
+			return b.toString();
+		}
+		if (q.contains("money") || q.contains("gp") || q.contains("boss") || q.contains("cash"))
+		{
+			b.append("Best money/bosses you can do NOW:\n");
+			for (CoachEngine.Scored sc : CoachEngine.doNext(all))
+				if (sc.status == CoachEngine.Status.READY) b.append("✓ ").append(sc.goal.name).append(" — ").append(sc.goal.note).append('\n');
+			return b.length() == 0 ? "Nothing boss-ready yet — see the Next tab." : b.toString();
+		}
+		if (q.contains("train") || q.contains("skill") || q.contains("prayer") || q.contains("level") || q.contains("grind") || q.contains("next"))
+		{
+			b.append("Highest-leverage next steps:\n");
+			int n = 0;
+			for (CoachEngine.Scored sc : CoachEngine.doNext(all))
+			{
+				if (n++ >= 8) break;
+				b.append(sc.status == CoachEngine.Status.READY ? "✓ " : "○ ").append(sc.goal.name);
+				if (!sc.gaps.isEmpty()) b.append(" — ").append(String.join(", ", sc.gaps));
+				b.append('\n');
+			}
+			return b.toString();
+		}
+		// default: the do-next plan
+		b.append("Do next:\n");
+		int n = 0;
+		for (CoachEngine.Scored sc : CoachEngine.doNext(all))
+		{
+			if (n++ >= 8) break;
+			b.append(sc.status == CoachEngine.Status.READY ? "✓ " : "○ ").append(sc.goal.name)
+				.append(sc.gaps.isEmpty() ? " (ready)" : " — " + String.join(", ", sc.gaps)).append('\n');
+		}
+		b.append("\n(Set an LLM endpoint in Config → Ask, or use Copy-context → paste into Claude, for free-form coaching.)");
 		return b.toString();
 	}
 
@@ -217,8 +294,8 @@ public class CoachPlugin extends Plugin
 		final String url = config.askUrl().trim();
 		if (url.isEmpty())
 		{
-			if (panel != null) panel.setAskResult("No LLM endpoint set (Config → Ask). Use the Copy-context "
-				+ "button and paste it, plus your question, into Claude.\n\nYour question: " + question);
+			// no endpoint → answer from the coach's own engine instead of a dead message
+			if (panel != null) panel.setAskResult(localAnswer(question));
 			return;
 		}
 		executor.submit(() ->
@@ -239,19 +316,38 @@ public class CoachPlugin extends Plugin
 	/** Minimal OpenAI-compatible chat-completions POST; parses OpenAI or Anthropic response shapes. */
 	private String callLlm(String url, String key, String model, String ctx, String question) throws Exception
 	{
-		JsonObject sys = new JsonObject(); sys.addProperty("role", "system"); sys.addProperty("content", ctx);
-		JsonObject usr = new JsonObject(); usr.addProperty("role", "user"); usr.addProperty("content", question);
-		JsonArray msgs = new JsonArray(); msgs.add(sys); msgs.add(usr);
+		boolean anthropic = url.contains("anthropic.com");
 		JsonObject body = new JsonObject();
-		body.addProperty("model", model.isEmpty() ? "gpt-4o-mini" : model);
-		body.add("messages", msgs);
-		body.addProperty("max_tokens", 800);
+		JsonObject usr = new JsonObject(); usr.addProperty("role", "user"); usr.addProperty("content", question);
+		JsonArray msgs = new JsonArray();
+		if (anthropic)
+		{
+			// Anthropic Messages API: system is a top-level field, max_tokens required, x-api-key auth.
+			body.addProperty("model", model.isEmpty() ? "claude-sonnet-4-5" : model);
+			body.addProperty("max_tokens", 900);
+			body.addProperty("system", ctx);
+			msgs.add(usr);
+			body.add("messages", msgs);
+		}
+		else
+		{
+			// OpenAI-compatible chat completions: system as a message, Bearer auth.
+			JsonObject sys = new JsonObject(); sys.addProperty("role", "system"); sys.addProperty("content", ctx);
+			msgs.add(sys); msgs.add(usr);
+			body.addProperty("model", model.isEmpty() ? "gpt-4o-mini" : model);
+			body.add("messages", msgs);
+			body.addProperty("max_tokens", 900);
+		}
 
 		HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
 		c.setRequestMethod("POST");
 		c.setConnectTimeout(15000); c.setReadTimeout(60000);
 		c.setRequestProperty("Content-Type", "application/json");
-		if (!key.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + key);
+		if (!key.isEmpty())
+		{
+			if (anthropic) { c.setRequestProperty("x-api-key", key); c.setRequestProperty("anthropic-version", "2023-06-01"); }
+			else c.setRequestProperty("Authorization", "Bearer " + key);
+		}
 		c.setDoOutput(true);
 		byte[] out = body.toString().getBytes(StandardCharsets.UTF_8);
 		try (OutputStream os = c.getOutputStream()) { os.write(out); }
