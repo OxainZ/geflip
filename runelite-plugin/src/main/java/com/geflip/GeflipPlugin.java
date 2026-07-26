@@ -186,18 +186,21 @@ public class GeflipPlugin extends Plugin
 			int qty = (int) e.getValue()[0];
 			if (qty <= 0) continue;
 			// cost per unit: your manual correction if you set one, else the FIFO average
-			long avg = costOverride.containsKey(id) ? costOverride.get(id) : e.getValue()[1] / qty;
+			Long ov = costOverride.get(id);   // single lookup — no check-then-get race
+			long avg = ov != null ? ov : e.getValue()[1] / qty;
+			// subtract what you've ALREADY LISTED for sale — that's not "to sell" anymore.
+			// (only actively-SELLING units; a CANCELLED sell is back in your hands.)
+			qty -= listedForSaleQty(id);
+			if (qty <= 0) continue;
 			if (invKnown)
 			{
 				int have = possessed(id);
 				if (have <= 0)
 				{
-					if (inActiveBuy(id)) { /* uncollected buy — still yours, keep */ }
-					else if (inActiveSell(id)) continue;   // already LISTED for sale — not "to sell" anymore
-					else if (bankKnown) continue;           // provably no longer held
-					// else bank unknown & not in GE → keep (safe; ✓ is the manual fallback)
+					// nothing in hand: keep only if it's an uncollected buy or the bank is unread
+					if (!inActiveBuy(id) && bankKnown) continue;   // provably no longer held
 				}
-				else if (have < qty) qty = have;   // some sold/listed — show only what's actually in hand
+				else if (have < qty) qty = have;   // some sold — show only what's actually in hand
 			}
 			String nm = scanner.nameFor(id);
 			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id), scanner.isExempt(id)));
@@ -302,7 +305,14 @@ public class GeflipPlugin extends Plugin
 	{
 		if (cost > 0) costOverride.put(id, cost);
 		else costOverride.remove(id);
-		recompute();
+		// PERSIST it (recompute alone never saves) — snapshot the arrays on the client thread
+		clientThread.invoke(() ->
+		{
+			java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
+			String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
+			java.util.Map<Integer, long[]> win = deepCopyWindows();
+			executor.submit(() -> { saveFills(snap, sig, key, since, win); recompute(); });
+		});
 	}
 
 	/** Mark an item as PERSONAL USE (not a flip): adds it to the exclude list so it leaves
@@ -687,12 +697,14 @@ public class GeflipPlugin extends Plugin
 		return false;
 	}
 
-	/** Have you already LISTED this item for sale (so it's not "to sell" anymore)? */
-	private boolean inActiveSell(int id)
+	/** Units of an item you've ALREADY LISTED for sale (actively SELLING, unfilled remainder).
+	 *  A CANCELLED sell is NOT counted — those units are back in your hands to re-sell. */
+	private int listedForSaleQty(int id)
 	{
+		int n = 0;
 		for (Offer o : offerSnapshot)
-			if (o.id == id && o.state != null && (o.state.contains("SELL") || o.state.equals("SOLD"))) return true;
-		return false;
+			if (o.id == id && "SELLING".equals(o.state)) n += Math.max(0, o.qtyTotal - o.qtySold);
+		return n;
 	}
 
 	/** The bankroll to size flips with: your real coins if auto is on and known, else the config. */
