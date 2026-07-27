@@ -60,6 +60,8 @@ public class GeflipPlugin extends Plugin
 	// snapshots of what you actually hold (item id -> qty), taken on the client thread so the
 	// off-thread holdings reconcile never touches live containers. null = not read yet.
 	private volatile java.util.Map<Integer, Integer> invCounts;
+	private volatile java.util.Set<Integer> excludedIds = java.util.Collections.emptySet();   // personal-use ids
+	private final java.util.concurrent.atomic.AtomicBoolean scanning = new java.util.concurrent.atomic.AtomicBoolean(false);
 	private volatile java.util.Map<Integer, Integer> bankCounts;
 
 	private final GeflipScanner scanner = new GeflipScanner();
@@ -233,7 +235,27 @@ public class GeflipPlugin extends Plugin
 			String nm = scanner.nameFor(id);
 			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id), scanner.isExempt(id)));
 		}
-		out.sort((a, b) -> Long.compare((long) b.qty * b.avgCost, (long) a.qty * a.avgCost));
+		// ALSO surface tradeable items sitting in your INVENTORY that the flip ledger never tracked you
+		// buying (drops, older buys, a flip where you bailed on the sell, anything you brought to the GE)
+		// so nothing you're holding is silently missing from To-sell. Cost is unknown for these (shown as
+		// "—"); already-listed units are netted out, and personal-use / non-tradeable items are skipped.
+		java.util.Map<Integer, Integer> inv = invCounts;
+		if (inv != null)
+		{
+			java.util.Set<Integer> shown = new java.util.HashSet<>();
+			for (Hold h : out) shown.add(h.id);
+			for (java.util.Map.Entry<Integer, Integer> ie : inv.entrySet())
+			{
+				int id = ie.getKey();
+				if (id == ItemID.COINS_995 || shown.contains(id) || excludedIds.contains(id)) continue;
+				String nm = scanner.nameFor(id);
+				if (nm == null) continue;                              // not on the GE mapping ⇒ can't sell it there
+				int qty = ie.getValue() - listedForSaleQty(id);        // don't re-list what's already selling
+				if (qty <= 0) continue;
+				out.add(new Hold(id, nm, qty, -1, scanner.sellHint(id), scanner.isExempt(id)));   // −1 = cost untracked
+			}
+		}
+		out.sort((a, b) -> Long.compare((long) b.qty * Math.max(0, b.avgCost), (long) a.qty * Math.max(0, a.avgCost)));
 		return out;
 	}
 
@@ -492,7 +514,9 @@ public class GeflipPlugin extends Plugin
 		java.util.List<java.util.Map.Entry<Integer, long[]>> items = new java.util.ArrayList<>(ledger.byItem.entrySet());
 		items.sort((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]));
 		java.util.List<String> lines = new java.util.ArrayList<>();
-		for (int i = 0; i < items.size() && i < 8; i++)
+		// show EVERY item you've flipped (sorted by realized profit — winners top, losers bottom), not
+		// just the top few: the whole point of the journal is to see the full ledger, and it scrolls.
+		for (int i = 0; i < items.size(); i++)
 		{
 			java.util.Map.Entry<Integer, long[]> e = items.get(i);
 			String nm = scanner.nameFor(e.getKey());
@@ -520,6 +544,7 @@ public class GeflipPlugin extends Plugin
 	private void recompute(boolean fromSell, int soldId)
 	{
 		java.util.Set<Integer> excluded = scanner.idsForNames(excludeLowered());
+		excludedIds = excluded;   // shared with buildHoldings so personal-use items don't show as "to sell"
 		ledger = GeflipLedger.compute(fills, excluded, costOverride);
 		if (notifyPrimed && fromSell && config.flipAlerts() && ledger.realizedFlip != lastRealizedNotified)
 		{
@@ -761,6 +786,10 @@ public class GeflipPlugin extends Plugin
 	{
 		executor.submit(() ->
 		{
+			// don't let scans pile up: the fixed-delay scheduler fires every refreshSec regardless of how
+			// long the previous scan took, and a slow/rate-limited wiki can make the timeseries pass run
+			// long — overlapping scans would amplify the load into a feedback loop. Skip if one's running.
+			if (!scanning.compareAndSet(false, true)) return;
 			GeflipPanel p = panel;    // may be nulled by shutDown() while this runs
 			try
 			{
@@ -781,6 +810,7 @@ public class GeflipPlugin extends Plugin
 				log.warn("geflip scan failed", e);
 				if (p != null) p.setStatus("scan failed — check connection");
 			}
+			finally { scanning.set(false); }
 			checkDumps();  // warn if anything you HOLD has crashed below your buy
 			checkWatch();  // ping when a watched item goes cheap
 			cloudPush();   // push fills/session to the cloud store (no-op if not configured)

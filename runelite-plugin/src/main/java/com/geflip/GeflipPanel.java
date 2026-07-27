@@ -384,7 +384,17 @@ class GeflipPanel extends PluginPanel
 		JLabel name = new JLabel(h.name + "  ×" + h.qty);
 		name.setForeground(ColorScheme.TEXT_COLOR);
 		String line2;
-		if (h.sellHint > 0)
+		if (h.sellHint > 0 && h.avgCost < 0)
+		{
+			// untracked item (in your bag, no flip cost basis) — just tell you where to list it
+			JLabel sub = new JLabel("sell @ " + gp(h.sellHint) + "   (no cost tracked)");
+			sub.setFont(FontManager.getRunescapeSmallFont());
+			sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			p.add(sub, BorderLayout.SOUTH);
+			p.setToolTipText("You're holding " + h.qty + " — not from a tracked flip buy, so there's no cost basis. "
+				+ "List a sell at ~" + gp(h.sellHint) + ". Use ✎ to set your real cost, or ⊘ to hide if it's personal.");
+		}
+		else if (h.sellHint > 0)
 		{
 			long tax = (h.exempt || h.sellHint < 50) ? 0 : Math.min((long) (h.sellHint * 0.02), 5_000_000);
 			long net = h.sellHint - tax;

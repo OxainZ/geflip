@@ -110,20 +110,27 @@ public class CoachPlugin extends Plugin
 		panel = null;
 	}
 
-	/** Start/stop the phone bridge to match the toggle (cheap to call every rescan). A failed bind
-	 *  (port already in use) just leaves it off rather than throwing into the refresh loop. */
+	private int builtPort = -1;          // port/token the LIVE phoneServer was built with, so a runtime
+	private String builtToken = "";      // change (esp. adding a token) rebuilds instead of serving stale
+
+	/** Start/stop/REBUILD the phone bridge to match the toggle + port + token (cheap to call every
+	 *  rescan). A failed bind (port already in use) just leaves it off rather than throwing into the
+	 *  refresh loop. Critically: if you add a token expecting protection, the old open server is torn
+	 *  down and rebuilt with it — it never keeps serving on the previous (possibly blank) token. */
 	private void ensurePhoneServer()
 	{
 		boolean want = config.phoneSync();
-		if (want && phoneServer == null)
-		{
-			try { phoneServer = new CoachServer(config.phonePort(), config.phoneToken().trim()).withState(() -> snapshot); phoneServer.start(); }
-			catch (Exception e) { phoneServer = null; }
-		}
-		else if (!want && phoneServer != null)
+		int port = config.phonePort();
+		String token = config.phoneToken().trim();
+		if (phoneServer != null && (!want || port != builtPort || !token.equals(builtToken)))
 		{
 			try { phoneServer.stop(); } catch (Exception ignored) {}
 			phoneServer = null;
+		}
+		if (want && phoneServer == null)
+		{
+			try { phoneServer = new CoachServer(port, token).withState(() -> snapshot); phoneServer.start(); builtPort = port; builtToken = token; }
+			catch (Exception e) { phoneServer = null; }
 		}
 	}
 
@@ -467,6 +474,7 @@ public class CoachPlugin extends Plugin
 			+ "  ·  Prayer: " + client.getBoostedSkillLevel(Skill.PRAYER) + "/" + client.getRealSkillLevel(Skill.PRAYER));
 		// est. max hit from your EQUIPPED strength / ranged-str / magic-dmg bonuses (base: no prayer/style)
 		int strB = 0, rstrB = 0; double mdmgB = 0;
+		boolean twoH = false;   // a 2H weapon leaves the shield slot forced-empty — don't credit shield upgrades
 		Map<Integer, Integer> slotStr = new java.util.HashMap<>();    // slot -> melee str bonus
 		Map<Integer, Integer> slotRstr = new java.util.HashMap<>();   // slot -> ranged str bonus
 		Map<Integer, Double> slotMdmg = new java.util.HashMap<>();    // slot -> magic dmg %
@@ -478,6 +486,7 @@ public class CoachPlugin extends Plugin
 			if (s == null || s.getEquipment() == null) continue;
 			net.runelite.client.game.ItemEquipmentStats e = s.getEquipment();
 			strB += e.getStr(); rstrB += e.getRstr(); mdmgB += e.getMdmg();
+			if (e.getSlot() == 3 && e.isTwoHanded()) twoH = true;   // slot 3 = weapon
 			slotStr.merge(e.getSlot(), e.getStr(), Integer::sum);
 			slotRstr.merge(e.getSlot(), e.getRstr(), Integer::sum);
 			slotMdmg.merge(e.getSlot(), (double) e.getMdmg(), Double::sum);
@@ -487,9 +496,9 @@ public class CoachPlugin extends Plugin
 		int meleeMax = (int) (0.5 + (bStr + 8) * (strB + 64) / 640.0);
 		int rangeMax = (int) (0.5 + (bRng + 8) * (rstrB + 64) / 640.0);
 		out.add("Est. max hit — melee ~" + meleeMax + " · ranged ~" + rangeMax + "  (base: no prayer/combat style)");
-		out.addAll(strengthUpgrades("Best melee upgrades (max-hit gain):", MELEE_UPGRADES, true, strB, bStr, meleeMax, slotStr));
-		out.addAll(strengthUpgrades("Best ranged upgrades (max-hit gain):", RANGED_UPGRADES, false, rstrB, bRng, rangeMax, slotRstr));
-		out.addAll(magicUpgrades(mdmgB, slotMdmg));
+		out.addAll(strengthUpgrades("Best melee upgrades (max-hit gain):", MELEE_UPGRADES, true, strB, bStr, meleeMax, slotStr, twoH));
+		out.addAll(strengthUpgrades("Best ranged upgrades (max-hit gain):", RANGED_UPGRADES, false, rstrB, bRng, rangeMax, slotRstr, twoH));
+		out.addAll(magicUpgrades(mdmgB, slotMdmg, twoH));
 		out.add("(Bank + banked coins are NOT at risk — only what's equipped/carried.)");
 		return out;
 	}
@@ -525,7 +534,7 @@ public class CoachPlugin extends Plugin
 	/** Max-hit-gain finder for a strength-based style (melee=getStr, ranged=getRstr). For each candidate
 	 *  it reports the max-hit gain from swapping it into its slot, ranked, with the live GE price. */
 	private List<String> strengthUpgrades(String header, int[] ids, boolean melee,
-		int curBonus, int boostedLvl, int curMax, Map<Integer, Integer> slotBonus)
+		int curBonus, int boostedLvl, int curMax, Map<Integer, Integer> slotBonus, boolean twoH)
 	{
 		java.util.List<Object[]> ups = new ArrayList<>();   // {label, gain, price}
 		for (int id : ids)
@@ -533,6 +542,7 @@ public class CoachPlugin extends Plugin
 			net.runelite.client.game.ItemStats s = itemManager.getItemStats(id);
 			if (s == null || s.getEquipment() == null) continue;
 			int slot = s.getEquipment().getSlot();
+			if (twoH && slot == 5) continue;   // shield-slot upgrade unreachable while wielding a 2H weapon
 			int cand = melee ? s.getEquipment().getStr() : s.getEquipment().getRstr();
 			int newBonus = curBonus - slotBonus.getOrDefault(slot, 0) + cand;
 			int newMax = (int) (0.5 + (boostedLvl + 8) * (newBonus + 64) / 640.0);
@@ -552,7 +562,7 @@ public class CoachPlugin extends Plugin
 
 	/** Magic upgrades: ranked by the % magic-damage gain from swapping into their slot (magic max hit
 	 *  scales with the spell, so gear is measured by its magic-damage bonus, matching the gear screen). */
-	private List<String> magicUpgrades(double curMdmg, Map<Integer, Double> slotMdmg)
+	private List<String> magicUpgrades(double curMdmg, Map<Integer, Double> slotMdmg, boolean twoH)
 	{
 		java.util.List<Object[]> ups = new ArrayList<>();   // {label, gain%, price}
 		for (int id : MAGIC_UPGRADES)
@@ -560,6 +570,7 @@ public class CoachPlugin extends Plugin
 			net.runelite.client.game.ItemStats s = itemManager.getItemStats(id);
 			if (s == null || s.getEquipment() == null) continue;
 			int slot = s.getEquipment().getSlot();
+			if (twoH && slot == 5) continue;   // shield-slot (tome/book) unreachable while wielding a 2H staff
 			double newMdmg = curMdmg - slotMdmg.getOrDefault(slot, 0.0) + s.getEquipment().getMdmg();
 			double gain = newMdmg - curMdmg;
 			if (gain <= 0.05) continue;   // already equal/better in that slot

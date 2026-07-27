@@ -34,6 +34,7 @@ class GeflipScanner
 	private static final double PART = 0.20;      // share of a side's flow we realistically capture
 	private static final double TAU_S = 1200.0;   // staleness decay
 	private static final double VOL_SAT = 200.0;  // volume-quality saturation
+	private static final int GROUND_N = 12;       // #1: max timeseries calls per scan (API politeness cap)
 
 	/** Item metadata from /mapping, cached for the session (read cross-thread → volatile). */
 	private volatile Map<Integer, Meta> mapping;
@@ -630,15 +631,18 @@ class GeflipScanner
 			double volS = Math.sqrt(Math.min(1.0, vol1 / VOL_SAT));
 			double quality = Math.sqrt(fresh * volS);
 			double conf = Math.max(0, Math.min(1, quality * stab * trendPen * spikePen));
-			// PERSONALISATION (#2): once you've completed ≥3 flips on this item, nudge confidence by YOUR
-			// realised win-rate — proven winners up, items that kept going red down. Bounded 0.7–1.2 and
-			// needs a track record, so one unlucky flip can't tank a good item.
-			boolean personalized = false; double yourWr = -1;
+			// PERSONALISATION (#2): once you've completed ≥3 flips on this item, weight it by YOUR realised
+			// win-rate — proven winners up, items that kept going red down. The multiplier uses a Laplace-
+			// smoothed rate ((wins+2)/(flips+4)) so a SMALL or CORRELATED sample (e.g. one buy dribble-sold
+			// in pieces counts as several "flips") sits near neutral and only real volume moves it; the
+			// factor is applied to expGph below (not clamped away), and we DISPLAY your honest raw rate.
+			boolean personalized = false; double yourWr = -1, personalFactor = 1.0;
 			long[] pi = perf.get(id);
 			if (pi != null && pi[1] >= 3)
 			{
-				yourWr = pi[2] / (double) pi[1];             // winningFlips / completedFlips
-				conf = Math.max(0, Math.min(1, conf * (0.7 + 0.5 * yourWr)));
+				yourWr = pi[2] / (double) pi[1];                          // raw realised win-rate (for display)
+				double shrunkWr = (pi[2] + 2.0) / (pi[1] + 4.0);         // smoothed toward 50% for small samples
+				personalFactor = 0.7 + 0.5 * shrunkWr;                    // 0.7 (losers) .. 1.2 (proven winners)
 				personalized = true;
 			}
 			Double t90 = t90s.get(id);
@@ -659,6 +663,9 @@ class GeflipScanner
 			f.confidence = conf * pen; f.t90 = t90; f.decliner = pen < 1.0; f.dumping = dumping; f.unstable = unstable;
 			f.fillProb = fillProb; f.wontFill = wontFill;
 			f.personalized = personalized; f.yourWinRate = yourWr;
+			// apply your-record weighting to the RANKING value (expGph isn't capped at 1, so a proven
+			// winner actually rises); keep the displayed confidence a valid ≤1 probability.
+			if (personalized) { f.expGph *= personalFactor; f.confidence = Math.min(1, f.confidence * personalFactor); }
 			// WHY this pick ranks where it does — the honest, per-pick rationale no paid black box shows
 			int fp = (int) Math.round(fillProb * 100);
 			if (wontFill) f.why = "Thin market — may sit unfilled (little counter-flow)";
@@ -686,13 +693,14 @@ class GeflipScanner
 			.thenComparing(x -> x.name);
 		out.sort(byValue);
 		int rows = Math.max(5, cfg.rows());
-		// TIMESERIES GROUNDING (#1): everything above uses aggregate snapshots; now pull each top pick's
+		// TIMESERIES GROUNDING (#1): everything above uses aggregate snapshots; now pull the TOP few picks'
 		// recent 5m history to confirm the margin ACTUALLY persisted (not a one-tick phantom) and isn't
-		// quietly crashing. Only the shown pool is grounded (one HTTP call each), then we re-rank.
-		int groundN = Math.min(out.size(), Math.max(rows, 20));
-		List<Flip> pool = new ArrayList<>(out.subList(0, groundN));
-		if (cfg.groundTimeseries()) { groundWithTimeseries(pool, map); pool.sort(byValue); }
-		List<Flip> top = pool.size() > rows ? new ArrayList<>(pool.subList(0, rows)) : pool;
+		// quietly crashing. Bounded to the top GROUND_N (independent of the row count) to stay polite to
+		// the wiki API, then we re-rank the WHOLE list so a demoted phantom drops and honest picks rise —
+		// without dropping any shown rows.
+		int groundN = Math.min(out.size(), GROUND_N);
+		if (cfg.groundTimeseries() && groundN > 0) { groundWithTimeseries(out.subList(0, groundN), map); out.sort(byValue); }
+		List<Flip> top = out.size() > rows ? new ArrayList<>(out.subList(0, rows)) : out;
 		basket(top, bankroll, Math.max(1, cfg.geSlots()));   // #3: mark the capital/slot basket
 		return top;
 	}
