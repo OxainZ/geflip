@@ -79,6 +79,7 @@ public class CoachPlugin extends Plugin
 	private volatile long lastHiscoreMs = 0;
 	private ScheduledFuture<?> priceRefresh;   // the net-worth price poller (cancelled on shutdown)
 	private boolean wealthBaselined = false;   // session gp/hr baseline only once the bank is known
+	private volatile String farmRunType = "Herb";   // which preset farm run the Farm tab shows
 
 	@Provides
 	CoachConfig provideConfig(net.runelite.client.config.ConfigManager cm) { return cm.getConfig(CoachConfig.class); }
@@ -86,7 +87,7 @@ public class CoachPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new CoachPanel(this::rescan, this::ask, this::buildContext, this::markFarmRun, this::guideTo);
+		panel = new CoachPanel(this::rescan, this::ask, this::buildContext, this::markFarmRun, this::guideTo, this::selectFarmRun);
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/coach_icon.png");
 		navButton = NavigationButton.builder().tooltip("Geflip Coach").icon(icon).priority(8).panel(panel).build();
 		clientToolbar.addNavigation(navButton);
@@ -132,7 +133,7 @@ public class CoachPlugin extends Plugin
 			p.setPath(criticalPath(st));
 			p.setRisk(riskLines());
 			p.setBlocked(CoachEngine.blocked(all));
-			p.setFarm(config.farmingHelper() ? CoachFarm.plan(st.level(Skill.FARMING), farmElapsedMin()) : null);
+			p.setFarm(config.farmingHelper() ? CoachFarm.run(farmRunType, st.level(Skill.FARMING), farmElapsedMin()) : null);
 			fireUnlockAlerts(all, st);
 		});
 	}
@@ -538,6 +539,9 @@ public class CoachPlugin extends Plugin
 		clientThread.invoke(() -> client.setHintArrow(new net.runelite.api.coords.WorldPoint(d[0], d[1], d[2])));
 		if (panel != null) panel.setStatus("→ hint arrow set to the Grand Exchange for " + goalName);
 	}
+
+	/** Pick which preset farm run the Farm tab shows (Herb/Tree/Fruit/Flower/Bush/All). */
+	void selectFarmRun(String type) { farmRunType = type; rescan(); }
 
 	/** Record "I just did a farm run" (persisted), so the Farm tab counts down to the next one. */
 	void markFarmRun()

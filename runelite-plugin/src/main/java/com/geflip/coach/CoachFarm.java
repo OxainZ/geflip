@@ -27,6 +27,51 @@ final class CoachFarm
 		{"Redberry", 10}, {"Cadava", 22}, {"Dwellberry", 36}, {"Jangerberry", 48},
 		{"Whiteberry", 59}, {"Poison ivy", 70} };
 
+	// preset routes per crop type — each entry "LOCATION — teleport (access note)"
+	static final String[] TYPES = { "Herb", "Tree", "Fruit", "Flower", "Bush", "All" };
+	private static final String[] HERB_PATCHES = {
+		"Ardougne — Ardougne cloak → Monastery, run S",
+		"Catherby — Camelot tele, run E along the shore",
+		"Falador — Explorer's ring (cabbage tele), run S to the farm",
+		"Hosidius — Xeric's talisman (Xeric's Glade), run S",
+		"Farming Guild — Skills necklace  [needs 65 Farming]",
+		"Troll Stronghold — Stony basalt / Trollheim tele  [needs Eadgar's Ruse]",
+		"Weiss — Icy basalt  [needs Making Friends with My Arm]",
+		"Fossil Island — Digsite pendant  [needs Bone Voyage]",
+		"Civitas illa Fortis — Quetzal whistle  [Varlamore access]",
+		"Harmony Island — Ectophial + boat  [needs The Great Brain Robbery]",
+	};
+	private static final String[] TREE_PATCHES = {
+		"Lumbridge — Home teleport, E of the castle",
+		"Varrock — Varrock tele, castle courtyard",
+		"Falador — Falador tele / Ring of wealth → the park",
+		"Taverley — Falador tele, run NW (or Games necklace → Burthorpe)",
+		"Gnome Stronghold — Spirit tree / Royal seed pod",
+		"Farming Guild — Skills necklace  [needs 65 Farming]",
+	};
+	private static final String[] FRUIT_PATCHES = {
+		"Gnome Stronghold — Spirit tree / Royal seed pod",
+		"Tree Gnome Village — Royal seed pod / spirit tree",
+		"Catherby — Camelot tele, run E",
+		"Brimhaven — fairy ring CKR / charter ship",
+		"Lletya — Teleport crystal  [needs Mourning's End Pt I partial]",
+		"Farming Guild — Skills necklace  [needs 85 Farming]",
+	};
+	private static final String[] FLOWER_PATCHES = {   // flowers + allotments share the 5 main farms
+		"Ardougne — Ardougne cloak",
+		"Catherby — Camelot tele",
+		"Falador — Explorer's ring",
+		"Hosidius — Xeric's talisman",
+		"Morytania / Canifis — Ectophial  [needs Nature Spirit]",
+	};
+	private static final String[] BUSH_PATCHES = {
+		"Champions' Guild — Varrock tele, run S",
+		"Rimmington — Explorer's ring / House tele",
+		"Etceteria — Fremennik boat / Enchanted lyre",
+		"Ardougne — Ardougne cloak",
+	};
+	private static final int FLOWER_MIN = 20, BUSH_MIN = 320;
+
 	private static String bare(Object[][] tbl, int lvl)   // the seed you'd plant at this level
 	{
 		String best = "—";
@@ -57,9 +102,48 @@ final class CoachFarm
 		return o;
 	}
 
-	/** A step-by-step combined herb + tree + fruit-tree run for the player's level: what to bring,
-	 *  then a numbered route (teleport → patch → do), then the tips. Repeatable each cycle — every
-	 *  stop is the same loop: harvest → clear → ultracompost → plant → pay to protect. */
+	/** A PRESET run for one crop type (Herb / Tree / Fruit / Flower / Bush), or the combined "All".
+	 *  Header (what to plant + when it's ready) → BRING → the ordered patch route for THAT type. */
+	static List<String> run(String type, int level, int elapsedMin)
+	{
+		if (type == null || type.equals("All")) return plan(level, elapsedMin);
+		String seed; int cycle; String[] patches; String bring;
+		switch (type)
+		{
+			case "Tree":
+				seed = bare(TREES, level); cycle = TREE_MIN; patches = TREE_PATCHES;
+				bring = patches.length + "x " + seed + " saplings + coins/produce to pay each gardener"; break;
+			case "Fruit":
+				seed = bare(FRUIT, level); cycle = FRUIT_MIN; patches = FRUIT_PATCHES;
+				bring = patches.length + "x " + seed + " saplings + baskets of fruit to pay each gardener"; break;
+			case "Flower":
+				seed = "Marigolds (protect allotments) or Limpwurt/Rosemary"; cycle = FLOWER_MIN; patches = FLOWER_PATCHES;
+				bring = "flower seeds (+ allotment seeds if doing allotments)"; break;
+			case "Bush":
+				seed = bare(BUSH, level); cycle = BUSH_MIN; patches = BUSH_PATCHES;
+				bring = patches.length + "x " + seed + " seeds + ultracompost + coins to pay gardeners"; break;
+			default: // Herb
+				seed = bare(HERBS, level); cycle = HERB_MIN; patches = HERB_PATCHES;
+				bring = patches.length + "x " + seed + " seeds + ultracompost (or bottomless bucket) per patch"; break;
+		}
+		List<String> o = new ArrayList<>();
+		o.add(type.toUpperCase() + " RUN — plant " + seed + "  (Farming " + level + ")");
+		o.add(eta(elapsedMin, cycle, type).trim());
+		o.add("");
+		o.add("BRING: " + bring);
+		o.add("KIT: spade, seed dibber, rake (skip w/ a diary), secateurs" + ("Herb".equals(type) ? ", Magic secateurs (+10% yield)" : "") + ", Farmer's outfit, the teleports below.");
+		o.add("");
+		o.add("ROUTE — each stop: HARVEST → clear → " + ("Tree".equals(type) || "Fruit".equals(type) ? "PLANT → PAY the gardener to protect" : "ULTRACOMPOST → PLANT") + ":");
+		int n = 1;
+		for (String p : patches) o.add(n++ + ") " + p);
+		o.add("");
+		o.add("Skip any stop you can't reach yet — the rest still pays. Mark the run done to start the timer.");
+		if ("Herb".equals(type)) o.add("TIP: ultracompost + the Ardougne Medium diary = disease-free herbs; Resurrect Crops (78 Mag) revives a dead one.");
+		if ("Tree".equals(type) || "Fruit".equals(type)) o.add("TIP: NEVER skip paying a gardener — a dead sapling is a big loss. Trees can't be cured, only protected.");
+		return o;
+	}
+
+	/** A step-by-step COMBINED herb + tree + fruit-tree run ("All"). */
 	static List<String> plan(int farmingLevel, int elapsedMin)
 	{
 		String herb = bare(HERBS, farmingLevel), tree = bare(TREES, farmingLevel),

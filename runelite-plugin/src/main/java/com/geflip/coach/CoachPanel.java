@@ -55,10 +55,12 @@ class CoachPanel extends PluginPanel
 	private final Supplier<String> onCopyContext;
 	private final Runnable onFarmRunDone;
 	private final Consumer<String> onGuide;
+	private final Consumer<String> onFarmSelect;
 
-	CoachPanel(Runnable onRefresh, Consumer<String> onAsk, Supplier<String> onCopyContext, Runnable onFarmRunDone, Consumer<String> onGuide)
+	CoachPanel(Runnable onRefresh, Consumer<String> onAsk, Supplier<String> onCopyContext, Runnable onFarmRunDone,
+		Consumer<String> onGuide, Consumer<String> onFarmSelect)
 	{
-		this.onAsk = onAsk; this.onCopyContext = onCopyContext; this.onFarmRunDone = onFarmRunDone; this.onGuide = onGuide;
+		this.onAsk = onAsk; this.onCopyContext = onCopyContext; this.onFarmRunDone = onFarmRunDone; this.onGuide = onGuide; this.onFarmSelect = onFarmSelect;
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
@@ -113,10 +115,25 @@ class CoachPanel extends PluginPanel
 	private JPanel farmCard()
 	{
 		JPanel p = new JPanel(new BorderLayout(0, 4));
-		JButton done = new JButton("✓ Mark farm run done");
-		done.setToolTipText("Log that you just did a farm run — the timers count down to when herbs/trees/fruit are ready again.");
+		JPanel north = new JPanel();
+		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
+		// preset-run selector: pick which crop route to show
+		JPanel types = new JPanel(new GridLayout(2, 3, 2, 2));
+		for (String t : new String[]{ "Herb", "Tree", "Fruit", "Flower", "Bush", "All" })
+		{
+			JButton b = new JButton(t);
+			b.setMargin(new java.awt.Insets(2, 1, 2, 1));
+			b.addActionListener(e -> { if (onFarmSelect != null) onFarmSelect.accept(t); });
+			types.add(b);
+		}
+		types.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JButton done = new JButton("✓ Mark this run done");
+		done.setToolTipText("Log that you just did this run — the timer counts down to when it's ready again.");
+		done.setAlignmentX(Component.LEFT_ALIGNMENT);
 		done.addActionListener(e -> { if (onFarmRunDone != null) onFarmRunDone.run(); });
-		p.add(done, BorderLayout.NORTH);
+		north.add(types);
+		north.add(done);
+		p.add(north, BorderLayout.NORTH);
 		p.add(scroll(farmBox), BorderLayout.CENTER);
 		return p;
 	}
