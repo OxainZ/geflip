@@ -195,6 +195,51 @@ final class CoachGoals
 		QUESTS.add(new QuestRec(Quest.BENEATH_CURSED_SANDS, "Unlocks Tombs of Amascut (scalable ranged-friendly raid)."));
 	}
 
+	// --- "HOW TO" data: concrete training methods + goal setups (the walkthrough layer) ------
+	// best mid-game training method per skill (the Coach walks you through the HOW for non-quests).
+	static final java.util.Map<Skill, String> METHOD = new java.util.EnumMap<>(Skill.class);
+	static
+	{
+		METHOD.put(Skill.PRAYER, "dragon bones on a gilded altar (2 lit burners) — ~252 xp/bone");
+		METHOD.put(Skill.MAGIC, "cheap: superheat/enchant jewellery; FAST: Ice Burst/Barrage on Slayer tasks (nechs/dust devils) — doubles as Slayer");
+		METHOD.put(Skill.SLAYER, "tasks from Nieve/Steve, blowpipe everything; Barrage burst-able tasks for the fastest xp");
+		METHOD.put(Skill.CRAFTING, "green→blue→red→black d'hide bodies, or battlestaves (Varrock Elite), or cut gems");
+		METHOD.put(Skill.SMITHING, "Blast Furnace: gold bars w/ goldsmith gauntlets (xp) or cannonballs (cash)");
+		METHOD.put(Skill.MINING, "Motherlode Mine (AFK) or iron power-mining for speed");
+		METHOD.put(Skill.AGILITY, "rooftops (Seers' > Ardougne) or Hallowed Sepulchre (fast + GP)");
+		METHOD.put(Skill.THIEVING, "Ardougne Knights (55+) — best xp/gp; or Pyramid Plunder");
+		METHOD.put(Skill.HUNTER, "birdhouse runs (passive, do on farm runs) + red chinchompas for active xp");
+		METHOD.put(Skill.CONSTRUCTION, "oak larders → mahogany tables/oak dungeon doors — butler + planks, buy your way up");
+		METHOD.put(Skill.HERBLORE, "make the best unf→finished potion you can (buy herbs + secondaries off the GE)");
+		METHOD.put(Skill.FARMING, "daily tree + herb + fruit-tree runs — see the Farm tab");
+		METHOD.put(Skill.RUNECRAFT, "Guardians of the Rift (GOTR) — xp + useful rewards");
+		METHOD.put(Skill.FIREMAKING, "Wintertodt (also gives supplies/loot) — best all-round");
+		METHOD.put(Skill.WOODCUTTING, "teak trees (2-tick) or redwoods; Forestry events help");
+		METHOD.put(Skill.FISHING, "barbarian fishing (Fishing+Agility+Strength) or minnows→sharks");
+		METHOD.put(Skill.COOKING, "1-tick karambwans, or wines for cheap fast xp");
+		METHOD.put(Skill.FLETCHING, "buy bows → string them, or dart-tips → darts");
+		METHOD.put(Skill.ATTACK, "train on Slayer tasks / Nightmare Zone with your best weapon");
+		METHOD.put(Skill.STRENGTH, "train on Slayer tasks / NMZ (aggressive) with your best weapon");
+		METHOD.put(Skill.DEFENCE, "controlled/defensive on Slayer tasks, or NMZ");
+	}
+
+	// concrete setup/how for the non-quest goals the Coach recommends (Zulrah rotation, scroll, etc.)
+	static final java.util.Map<String, String> HOW = new java.util.HashMap<>();
+	static
+	{
+		HOW.put("Zulrah (money boss)", "blowpipe (dragon darts) + trident once 75 Mag, anti-venom+, prayer/super restores, Zul-Andra teleport. Turn on RuneLite's Zulrah plugin and learn the fixed rotation.");
+		HOW.put("Rigour (ranged prayer)", "hit 74 Prayer, then read a Dexterous prayer scroll (CoX drop or ~24M on the GE).");
+		HOW.put("Augury (magic prayer)", "hit 77 Prayer, then read an Arcane prayer scroll (~15M).");
+		HOW.put("Slayer helmet (imbued)", "55 Slayer + 55 Crafting; unlock 'Malevolent masquerade' (400 pts), buy the black-mask parts, combine; imbue with 1250 NMZ/Soul Wars points.");
+		HOW.put("Ava's accumulator (ranged QoL)", "finish Animal Magnetism — it's handed to you. Upgrade to the Assembler after DS2 (+ a Vorkath head).");
+		HOW.put("Barrows gloves", "do Monkey Madness I, finish all RFD subquests, then buy the gloves from the Culinaromancer's chest.");
+		HOW.put("Occult necklace", "just buy it on the GE (a few hundred k) — cheaper than grinding Thermonuclear smoke devils.");
+		HOW.put("Trident of the swamp", "75 Magic to wield; assemble from Zulrah drops (magic fang + uncharged trident) or buy the swamp trident.");
+		HOW.put("Void ranged set", "Pest Control on the Hard boat — ~30-40 points for the ranged top/legs/gloves + helm.");
+		HOW.put("Amulet of anguish", "buy it, or make from a zenyte (demonic gorillas / ToA). Big ranged neck upgrade over fury.");
+		HOW.put("Rune pouch", "Enter the Abyss miniquest gives one (or 750 Slayer points).");
+	}
+
 	// --- helpers --------------------------------------------------------------
 	static String pretty(Quest q)
 	{

@@ -429,6 +429,29 @@ public class CoachPlugin extends Plugin
 		}
 		for (String q : quests) out.add("• Quest: " + q);
 		for (String m : misc) out.add("• " + m);
+
+		// --- HOW TO (the walkthrough layer): methods + live costs + Quest Helper handoff ---
+		out.add("");
+		out.add("HOW TO:");
+		String how = CoachGoals.HOW.get(target.name);
+		if (how != null) out.add("  " + how);
+		Map<Integer, Integer> px = prices;
+		for (Map.Entry<String, Integer> e : skills.entrySet())
+		{
+			Skill sk = SKILL_BY_CAP.get(e.getKey());
+			String m = sk != null ? CoachGoals.METHOD.get(sk) : null;
+			if (m == null) continue;
+			String line = "  " + e.getKey() + " → " + m;
+			if (sk == Skill.PRAYER && px != null)   // concrete cost: dragon bones (id 536) to target
+			{
+				long xpNeed = xpForLevel(e.getValue()) - client.getSkillExperience(Skill.PRAYER);
+				if (xpNeed > 0) { long bones = (long) Math.ceil(xpNeed / 252.0); Integer bp = px.get(536);
+					line += "  (~" + bones + " bones" + (bp != null ? " ≈ " + CoachGoals.gp(bones * bp) : "") + ")"; }
+			}
+			out.add(line);
+		}
+		if (!quests.isEmpty())
+			out.add("  Quests → install the Quest Helper plugin for turn-by-turn steps (the Coach picks WHICH & the order; Quest Helper shows HOW).");
 		return out;
 	}
 
