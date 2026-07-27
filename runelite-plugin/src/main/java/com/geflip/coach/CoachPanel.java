@@ -38,6 +38,14 @@ class CoachPanel extends PluginPanel
 	private final JPanel blockedBox = new JPanel();
 	private final JPanel pathBox = new JPanel();
 	private final JPanel farmBox = new JPanel();
+	private final JPanel farmStepsBox = new JPanel();   // clickable "lead me there" steps (arrows)
+
+	/** One tappable farm stop the panel shows: tap → the plugin drops a hint arrow on (x,y,plane).
+	 *  occupied: −1 unknown · 0 empty (go plant) · 1 occupied. locked = can't reach yet (shows reqLabel). */
+	static final class FarmStep
+	{
+		public String loc, tele, reqLabel; public int x, y, plane, occupied = -1; public boolean locked;
+	}
 	private final JPanel riskBox = new JPanel();
 	private final JTextField askInput = new JTextField();
 	private final JTextArea askResult = new JTextArea();
@@ -56,10 +64,12 @@ class CoachPanel extends PluginPanel
 	private final Runnable onFarmRunDone;
 	private final Consumer<String> onGuide;
 	private final Consumer<String> onFarmSelect;
+	private final Consumer<FarmStep> onFarmGuide;
 
 	CoachPanel(Runnable onRefresh, Consumer<String> onAsk, Supplier<String> onCopyContext, Runnable onFarmRunDone,
-		Consumer<String> onGuide, Consumer<String> onFarmSelect)
+		Consumer<String> onGuide, Consumer<String> onFarmSelect, Consumer<FarmStep> onFarmGuide)
 	{
+		this.onFarmGuide = onFarmGuide;
 		this.onAsk = onAsk; this.onCopyContext = onCopyContext; this.onFarmRunDone = onFarmRunDone; this.onGuide = onGuide; this.onFarmSelect = onFarmSelect;
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
@@ -134,8 +144,67 @@ class CoachPanel extends PluginPanel
 		north.add(types);
 		north.add(done);
 		p.add(north, BorderLayout.NORTH);
-		p.add(scroll(farmBox), BorderLayout.CENTER);
+		// center = the tappable "lead me there" steps (arrows) ABOVE the detailed text run
+		farmStepsBox.setLayout(new BoxLayout(farmStepsBox, BoxLayout.Y_AXIS));
+		farmStepsBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+		farmBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JPanel center = new JPanel();
+		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
+		center.add(farmStepsBox);
+		center.add(farmBox);
+		p.add(scroll(center), BorderLayout.CENTER);
 		return p;
+	}
+
+	/** Render the tappable "lead me there" steps: tap a stop → the plugin drops an in-world hint arrow.
+	 *  Open stops are clickable (with an empty/occupied marker if known); locked stops show what unlocks. */
+	void setFarmSteps(List<FarmStep> steps)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			farmStepsBox.removeAll();
+			if (steps != null && !steps.isEmpty())
+			{
+				JLabel hdr = new JLabel("🧭 Lead me there — tap a stop:");
+				hdr.setForeground(ColorScheme.BRAND_ORANGE);
+				hdr.setBorder(BorderFactory.createEmptyBorder(4, 4, 2, 4));
+				hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
+				hdr.setToolTipText("Tap a stop to drop an in-world arrow that walks you to that patch. "
+					+ "Clear the arrow by tapping the same stop again.");
+				farmStepsBox.add(hdr);
+				for (FarmStep s : steps) farmStepsBox.add(farmStepRow(s));
+			}
+			farmStepsBox.revalidate();
+			farmStepsBox.repaint();
+		});
+	}
+
+	private JPanel farmStepRow(FarmStep s)
+	{
+		JPanel row = new JPanel(new BorderLayout(4, 0));
+		row.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		String mark = s.locked ? "✖ " : s.occupied == 0 ? "🌱 " : s.occupied == 1 ? "✓ " : "📍 ";
+		JLabel name = new JLabel(mark + s.loc);
+		name.setForeground(s.locked ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.TEXT_COLOR);
+		JLabel sub = new JLabel(s.locked ? "unlock: " + s.reqLabel : s.tele);
+		sub.setFont(FontManager.getRunescapeSmallFont());
+		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		JPanel col = new JPanel(); col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS)); col.setOpaque(false);
+		name.setAlignmentX(Component.LEFT_ALIGNMENT); sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+		col.add(name); col.add(sub);
+		row.add(col, BorderLayout.CENTER);
+		if (!s.locked)
+		{
+			row.setToolTipText(s.occupied == 0 ? "Empty — go plant here. Tap for an arrow."
+				: s.occupied == 1 ? "Something's growing here (check Timetracking for ready-time). Tap for an arrow."
+				: "Tap for an in-world arrow to this patch.");
+			row.addMouseListener(new java.awt.event.MouseAdapter()
+			{
+				@Override public void mouseClicked(java.awt.event.MouseEvent e) { if (onFarmGuide != null) onFarmGuide.accept(s); }
+			});
+		}
+		return row;
 	}
 
 	private JPanel askCard()

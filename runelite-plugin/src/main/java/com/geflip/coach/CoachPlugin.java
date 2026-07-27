@@ -90,7 +90,7 @@ public class CoachPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new CoachPanel(this::rescan, this::ask, this::buildContext, this::markFarmRun, this::guideTo, this::selectFarmRun);
+		panel = new CoachPanel(this::rescan, this::ask, this::buildContext, this::markFarmRun, this::guideTo, this::selectFarmRun, this::guideToFarm);
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/coach_icon.png");
 		navButton = NavigationButton.builder().tooltip("Geflip Coach").icon(icon).priority(8).panel(panel).build();
 		clientToolbar.addNavigation(navButton);
@@ -171,6 +171,7 @@ public class CoachPlugin extends Plugin
 			List<String> path = criticalPath(st, all);   // reuse the already-computed goal graph (no 2nd evaluate)
 			List<String> risk = riskLines();
 			List<String> farmLines = config.farmingHelper() ? CoachFarm.run(farmRunType, st, farmElapsedMin()) : null;
+			p.setFarmSteps(config.farmingHelper() ? farmSteps(st) : java.util.Collections.emptyList());
 			p.setSummary(summary);
 			p.setSessionStats(sess);
 			refreshHiscore();
@@ -718,6 +719,45 @@ public class CoachPlugin extends Plugin
 		}
 		clientThread.invoke(() -> client.setHintArrow(new net.runelite.api.coords.WorldPoint(d[0], d[1], d[2])));
 		if (panel != null) panel.setStatus("→ hint arrow set to the Grand Exchange for " + goalName);
+	}
+
+	private volatile int[] farmArrow;   // last farm patch the arrow points at (toggle target)
+
+	/** Tapped a farm stop → drop an in-world hint arrow ON that patch (tap the same stop again to clear).
+	 *  Coords are wiki-verified within the hint-arrow tolerance; Troll Stronghold's is plane 1 (the roof). */
+	void guideToFarm(CoachPanel.FarmStep s)
+	{
+		if (s == null) return;
+		int[] tgt = { s.x, s.y, s.plane };
+		if (farmArrow != null && farmArrow[0] == tgt[0] && farmArrow[1] == tgt[1] && farmArrow[2] == tgt[2])
+		{
+			farmArrow = null;
+			clientThread.invoke(client::clearHintArrow);
+			if (panel != null) panel.setStatus("cleared the farm arrow");
+			return;
+		}
+		farmArrow = tgt;
+		clientThread.invoke(() -> client.setHintArrow(new net.runelite.api.coords.WorldPoint(tgt[0], tgt[1], tgt[2])));
+		if (panel != null) panel.setStatus("→ walk to " + s.loc + " (" + s.tele + ")");
+	}
+
+	/** Build the tappable lead-me-there steps for the current run type: every patch, gated to your
+	 *  unlocks (locked ones show what unlocks them). Occupied state is left UNKNOWN on purpose — the
+	 *  game only transmits a patch's live state while you're in its region, so a route-wide read would
+	 *  be stale/wrong; RuneLite's Timetracking (which persists per-patch snapshots) owns ready-times. */
+	private java.util.List<CoachPanel.FarmStep> farmSteps(CoachState st)
+	{
+		java.util.List<CoachPanel.FarmStep> out = new ArrayList<>();
+		for (CoachFarm.Patch p : CoachFarm.patchesFor(farmRunType))
+		{
+			CoachPanel.FarmStep s = new CoachPanel.FarmStep();
+			s.loc = p.loc; s.tele = p.tele; s.reqLabel = p.reqLabel;
+			s.x = p.x; s.y = p.y; s.plane = p.plane;
+			s.locked = !p.open(st);
+			s.occupied = -1;
+			out.add(s);
+		}
+		return out;
 	}
 
 	/** Pick which preset farm run the Farm tab shows (Herb/Tree/Fruit/Flower/Bush/All). */

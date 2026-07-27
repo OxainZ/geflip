@@ -35,66 +35,88 @@ final class CoachFarm
 		{"Redberry", 10}, {"Cadava", 22}, {"Dwellberry", 36}, {"Jangerberry", 48},
 		{"Whiteberry", 59}, {"Poison ivy", 70} };
 
-	/** One farm patch: where it is + how to teleport, and its access gate. gate==null means always
-	 *  reachable; otherwise reqLabel says what unlocks it (a quest name or "NN Farming"). */
-	private static final class Patch
+	/** One farm patch: where it is + how to teleport, its access gate, and its tile (x,y,plane) for the
+	 *  in-world hint arrow. gate==null means always reachable; otherwise reqLabel says what unlocks it.
+	 *  Package-visible so CoachPlugin can route + arrow to it. Coords verified vs the wiki 2026-07 (within
+	 *  the ~3-tile hint-arrow tolerance; Troll Stronghold's herb patch is on plane 1, the roof). */
+	static final class Patch
 	{
 		final String loc, tele, reqLabel;
 		final Predicate<CoachState> gate;
-		Patch(String loc, String tele, String reqLabel, Predicate<CoachState> gate)
-		{ this.loc = loc; this.tele = tele; this.reqLabel = reqLabel; this.gate = gate; }
+		final int x, y, plane, varbit;   // patch tile for the arrow; varbit=0 = live state unknown
+		Patch(String loc, String tele, String reqLabel, Predicate<CoachState> gate, int x, int y, int plane, int varbit)
+		{ this.loc = loc; this.tele = tele; this.reqLabel = reqLabel; this.gate = gate;
+		  this.x = x; this.y = y; this.plane = plane; this.varbit = varbit; }
 		boolean open(CoachState st) { return gate == null || gate.test(st); }
 	}
-	private static Patch free(String loc, String tele) { return new Patch(loc, tele, null, null); }
-	private static Patch lvl(String loc, String tele, int f) { return new Patch(loc, tele, f + " Farming", st -> st.level(Skill.FARMING) >= f); }
-	private static Patch quest(String loc, String tele, String name, Quest q) { return new Patch(loc, tele, name, st -> st.finished(q)); }
+	private static Patch free(String loc, String tele, int x, int y) { return new Patch(loc, tele, null, null, x, y, 0, 0); }
+	private static Patch freeP(String loc, String tele, int x, int y, int plane) { return new Patch(loc, tele, null, null, x, y, plane, 0); }
+	private static Patch lvl(String loc, String tele, int f, int x, int y) { return new Patch(loc, tele, f + " Farming", st -> st.level(Skill.FARMING) >= f, x, y, 0, 0); }
+	private static Patch quest(String loc, String tele, String name, Quest q, int x, int y) { return new Patch(loc, tele, name, st -> st.finished(q), x, y, 0, 0); }
+	private static Patch questP(String loc, String tele, String name, Quest q, int x, int y, int plane) { return new Patch(loc, tele, name, st -> st.finished(q), x, y, plane, 0); }
 
 	static final String[] TYPES = { "Herb", "Tree", "Fruit", "Flower", "Bush", "All" };
 
 	private static final Patch[] HERB_PATCHES = {
-		free("Falador farm", "Explorer's ring (cabbage tele) → run N to Elstan"),
-		free("Catherby", "Catherby teleport tab (or Camelot tele → run E)"),
-		free("Ardougne", "Ardougne cloak 2+ (farm tele) → Kragen"),
-		free("Morytania (Ectofuntus)", "Ectophial → run W to Lyra"),
-		free("Hosidius", "Xeric's talisman → Xeric's Glade → run SW (no favour needed)"),
-		lvl("Farming Guild (W wing)", "Skills necklace → Farming Guild", 65),
-		quest("Troll Stronghold (roof)", "Stony basalt / Trollheim teleport", "My Arm's Big Adventure", Quest.MY_ARMS_BIG_ADVENTURE),
-		quest("Weiss", "Icy basalt (lands by the patch)", "Making Friends with My Arm", Quest.MAKING_FRIENDS_WITH_MY_ARM),
-		quest("Harmony Island", "Harmony Island Teleport (Arceuus) → run S", "The Great Brain Robbery", Quest.THE_GREAT_BRAIN_ROBBERY),
+		free("Falador farm", "Explorer's ring (cabbage tele) → run N to Elstan", 3058, 3311),
+		free("Catherby", "Catherby teleport tab (or Camelot tele → run E)", 2813, 3463),
+		free("Ardougne", "Ardougne cloak 2+ (farm tele) → Kragen", 2670, 3374),
+		free("Morytania (Ectofuntus)", "Ectophial → run W to Lyra", 3605, 3529),
+		free("Hosidius", "Xeric's talisman → Xeric's Glade → run SW (no favour needed)", 1738, 3550),
+		lvl("Farming Guild (W wing)", "Skills necklace → Farming Guild", 65, 1238, 3726),
+		questP("Troll Stronghold (roof)", "Stony basalt / Trollheim teleport", "My Arm's Big Adventure", Quest.MY_ARMS_BIG_ADVENTURE, 2825, 3695, 1),
+		quest("Weiss", "Icy basalt (lands by the patch)", "Making Friends with My Arm", Quest.MAKING_FRIENDS_WITH_MY_ARM, 2848, 3934),
+		quest("Harmony Island", "Harmony Island Teleport (Arceuus) → run S", "The Great Brain Robbery", Quest.THE_GREAT_BRAIN_ROBBERY, 3789, 2837),
 	};
 	private static final Patch[] TREE_PATCHES = {
-		free("Lumbridge", "Home / Lumbridge teleport → W of the castle (Fayeth)"),
-		free("Varrock", "Varrock teleport → run W to Gertrude's (Treznor)"),
-		free("Falador Park", "Falador teleport / Ring of wealth → the park (Heskel)"),
-		free("Taverley", "Games necklace → Burthorpe → run to Alain"),
-		free("Gnome Stronghold", "Spirit tree / Royal seed pod (Prissy Scilla)"),
-		lvl("Farming Guild (W wing)", "Skills necklace → Farming Guild", 65),
+		free("Lumbridge", "Home / Lumbridge teleport → W of the castle (Fayeth)", 3193, 3231),
+		free("Varrock", "Varrock teleport → run W to Gertrude's (Treznor)", 3229, 3459),
+		free("Falador Park", "Falador teleport / Ring of wealth → the park (Heskel)", 2999, 3373),
+		free("Taverley", "Games necklace → Burthorpe → run to Alain", 2936, 3438),
+		free("Gnome Stronghold", "Spirit tree / Royal seed pod (Prissy Scilla)", 2437, 3416),
+		lvl("Farming Guild (W wing)", "Skills necklace → Farming Guild", 65, 1233, 3737),
 	};
 	private static final Patch[] FRUIT_PATCHES = {
-		free("Gnome Stronghold", "Spirit tree / Royal seed pod (Bolongo)"),
-		free("Tree Gnome Village", "Fairy ring CIQ (quest-free)"),
-		free("Catherby", "Catherby teleport tab → E beach (Ellena)"),
-		free("Brimhaven", "House teleport set to Brimhaven / charter ship (Garth)"),
+		free("Gnome Stronghold", "Spirit tree / Royal seed pod (Bolongo)", 2475, 3445),
+		free("Tree Gnome Village", "Fairy ring CIQ (quest-free)", 2490, 3180),
+		free("Catherby", "Catherby teleport tab → E beach (Ellena)", 2860, 3433),
+		free("Brimhaven", "House teleport set to Brimhaven / charter ship (Garth)", 2764, 3212),
 		new Patch("Lletya", "Teleport crystal", "Regicide + Mourning's End Pt I (started)",
-			st -> st.started(Quest.MOURNINGS_END_PART_I)),
-		lvl("Farming Guild (N wing)", "Skills necklace → Farming Guild", 85),
+			st -> st.started(Quest.MOURNINGS_END_PART_I), 2346, 3161, 0, 0),
+		lvl("Farming Guild (N wing)", "Skills necklace → Farming Guild", 85, 1243, 3758),
 	};
 	private static final Patch[] FLOWER_PATCHES = {   // flowers + allotments share these sites
-		free("Falador farm", "Explorer's ring (cabbage tele)"),
-		free("Catherby", "Catherby teleport tab / Camelot tele"),
-		free("Ardougne", "Ardougne cloak 2+"),
-		free("Morytania (Ectofuntus)", "Ectophial → run W"),
-		free("Hosidius", "Xeric's talisman → Xeric's Glade (no favour)"),
-		free("Ortus Farm (Varlamore)", "Quetzal whistle"),
-		lvl("Farming Guild (E wing)", "Skills necklace → Farming Guild", 45),
+		free("Falador farm", "Explorer's ring (cabbage tele)", 3055, 3308),
+		free("Catherby", "Catherby teleport tab / Camelot tele", 2809, 3466),
+		free("Ardougne", "Ardougne cloak 2+", 2665, 3377),
+		free("Morytania (Ectofuntus)", "Ectophial → run W", 3601, 3529),
+		free("Hosidius", "Xeric's talisman → Xeric's Glade (no favour)", 1734, 3550),
+		free("Ortus Farm (Varlamore)", "Quetzal whistle", 1569, 3126),
+		lvl("Farming Guild (E wing)", "Skills necklace → Farming Guild", 45, 1265, 3728),
 	};
 	private static final Patch[] BUSH_PATCHES = {
-		free("Champions' Guild", "Combat bracelet → Champions' Guild (or Varrock tele → run S), Dreven"),
-		free("Rimmington", "House teleport set to Rimmington (Taria)"),
-		free("Ardougne", "Ardougne cloak 1+ → Monastery (Torrell), or fairy ring DJP"),
-		quest("Etceteria", "Fairy ring CIP → run over (Rhazien)", "The Fremennik Trials", Quest.THE_FREMENNIK_TRIALS),
-		lvl("Farming Guild (E wing)", "Skills necklace → Farming Guild", 45),
+		free("Champions' Guild", "Combat bracelet → Champions' Guild (or Varrock tele → run S), Dreven", 3182, 3357),
+		free("Rimmington", "House teleport set to Rimmington (Taria)", 2946, 3202),
+		free("Ardougne", "Ardougne cloak 1+ → Monastery (Torrell), or fairy ring DJP", 2617, 3226),
+		quest("Etceteria", "Fairy ring CIP → run over (Rhazien)", "The Fremennik Trials", Quest.THE_FREMENNIK_TRIALS, 2591, 3874),
+		lvl("Farming Guild (E wing)", "Skills necklace → Farming Guild", 45, 1256, 3733),
 	};
+
+	/** The patch set for a run type (for the plugin's clickable lead-through). null/"All"→ herb+tree+fruit. */
+	static Patch[] patchesFor(String type)
+	{
+		if (type == null) return HERB_PATCHES;
+		switch (type)
+		{
+			case "Tree": return TREE_PATCHES;
+			case "Fruit": return FRUIT_PATCHES;
+			case "Flower": return FLOWER_PATCHES;
+			case "Bush": return BUSH_PATCHES;
+			case "All": { Patch[] a = new Patch[HERB_PATCHES.length + TREE_PATCHES.length + FRUIT_PATCHES.length];
+				int i = 0; for (Patch p : HERB_PATCHES) a[i++] = p; for (Patch p : TREE_PATCHES) a[i++] = p; for (Patch p : FRUIT_PATCHES) a[i++] = p; return a; }
+			default: return HERB_PATCHES;
+		}
+	}
 
 	private static final int FLOWER_MIN = 20, BUSH_MIN = 320;
 	static final int HERB_MIN = 80, TREE_MIN = 360, FRUIT_MIN = 960;
