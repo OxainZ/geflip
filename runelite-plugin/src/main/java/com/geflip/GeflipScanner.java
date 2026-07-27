@@ -65,7 +65,8 @@ class GeflipScanner
 		String why = "";      // one-line plain-English rationale (the transparency edge)
 		// --- timeseries grounding (#1): did the margin actually persist recently? ---
 		double marginPersist = -1;   // fraction of the last ~2h where a real margin existed (−1 = not checked)
-		double tsDir;                // price direction over that window (e.g. −0.04 = fell 4%)
+		double tsDir;                // price direction over the last ~2h (e.g. −0.04 = fell 4%)
+		double tsDayDir;             // price direction over the ~last day (#4 mid-horizon bleed signal)
 		boolean tsChecked;           // timeseries grounding ran for this pick
 		// --- personalisation (#2): your own realised fills adjusted this pick ---
 		boolean personalized;        // your fill history moved the confidence
@@ -523,7 +524,8 @@ class GeflipScanner
 		Map<Integer, Double> t90s = loadT90(cfg.useTrends());
 
 		long bankroll = Math.max(1, bankrollGp);
-		long perItemCap = (long) (bankroll * 0.25);
+		double itemPct = Math.max(0.05, Math.min(1.0, cfg.maxItemPct() / 100.0));   // exposure cap per item
+		long perItemCap = (long) (bankroll * itemPct);
 		double cycleH = 4.0;
 		long now = System.currentTimeMillis() / 1000;
 
@@ -798,7 +800,7 @@ class GeflipScanner
 		int groundN = Math.min(out.size(), GROUND_N);
 		if (cfg.groundTimeseries() && groundN > 0) { groundWithTimeseries(out.subList(0, groundN), map); out.sort(byValue); }
 		List<Flip> top = out.size() > rows ? new ArrayList<>(out.subList(0, rows)) : out;
-		basket(top, bankroll, Math.max(1, cfg.geSlots()));   // #3: mark the capital/slot basket
+		basket(top, bankroll, Math.max(1, cfg.geSlots()), itemPct);   // #3: mark the capital/slot basket
 		return top;
 	}
 
@@ -811,8 +813,8 @@ class GeflipScanner
 		long nowMs = System.currentTimeMillis();
 		for (Flip f : pool)
 		{
-			double[] c = tsCache.get(f.id);   // {persist, dir, fetchedMs}
-			if (c != null && nowMs - (long) c[2] < TS_TTL_MS) { applyTsResult(f, c[0], c[1]); continue; }
+			double[] c = tsCache.get(f.id);   // {persist, dir2h, dayDir, fetchedMs}
+			if (c != null && nowMs - (long) c[3] < TS_TTL_MS) { applyTsResult(f, c[0], c[1], c[2]); continue; }
 			try
 			{
 				Meta meta = map.get(f.id);
@@ -837,8 +839,20 @@ class GeflipScanner
 				if (tot < 6) continue;   // too little history to judge — leave the pick as-is
 				double persist = pos / (double) tot;
 				double dir = firstMid > 0 ? (lastMid - firstMid) / firstMid : 0;
-				tsCache.put(f.id, new double[]{ persist, dir, nowMs });
-				applyTsResult(f, persist, dir);
+				// #4 mid-horizon: the 5m series spans ~30h, but we only used its last 2h above. Scan from the
+				// START for the oldest valid mid → a ~day-long slope, catching a slow bleed a 2h check misses.
+				double dayFirstMid = 0;
+				for (int i = 0; i < n; i++)
+				{
+					JsonObject p = data.get(i).getAsJsonObject();
+					if (p.get("avgHighPrice").isJsonNull() || p.get("avgLowPrice").isJsonNull()) continue;
+					int lo = p.get("avgLowPrice").getAsInt(), hi = p.get("avgHighPrice").getAsInt();
+					if (lo <= 0 || hi <= 0) continue;
+					dayFirstMid = (lo + hi) / 2.0; break;
+				}
+				double dayDir = (dayFirstMid > 0 && lastMid > 0) ? (lastMid - dayFirstMid) / dayFirstMid : 0;
+				tsCache.put(f.id, new double[]{ persist, dir, dayDir, nowMs });
+				applyTsResult(f, persist, dir, dayDir);
 			}
 			catch (Exception ignored) { /* timeseries optional — keep the snapshot-based verdict */ }
 		}
@@ -847,32 +861,37 @@ class GeflipScanner
 	/** Fold a timeseries measurement (persistence + direction) into a pick's confidence/expGph + why.
 	 *  Shared by the fresh-fetch and cache-hit paths. Applied once per scan to a fresh Flip, so there's
 	 *  no double-application across scans (only the raw measurement is cached, not the applied state). */
-	private void applyTsResult(Flip f, double persist, double dir)
+	private void applyTsResult(Flip f, double persist, double dir, double dayDir)
 	{
-		f.marginPersist = persist; f.tsDir = dir; f.tsChecked = true;
+		f.marginPersist = persist; f.tsDir = dir; f.tsDayDir = dayDir; f.tsChecked = true;
 		double tsConf = 0.4 + 0.6 * persist;          // 0.4 (never present) .. 1.0 (always present)
-		if (dir < -0.03) tsConf *= 0.7;               // falling over the window
+		if (dir < -0.03) tsConf *= 0.7;               // falling over the last 2h
+		if (dayDir < -0.05) tsConf *= 0.9;            // #4 slow multi-hour bleed (mild demotion, not a reject)
 		f.confidence *= tsConf; f.expGph *= tsConf;
-		// don't clobber a personalised "your winner/loser" note with a merely-reliable ts note
+		// don't clobber a personalised "your winner/loser" note with a merely-informational ts note
 		if (persist < 0.3)
 			f.why = "Margin present only ~" + (int) (persist * 100) + "% of the last 2h — likely a phantom";
 		else if (dir < -0.03)
 			f.why = "Price fell ~" + (int) Math.round(-dir * 100) + "% over 2h — the margin may not survive";
+		else if (dayDir < -0.05 && !f.personalized)
+			f.why = "Slow slide: down ~" + (int) Math.round(-dayDir * 100) + "% over ~a day — watch it bleeding";
 		else if (persist >= 0.7 && !f.personalized)
 			f.why = "Reliable: the margin held ~" + (int) (persist * 100) + "% of the last 2h";
 	}
 
 	/** #3 — mark a capital/slot basket: greedily fill your free GE slots from the ranked list, sizing
 	 *  each by what your cash and its buy limit allow, so you see WHAT to actually put in your slots. */
-	void basket(List<Flip> ranked, long cashGp, int slots)
+	void basket(List<Flip> ranked, long cashGp, int slots, double maxPct)
 	{
 		long cash = Math.max(0, cashGp);
+		long perSlotCap = (long) (Math.max(0, cashGp) * Math.max(0.05, Math.min(1.0, maxPct)));   // exposure cap
 		int used = 0;
 		for (Flip f : ranked)
 		{
 			if (used >= slots || cash <= 0) break;
 			if (f.wontFill || f.buy <= 0) continue;
-			int q = (int) Math.min(f.quantity, cash / f.buy);
+			// size by the smallest of: quantity offered, cash left, and the per-item exposure cap
+			int q = (int) Math.min(f.quantity, Math.min(cash / f.buy, perSlotCap / f.buy));
 			if (q <= 0) continue;
 			f.basketQty = q;
 			cash -= (long) q * f.buy;

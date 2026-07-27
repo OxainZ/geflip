@@ -134,6 +134,16 @@ public interface GeflipConfig extends Config
 	)
 	default int geSlots() { return 8; }
 
+	@Range(min = 5, max = 100)
+	@ConfigItem(
+		keyName = "maxItemPct",
+		name = "Max % per item",
+		description = "Cap how much of your bankroll goes into any ONE item — both in the recommended "
+			+ "quantity and the slot basket. Lower = more diversified (less exposed to one item crashing).",
+		position = 66
+	)
+	default int maxItemPct() { return 25; }
+
 	@Range(min = 60, max = 900)
 	@ConfigItem(
 		keyName = "refreshSec",
