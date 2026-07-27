@@ -84,7 +84,7 @@ public class CoachPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new CoachPanel(this::rescan, this::ask, this::buildContext, this::markFarmRun);
+		panel = new CoachPanel(this::rescan, this::ask, this::buildContext, this::markFarmRun, this::guideTo);
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/coach_icon.png");
 		navButton = NavigationButton.builder().tooltip("Geflip Coach").icon(icon).priority(8).panel(panel).build();
 		clientToolbar.addNavigation(navButton);
@@ -506,6 +506,26 @@ public class CoachPlugin extends Plugin
 		if (need <= 0 || rate <= 0) return null;
 		double eta = need / rate;
 		return eta < 1 ? Math.max(1, Math.round(eta * 60)) + "m" : String.format("%.1fh", eta);
+	}
+
+	// Destinations I'm 100% sure of → an in-game hint arrow. Only certain tiles (no misdirection);
+	// everything else is guided by the popup text + Quest Helper + your shortest-path plugin.
+	private static final java.util.Map<String, int[]> GUIDE_DEST = new java.util.HashMap<>();
+	static
+	{
+		int[] ge = { 3164, 3487, 0 };   // Grand Exchange centre
+		GUIDE_DEST.put("Occult necklace", ge);
+		GUIDE_DEST.put("Amulet of anguish", ge);
+		GUIDE_DEST.put("Trident of the swamp", ge);
+	}
+
+	/** Clicked a goal → drop the in-game hint arrow toward its destination (when known for sure). */
+	void guideTo(String goalName)
+	{
+		int[] d = GUIDE_DEST.get(goalName);
+		if (d == null) { if (panel != null) panel.setStatus("see the popup — Quest Helper / shortest-path will route you"); return; }
+		clientThread.invoke(() -> client.setHintArrow(new net.runelite.api.coords.WorldPoint(d[0], d[1], d[2])));
+		if (panel != null) panel.setStatus("→ hint arrow set to the Grand Exchange for " + goalName);
 	}
 
 	/** Record "I just did a farm run" (persisted), so the Farm tab counts down to the next one. */

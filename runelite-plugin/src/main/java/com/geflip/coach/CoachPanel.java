@@ -54,10 +54,11 @@ class CoachPanel extends PluginPanel
 	private final Consumer<String> onAsk;
 	private final Supplier<String> onCopyContext;
 	private final Runnable onFarmRunDone;
+	private final Consumer<String> onGuide;
 
-	CoachPanel(Runnable onRefresh, Consumer<String> onAsk, Supplier<String> onCopyContext, Runnable onFarmRunDone)
+	CoachPanel(Runnable onRefresh, Consumer<String> onAsk, Supplier<String> onCopyContext, Runnable onFarmRunDone, Consumer<String> onGuide)
 	{
-		this.onAsk = onAsk; this.onCopyContext = onCopyContext; this.onFarmRunDone = onFarmRunDone;
+		this.onAsk = onAsk; this.onCopyContext = onCopyContext; this.onFarmRunDone = onFarmRunDone; this.onGuide = onGuide;
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
@@ -268,23 +269,49 @@ class CoachPanel extends PluginPanel
 		JPanel p = new JPanel(new BorderLayout(6, 0));
 		p.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		String tag = sc.status == CoachEngine.Status.READY ? "✓ " :
+		boolean done = sc.status == CoachEngine.Status.DONE;
+		String tag = done ? "✓ " : sc.status == CoachEngine.Status.READY ? "✓ " :
 			sc.status == CoachEngine.Status.ALMOST ? "○ " : "✕ ";
 		JLabel name = new JLabel(tag + sc.goal.name);
-		name.setForeground(sc.status == CoachEngine.Status.READY ? ColorScheme.PROGRESS_COMPLETE_COLOR :
-			sc.status == CoachEngine.Status.ALMOST ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
-		JLabel sub = new JLabel(sc.gaps.isEmpty() ? "ready now" : String.join(" · ", sc.gaps));
+		name.setForeground(done ? ColorScheme.LIGHT_GRAY_COLOR
+			: sc.status == CoachEngine.Status.READY ? ColorScheme.PROGRESS_COMPLETE_COLOR
+			: sc.status == CoachEngine.Status.ALMOST ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+		JLabel sub = new JLabel(done ? "done — you already have this" : sc.gaps.isEmpty() ? "ready now" : String.join(" · ", sc.gaps));
 		sub.setFont(FontManager.getRunescapeSmallFont());
-		sub.setForeground(sc.gaps.isEmpty() ? ColorScheme.PROGRESS_COMPLETE_COLOR : ColorScheme.LIGHT_GRAY_COLOR);
+		sub.setForeground(done || sc.gaps.isEmpty() ? ColorScheme.PROGRESS_COMPLETE_COLOR : ColorScheme.LIGHT_GRAY_COLOR);
 		JPanel col = new JPanel(); col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS)); col.setOpaque(false);
 		name.setAlignmentX(Component.LEFT_ALIGNMENT); sub.setAlignmentX(Component.LEFT_ALIGNMENT);
 		col.add(name); col.add(sub);
 		p.add(col, BorderLayout.CENTER);
-		p.setToolTipText("<html><b>" + esc(sc.goal.name) + "</b> — impact " + sc.goal.impact + "/5 · " + esc(sc.goal.effort)
-			+ "<br>" + esc(sc.goal.note) + "</html>");
+		// hover = the mini-guide (note + HOW/where); the tooltip wraps long text.
+		String how = CoachGoals.HOW.get(sc.goal.name);
+		p.setToolTipText("<html><div width=260><b>" + esc(sc.goal.name) + "</b> — impact " + sc.goal.impact + "/5 · " + esc(sc.goal.effort)
+			+ "<br>" + esc(sc.goal.note) + (how != null ? "<br><br><b>How:</b> " + esc(how) : "")
+			+ "<br><br><i>Click for the full step-by-step.</i></div></html>");
+		// click = a full readable walkthrough popup (+ ask the plugin to drop a guide arrow)
+		p.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+		final String gname = sc.goal.name;
+		p.addMouseListener(new java.awt.event.MouseAdapter() {
+			public void mouseClicked(java.awt.event.MouseEvent e) { showGuide(sc); if (onGuide != null) onGuide.accept(gname); }
+		});
 		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
+	}
+
+	/** A readable step-by-step popup for a goal — what it is, how/where to get it, and the handoff
+	 *  to Quest Helper for any quest gaps. */
+	private void showGuide(CoachEngine.Scored sc)
+	{
+		StringBuilder b = new StringBuilder();
+		b.append(sc.goal.note).append("\n");
+		String how = CoachGoals.HOW.get(sc.goal.name);
+		if (how != null) b.append("\nHOW: ").append(how).append("\n");
+		if (!sc.gaps.isEmpty()) b.append("\nStill need: ").append(String.join(", ", sc.gaps)).append("\n");
+		boolean questGap = sc.gaps.stream().anyMatch(g -> g.startsWith("quest:") || g.startsWith("start:"));
+		if (questGap) b.append("\n→ Install the Quest Helper plugin — it draws turn-by-turn arrows + item lists for the quest. The Coach picks WHICH quest and the order; Quest Helper walks you through it.");
+		b.append("\n\n(A guide arrow has been placed toward the destination where the Coach knows it; your shortest-path plugin can route you to it.)");
+		javax.swing.JOptionPane.showMessageDialog(this, b.toString(), sc.goal.name, javax.swing.JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	private JLabel header(String t)

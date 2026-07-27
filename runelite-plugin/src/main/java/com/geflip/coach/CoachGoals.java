@@ -57,8 +57,39 @@ final class CoachGoals
 	static final int BLOWPIPE_CHARGED = 12926, BLOWPIPE_EMPTY = 12924;
 	static final int BARROWS_GLOVES = 7462;
 	static final int FURY = 6585, ANGUISH = 19547, OCCULT = 12002, ASSEMBLER = 22109;
-	static final int[] KEY_ITEMS = { FIRE_CAPE, INFERNAL_CAPE, BLOWPIPE_CHARGED, BLOWPIPE_EMPTY,
-		BARROWS_GLOVES, FURY, ANGUISH, OCCULT, ASSEMBLER };
+	// completion items (all verified vs ItemID 1.12.33) — owning one means the goal is DONE
+	static final int AVAS_ACC = 10499, VOID_HELM = 11664, VOID_TOP = 8839, VOID_ETOP = 13072;
+	static final int SLAYER_HELM = 11864, SLAYER_HELM_I = 11865, TRIDENT_SWAMP = 12899, TRIDENT_SWAMP_E = 22292;
+	static final int RUNE_POUCH = 12791, RUNE_POUCH2 = 23650, BOOK_OF_DEAD = 25818;
+	// any slayer-helmet (i) recolour counts as having the imbued helm
+	private static final int[] SLAYER_HELMS = { SLAYER_HELM, SLAYER_HELM_I, 19641, 19645, 19649, 21266, 21890, 23075, 24444, 25900, 25906, 25912 };
+
+	/** goal name -> item ids that mean "you already have this / it's DONE". */
+	static final java.util.Map<String, int[]> DONE_IF_OWN = new java.util.HashMap<>();
+	static
+	{
+		DONE_IF_OWN.put("Ava's accumulator (ranged QoL)", new int[]{ AVAS_ACC, 23609, ASSEMBLER });
+		DONE_IF_OWN.put("Void ranged set", new int[]{ VOID_HELM, VOID_TOP, VOID_ETOP });
+		DONE_IF_OWN.put("Barrows gloves", new int[]{ BARROWS_GLOVES, 23593 });
+		DONE_IF_OWN.put("Occult necklace", new int[]{ OCCULT });
+		DONE_IF_OWN.put("Amulet of anguish", new int[]{ ANGUISH });
+		DONE_IF_OWN.put("Trident of the swamp", new int[]{ TRIDENT_SWAMP, TRIDENT_SWAMP_E });
+		DONE_IF_OWN.put("Rune pouch", new int[]{ RUNE_POUCH, RUNE_POUCH2 });
+		DONE_IF_OWN.put("Book of the Dead (thralls)", new int[]{ BOOK_OF_DEAD });
+		DONE_IF_OWN.put("Slayer helmet (imbued)", SLAYER_HELMS);
+		DONE_IF_OWN.put("Infernal cape", new int[]{ INFERNAL_CAPE });
+	}
+
+	// every id the plugin scans equipment/inventory/bank for = key items + all completion items
+	static final int[] KEY_ITEMS;
+	static
+	{
+		java.util.Set<Integer> s = new java.util.LinkedHashSet<>();
+		for (int id : new int[]{ FIRE_CAPE, INFERNAL_CAPE, BLOWPIPE_CHARGED, BLOWPIPE_EMPTY, BARROWS_GLOVES, FURY, ANGUISH, OCCULT, ASSEMBLER }) s.add(id);
+		for (int[] ids : DONE_IF_OWN.values()) for (int id : ids) s.add(id);
+		KEY_ITEMS = new int[s.size()];
+		int i = 0; for (int id : s) KEY_ITEMS[i++] = id;
+	}
 
 	// --- quests whose state the plugin reads (goals reference these) ----------
 	static final Quest[] KEY_QUESTS = {
@@ -227,17 +258,21 @@ final class CoachGoals
 	static final java.util.Map<String, String> HOW = new java.util.HashMap<>();
 	static
 	{
-		HOW.put("Zulrah (money boss)", "blowpipe (dragon darts) + trident once 75 Mag, anti-venom+, prayer/super restores, Zul-Andra teleport. Turn on RuneLite's Zulrah plugin and learn the fixed rotation.");
-		HOW.put("Rigour (ranged prayer)", "hit 74 Prayer, then read a Dexterous prayer scroll (CoX drop or ~24M on the GE).");
-		HOW.put("Augury (magic prayer)", "hit 77 Prayer, then read an Arcane prayer scroll (~15M).");
-		HOW.put("Slayer helmet (imbued)", "55 Slayer + 55 Crafting; unlock 'Malevolent masquerade' (400 pts), buy the black-mask parts, combine; imbue with 1250 NMZ/Soul Wars points.");
-		HOW.put("Ava's accumulator (ranged QoL)", "finish Animal Magnetism — it's handed to you. Upgrade to the Assembler after DS2 (+ a Vorkath head).");
-		HOW.put("Barrows gloves", "do Monkey Madness I, finish all RFD subquests, then buy the gloves from the Culinaromancer's chest.");
-		HOW.put("Occult necklace", "just buy it on the GE (a few hundred k) — cheaper than grinding Thermonuclear smoke devils.");
-		HOW.put("Trident of the swamp", "75 Magic to wield; assemble from Zulrah drops (magic fang + uncharged trident) or buy the swamp trident.");
-		HOW.put("Void ranged set", "Pest Control on the Hard boat — ~30-40 points for the ranged top/legs/gloves + helm.");
-		HOW.put("Amulet of anguish", "buy it, or make from a zenyte (demonic gorillas / ToA). Big ranged neck upgrade over fury.");
-		HOW.put("Rune pouch", "Enter the Abyss miniquest gives one (or 750 Slayer points).");
+		HOW.put("Zulrah (money boss)", "WHERE: Zul-Andra (fairy ring CKR then run S, or the Zul-Andra teleport scroll). BRING: blowpipe + dragon darts, trident once 75 Mag, anti-venom+, prayer/super restores. Turn on RuneLite's Zulrah plugin and learn the fixed rotation.");
+		HOW.put("Rigour (ranged prayer)", "GET TO 74 Prayer (see Prayer training), then READ a Dexterous prayer scroll — a Chambers of Xeric drop, or buy one on the GE (~24M).");
+		HOW.put("Augury (magic prayer)", "GET TO 77 Prayer, then read an Arcane prayer scroll (~15M on the GE).");
+		HOW.put("Slayer helmet (imbued)", "NEED 55 Slayer + 55 Crafting. From ANY Slayer master: unlock 'Malevolent masquerade' (400 pts), buy the black mask + the 5 headgear parts, then combine them. Imbue at Nightmare Zone (1250 pts) or Soul Wars.");
+		HOW.put("Ava's accumulator (ranged QoL)", "DO the Animal Magnetism quest — START by talking to Ava at Draynor Manor (Ernest the Chicken area). After the quest, talk to her for the accumulator (needs 50 Ranged). Upgrade to the Assembler after DS2 + a Vorkath head.");
+		HOW.put("Barrows gloves", "DO Monkey Madness I, then finish ALL Recipe for Disaster subquests → buy the gloves from the Culinaromancer's chest under Lumbridge Castle. Use Quest Helper for each subquest's steps.");
+		HOW.put("Barrows (ranged gear + money)", "WHERE: the Barrows mounds NE of Canifis (fairy ring BKR, or the Barrows minigame teleport). Priest in Peril unlocks Morytania. Dig into each brother's mound, kill all 6, then loot the chest in the tunnels.");
+		HOW.put("Occult necklace", "Just BUY it on the GE (~300-500k) — far easier than grinding Thermonuclear smoke devils (93 Slayer).");
+		HOW.put("Trident of the swamp", "NEED 75 Magic to wield. Assemble from Zulrah drops (magic fang + an uncharged toxic trident), or buy the charged swamp trident on the GE.");
+		HOW.put("Void ranged set", "WHERE: Void Knights' Outpost — talk to the Squire on the docks in Port Sarim to sail there. Play Pest Control (take the HARD boat), spend ~30-40 points on the ranged top, legs, gloves + a helm.");
+		HOW.put("Amulet of anguish", "Buy it on the GE, or craft from a zenyte (demonic gorillas after MM2, or ToA). Big ranged-neck upgrade over the fury.");
+		HOW.put("Rune pouch", "DO the 'Enter the Abyss' miniquest — talk to the Mage of Zamorak (he wanders the ruins just NE of Edgeville, edge of the Wild). ~5 min, no requirements. (Or buy it with 750 Slayer points.)");
+		HOW.put("Ancient Magicks (Barrage)", "DO Desert Treasure I (use Quest Helper). Then switch to the Ancient spellbook at the altar in the pyramid north of the Bandit Camp (or a POH altar).");
+		HOW.put("Fairy rings (travel QoL)", "DO Fairytale II up to the point you re-attune the rings (partial completion is enough) — use Quest Helper. Then any fairy ring lets you code-hop the map.");
+		HOW.put("Book of the Dead (thralls)", "DO 'A Kingdom Divided' (use Quest Helper), then read the Book of the Dead. Cast Resurrect Thrall from the Arceuus spellbook (needs the book equipped/owned).");
 	}
 
 	// --- helpers --------------------------------------------------------------

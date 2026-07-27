@@ -37,6 +37,10 @@ final class CoachEngine
 		List<Scored> out = new ArrayList<>();
 		for (CoachGoals.Goal g : CoachGoals.GOALS)
 		{
+			// already own the item this goal produces? → DONE (don't nag you to get what you have)
+			int[] doneIds = CoachGoals.DONE_IF_OWN.get(g.name);
+			if (doneIds != null) { boolean have = false; for (int id : doneIds) if (s.owns(id)) { have = true; break; }
+				if (have) { out.add(new Scored(g, Status.DONE, new ArrayList<>(), 0, 0)); continue; } }
 			List<String> gaps = new ArrayList<>();
 			int total = 0, max = 0;
 			for (CoachGoals.Req r : g.reqs)
