@@ -96,6 +96,12 @@ public class GeflipPlugin extends Plugin
 	// treat an in-slot offer that matches the saved key as already-booked (its fills are on disk).
 	private volatile boolean upgradeMode = false;
 	private final boolean[] slotSeeded = new boolean[8];
+	// flip-complete alerts: a SELL just booked (so the realized-P&L jump is a completed flip, not an
+	// exclude-list edit); lastSoldId names it; lastRealizedNotified/notifyPrimed dedup + skip startup.
+	private volatile boolean sellBookedPending = false;
+	private volatile int lastSoldId = -1;
+	private long lastRealizedNotified = 0;
+	private boolean notifyPrimed = false;
 	private int tickCounter;   // paces the periodic offer-age refresh
 	// per-item 4h buy-limit window: id -> [windowStartMs, unitsBoughtThisWindow]
 	private final java.util.Map<Integer, long[]> buyWindows = new java.util.concurrent.ConcurrentHashMap<>();
@@ -511,6 +517,22 @@ public class GeflipPlugin extends Plugin
 	{
 		java.util.Set<Integer> excluded = scanner.idsForNames(excludeLowered());
 		ledger = GeflipLedger.compute(fills, excluded, costOverride);
+		// FLIP-COMPLETE ALERT: a sell just booked (even a partial — 28/100 then a relist each ping)
+		// and realized P&L moved → tell you the profit. Skips startup + non-sell recomputes.
+		if (sellBookedPending)
+		{
+			sellBookedPending = false;
+			if (notifyPrimed && config.flipAlerts() && ledger.realizedFlip != lastRealizedNotified)
+			{
+				long delta = ledger.realizedFlip - lastRealizedNotified;
+				String nm = scanner.nameFor(lastSoldId);
+				notifier.notify("Geflip: sold " + (nm != null ? nm : "item")
+					+ " → " + (delta >= 0 ? "+" : "") + gpn(delta) + " flip profit");
+			}
+			lastRealizedNotified = ledger.realizedFlip;
+			notifyPrimed = true;
+		}
+		else if (!notifyPrimed) { lastRealizedNotified = ledger.realizedFlip; notifyPrimed = true; }
 		if (panel != null)
 		{
 			panel.setSession(ledger); panel.setHoldings(buildHoldings());
@@ -903,6 +925,7 @@ public class GeflipPlugin extends Plugin
 		{
 			int tax = GeflipScanner.saleTax(unit, scanner.isExempt(o.getItemId())) * deltaQty;
 			fills.add(new Fill(o.getItemId(), "SELL", unit, deltaQty, tax, now));
+			sellBookedPending = true; lastSoldId = o.getItemId();   // → flip-complete alert on recompute
 		}
 		pruneFills();
 		return true;

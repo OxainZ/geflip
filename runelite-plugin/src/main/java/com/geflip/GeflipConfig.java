@@ -70,6 +70,15 @@ public interface GeflipConfig extends Config
 	default boolean dumpAlerts() { return true; }
 
 	@ConfigItem(
+		keyName = "flipAlerts",
+		name = "Flip-complete alerts",
+		description = "Ping with the realized profit the moment a sell closes a round-trip "
+			+ "(\"✓ Sold 500 Nature runes: +142k\").",
+		position = 6
+	)
+	default boolean flipAlerts() { return true; }
+
+	@ConfigItem(
 		keyName = "useTrends",
 		name = "Death-spiral filter",
 		description = "Haircut items in a steep long-term decline, using geflip's data/trends.json.",
