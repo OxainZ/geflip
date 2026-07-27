@@ -414,6 +414,18 @@ public class CoachPlugin extends Plugin
 		int spec = client.getVarpValue(net.runelite.api.VarPlayer.SPECIAL_ATTACK_PERCENT) / 10;
 		out.add("Spec: " + spec + "%  ·  HP: " + client.getBoostedSkillLevel(Skill.HITPOINTS) + "/" + client.getRealSkillLevel(Skill.HITPOINTS)
 			+ "  ·  Prayer: " + client.getBoostedSkillLevel(Skill.PRAYER) + "/" + client.getRealSkillLevel(Skill.PRAYER));
+		// est. max hit from your EQUIPPED strength/ranged-strength bonuses (base: no prayer/style)
+		int strB = 0, rstrB = 0;
+		ItemContainer eq = client.getItemContainer(InventoryID.EQUIPMENT);
+		if (eq != null) for (Item it : eq.getItems())
+		{
+			if (it == null || it.getId() < 0) continue;
+			net.runelite.client.game.ItemStats s = itemManager.getItemStats(it.getId());
+			if (s != null && s.getEquipment() != null) { strB += s.getEquipment().getStr(); rstrB += s.getEquipment().getRstr(); }
+		}
+		int meleeMax = (int) (0.5 + (client.getBoostedSkillLevel(Skill.STRENGTH) + 8) * (strB + 64) / 640.0);
+		int rangeMax = (int) (0.5 + (client.getBoostedSkillLevel(Skill.RANGED) + 8) * (rstrB + 64) / 640.0);
+		out.add("Est. max hit — melee ~" + meleeMax + " · ranged ~" + rangeMax + "  (base: no prayer/combat style)");
 		out.add("(Bank + banked coins are NOT at risk — only what's equipped/carried.)");
 		return out;
 	}

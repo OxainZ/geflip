@@ -137,6 +137,8 @@ final class CoachFarm
 		int n = 1;
 		for (String p : patches) o.add(n++ + ") " + p);
 		o.add("");
+		o.add("GETTING THERE: each stop shows its teleport — take it, then set the patch as your");
+		o.add("  shortest-path target for a drawn walking route the last few tiles.");
 		o.add("Skip any stop you can't reach yet — the rest still pays. Mark the run done to start the timer.");
 		if ("Herb".equals(type)) o.add("TIP: ultracompost + the Ardougne Medium diary = disease-free herbs; Resurrect Crops (78 Mag) revives a dead one.");
 		if ("Tree".equals(type) || "Fruit".equals(type)) o.add("TIP: NEVER skip paying a gardener — a dead sapling is a big loss. Trees can't be cured, only protected.");
