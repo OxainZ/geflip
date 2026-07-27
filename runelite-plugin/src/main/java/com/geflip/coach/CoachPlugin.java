@@ -58,6 +58,7 @@ public class CoachPlugin extends Plugin
 	@Inject private net.runelite.client.Notifier notifier;
 	@Inject private net.runelite.client.config.ConfigManager configManager;
 	@Inject private net.runelite.client.hiscore.HiscoreClient hiscoreClient;
+	@Inject private net.runelite.client.game.ItemManager itemManager;
 
 	private CoachPanel panel;
 	private NavigationButton navButton;
@@ -362,46 +363,58 @@ public class CoachPlugin extends Plugin
 	 *  rest as risked — plus your live spec %, HP and prayer. All own-state; no opponent reads. */
 	private List<String> riskLines()
 	{
-		Map<Integer, Integer> px = prices;
-		if (px == null) return java.util.Collections.singletonList("Loading prices…");
-		java.util.List<Long> vals = new ArrayList<>();
-		long total = 0;
+		// value EVERY worn + carried item via ItemManager (handles untradeable/charged gear that a raw
+		// GE-price map misses — that was why worn stuff read as 0). name+price both from ItemManager.
+		java.util.List<Object[]> items = new ArrayList<>();   // {name, value(long)}
+		long total = 0; int untradeables = 0;
 		for (InventoryID which : new InventoryID[]{ InventoryID.EQUIPMENT, InventoryID.INVENTORY })
 		{
 			ItemContainer c = client.getItemContainer(which);
 			if (c == null) continue;
 			for (Item it : c.getItems())
 			{
-				if (it == null || it.getId() < 0) continue;
-				long v = it.getId() == 995 ? it.getQuantity() : (long) px.getOrDefault(it.getId(), 0) * it.getQuantity();
-				if (v > 0) { vals.add(v); total += v; }
+				int id = it.getId(), qty = it.getQuantity();
+				if (id < 0 || qty <= 0) continue;
+				net.runelite.api.ItemComposition comp = itemManager.getItemComposition(id);
+				String name = comp != null ? comp.getName() : "#" + id;
+				if (name == null || name.equals("null")) continue;
+				long v = id == 995 ? qty : (long) Math.max(0, itemManager.getItemPrice(id)) * qty;
+				if (v <= 0) untradeables++;   // untradeable/charged — no GE value but still LOST on death
+				items.add(new Object[]{ name + (qty > 1 ? " x" + qty : ""), v });
+				total += v;
 			}
 		}
-		if (vals.isEmpty()) return java.util.Collections.singletonList("Nothing valuable on you.");
-		vals.sort(java.util.Collections.reverseOrder());
+		if (items.isEmpty()) return java.util.Collections.singletonList("Nothing on you — log in / gear up.");
+		items.sort((a, b) -> Long.compare((long) b[1], (long) a[1]));   // most valuable first
 
 		net.runelite.api.Player me = client.getLocalPlayer();
 		boolean skulled = me != null && me.getSkullIcon() != -1;
 		boolean protectItem = client.getVarbitValue(Varbits.PRAYER_PROTECT_ITEM) > 0;
 		int keepN = (skulled ? 0 : 3) + (protectItem ? 1 : 0);
 		long kept = 0;
-		for (int i = 0; i < keepN && i < vals.size(); i++) kept += vals.get(i);
-		long lost = total - kept;
+		for (int i = 0; i < keepN && i < items.size(); i++) kept += (long) items.get(i)[1];
 
 		List<String> out = new ArrayList<>();
 		out.add("RISK (if you die in the Wild now)");
 		out.add("On you: " + CoachGoals.gp(total) + "  ·  " + (skulled ? "SKULLED" : "unskulled")
 			+ (protectItem ? " + Protect Item" : ""));
-		out.add("Keep " + keepN + " item" + (keepN == 1 ? "" : "s") + ": " + CoachGoals.gp(kept));
-		out.add("LOSE: " + CoachGoals.gp(lost));
-		if (!skulled && !protectItem) out.add("(Protect Item prayer would save 1 more.)");
+		out.add("Keep " + keepN + ": " + CoachGoals.gp(kept) + "   ·   LOSE: " + CoachGoals.gp(total - kept));
+		if (!skulled && !protectItem) out.add("(Protect Item prayer saves 1 more.)");
+		out.add("");
+		out.add("Risking (worn + carried, most valuable first):");
+		int shown = 0;
+		for (Object[] r : items)
+		{
+			if (shown++ >= 12) { out.add("  …+" + (items.size() - 12) + " more"); break; }
+			long v = (long) r[1];
+			out.add("  " + (shown <= keepN ? "🛡 " : "✖ ") + r[0] + " — " + (v > 0 ? CoachGoals.gp(v) : "untradeable"));
+		}
+		if (untradeables > 0) out.add("(🛡 = kept · ✖ = lost. Untradeables show no GE value but are still lost.)");
 		out.add("");
 		int spec = client.getVarpValue(net.runelite.api.VarPlayer.SPECIAL_ATTACK_PERCENT) / 10;
-		int hp = client.getBoostedSkillLevel(Skill.HITPOINTS), hpMax = client.getRealSkillLevel(Skill.HITPOINTS);
-		int pray = client.getBoostedSkillLevel(Skill.PRAYER), prayMax = client.getRealSkillLevel(Skill.PRAYER);
-		out.add("Spec: " + spec + "%  ·  HP: " + hp + "/" + hpMax + "  ·  Prayer: " + pray + "/" + prayMax);
-		out.add("");
-		out.add("(Your bank + banked coins are NOT at risk — only what's equipped/carried.)");
+		out.add("Spec: " + spec + "%  ·  HP: " + client.getBoostedSkillLevel(Skill.HITPOINTS) + "/" + client.getRealSkillLevel(Skill.HITPOINTS)
+			+ "  ·  Prayer: " + client.getBoostedSkillLevel(Skill.PRAYER) + "/" + client.getRealSkillLevel(Skill.PRAYER));
+		out.add("(Bank + banked coins are NOT at risk — only what's equipped/carried.)");
 		return out;
 	}
 
