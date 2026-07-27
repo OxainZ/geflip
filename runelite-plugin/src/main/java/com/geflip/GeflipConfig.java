@@ -79,6 +79,16 @@ public interface GeflipConfig extends Config
 	default boolean flipAlerts() { return true; }
 
 	@ConfigItem(
+		keyName = "sellAlerts",
+		name = "Sell reprice nudges",
+		description = "Notify when one of your resting SELL offers has gone stale (unfilled past your "
+			+ "stale-offer hours) or is now listed above what buyers are paying — so capital isn't stuck "
+			+ "in a mispriced sell. Re-arms once you reprice/it fills.",
+		position = 6
+	)
+	default boolean sellAlerts() { return true; }
+
+	@ConfigItem(
 		keyName = "useTrends",
 		name = "Death-spiral filter",
 		description = "Haircut items in a steep long-term decline, using geflip's data/trends.json.",

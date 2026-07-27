@@ -53,6 +53,7 @@ public class GeflipPlugin extends Plugin
 	// items you're watching (persisted) + which we've already "cheap now" alerted on
 	private final java.util.Set<Integer> watchlist = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	private final java.util.Set<Integer> watchAlerted = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private final java.util.Set<Integer> sellAlerted = java.util.concurrent.ConcurrentHashMap.newKeySet();   // reprice nudges
 	private volatile int lastCheckedId = -1;   // last item you priced (for the ☆ watch button)
 
 	// live coins you actually have (inventory + bank when opened); −1 = unknown yet
@@ -330,6 +331,35 @@ public class GeflipPlugin extends Plugin
 			}
 		}
 		dumpAlerted.retainAll(stillDown);   // re-arm items that recovered
+	}
+
+	/** #3 — SELL-side reprice nudge (every other alert is buy-side). Pings once when a resting sell has
+	 *  gone stale (unfilled past your stale-hours) OR is now listed above what buyers are actually paying,
+	 *  so capital isn't stuck in a mispriced sell. Re-arms when the offer is repriced/fills/cancels. */
+	private void checkSells()
+	{
+		if (!config.sellAlerts()) return;
+		java.util.Set<Integer> stillStuck = new java.util.HashSet<>();
+		for (Offer o : offerSnapshot)
+		{
+			if (o == null || !"SELLING".equals(o.state)) continue;   // active, not-yet-filled sells only
+			int hint = scanner.sellHint(o.id);
+			if (hint <= 0) continue;
+			boolean mispriced = o.price > hint + GeflipScanner.tickSize(hint);   // above what buyers pay now
+			if (o.stale || mispriced)
+			{
+				stillStuck.add(o.id);
+				if (sellAlerted.add(o.id))
+				{
+					String nm = scanner.nameFor(o.id);
+					String why = mispriced
+						? "listed at " + gpn(o.price) + " but buyers are at ~" + gpn(hint) + " — reprice down to fill"
+						: "unfilled for " + fmtDur(o.ageSec) + " — the price moved, reprice it";
+					notifier.notify("Geflip sell: " + (nm != null ? nm : "#" + o.id) + " " + why);
+				}
+			}
+		}
+		sellAlerted.retainAll(stillStuck);   // re-arm once it's repriced / filled / cancelled
 	}
 
 	/** Look up the recommended buy/sell for ANY item by name — for the panel's price-check box. */
@@ -846,6 +876,7 @@ public class GeflipPlugin extends Plugin
 			finally { scanning.set(false); }
 			checkDumps();  // warn if anything you HOLD has crashed below your buy
 			checkWatch();  // ping when a watched item goes cheap
+			checkSells();  // #3: nudge when a resting sell is stale / priced above the market
 			cloudPush();   // push fills/session to the cloud store (no-op if not configured)
 		});
 	}
