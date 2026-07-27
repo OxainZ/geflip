@@ -80,6 +80,14 @@ class GeflipPanel extends PluginPanel
 		legend.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		legend.setFont(FontManager.getRunescapeSmallFont());
 		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · %fill · ★basket ×qty · ✓margin-verified · 🔥dip · ⚠decline · ⚡volatile · ⏳low</span></html>");
+		legend.setToolTipText("<html><div width=340><b>How to read a row</b><br>"
+			+ "<b>gp/h</b> — est. profit per hour (green=reliable fill, orange=so-so, red=thin).<br>"
+			+ "<b>buy→sell +margin ×qty</b> — list a buy at the first, a sell at the second; profit each after tax × how many.<br>"
+			+ "<b>~fill</b> — est. time both offers take to fill · <b>%fill</b> — chance the round-trip completes in 4h · <b>↻</b> buy-limit reset.<br>"
+			+ "<b>★basket ×N</b> — put N of these in a GE slot (your cash + slots plan) · <b>✓</b> margin held up in the last 2h (timeseries-verified).<br>"
+			+ "<b>🔥</b> cheap vs its norm (a dip) · <b>⚠</b> long-term decline · <b>⚡</b> volatile (can flip red) · <b>⏳</b> thin market.<br>"
+			+ "Hover any row for its full plain-English reasoning + your own record on that item.<br><br>"
+			+ "<b>Tabs:</b> Flips (all finds) · Dips (cheap-right-now) · Decant (potion arbitrage) · Sets (armour-set arbitrage) · You (your P&L, To-sell, journal).</div></html>");
 
 		// --- top: rescan + status + legend ---
 		JButton refresh = new JButton("Rescan");
@@ -717,7 +725,13 @@ class GeflipPanel extends PluginPanel
 			.append((int) (f.marginPersist * 100)).append("% of the last 2h")
 			.append(f.tsDir < -0.03 ? ", price falling ~" + (int) Math.round(-f.tsDir * 100) + "%" : "").append("<br>");
 		if (f.personalized && f.yourWinRate >= 0)
-			tip.append("● your record here: ").append((int) Math.round(f.yourWinRate * 100)).append("% of past flips paid<br>");
+		{
+			tip.append("● your record here: ").append((int) Math.round(f.yourWinRate * 100)).append("% of past flips paid");
+			if (f.yourMarginPer >= 0 || f.yourHoldH > 0)
+				tip.append(" (you net ~").append(gp((long) f.yourMarginPer)).append("/ea")
+					.append(f.yourHoldH > 0 ? ", ~" + fillTxt(f.yourHoldH).replace("~", "") + " hold" : "").append(")");
+			tip.append("<br>");
+		}
 		if (f.basketQty > 0) tip.append("★ suggested basket: put ").append(f.basketQty).append(" of these in a GE slot<br>");
 		tip.append("<i>Click to copy the name for the GE search</i></html>");
 		name.setToolTipText(tip.toString());

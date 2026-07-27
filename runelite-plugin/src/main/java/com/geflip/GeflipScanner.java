@@ -70,6 +70,8 @@ class GeflipScanner
 		// --- personalisation (#2): your own realised fills adjusted this pick ---
 		boolean personalized;        // your fill history moved the confidence
 		double yourWinRate = -1;     // your realised win-rate on this item (−1 = no history)
+		double yourMarginPer = -1;   // your realised profit per unit on this item (−1 = no history)
+		double yourHoldH = -1;       // your realised hold hours per unit (−1 = no history)
 		// --- capital/slot basket (#3) ---
 		int basketQty;               // suggested units if you put this in one of your GE slots (0 = not picked)
 	}
@@ -656,13 +658,24 @@ class GeflipScanner
 			// smoothed rate ((wins+2)/(flips+4)) so a SMALL or CORRELATED sample (e.g. one buy dribble-sold
 			// in pieces counts as several "flips") sits near neutral and only real volume moves it; the
 			// factor is applied to expGph below (not clamped away), and we DISPLAY your honest raw rate.
-			boolean personalized = false; double yourWr = -1, personalFactor = 1.0;
+			boolean personalized = false;
+			double yourWr = -1, personalFactor = 1.0, yourMarginPer = -1, yourHoldH = -1, personalW = 0;
 			long[] pi = perf.get(id);
 			if (pi != null && pi[1] >= 3)
 			{
 				yourWr = pi[2] / (double) pi[1];                          // raw realised win-rate (for display)
 				double shrunkWr = (pi[2] + 2.0) / (pi[1] + 4.0);         // smoothed toward 50% for small samples
 				personalFactor = 0.7 + 0.5 * shrunkWr;                    // 0.7 (losers) .. 1.2 (proven winners)
+				personalW = pi[1] / (pi[1] + 3.0);                        // trust in YOUR data, grows with sample size
+				if (pi[4] > 0)   // matchedUnits > 0 → realised margin + hold per unit are meaningful
+				{
+					yourMarginPer = pi[0] / (double) pi[4];               // realised profit per unit (may be <0)
+					yourHoldH = pi[3] / (double) pi[4] / 3600.0;          // realised hold hours per unit
+					// REALISED-MARGIN haircut: if you consistently net LESS than the model predicts on this
+					// item (undercut wars, slippage — or you lose on it), scale the rank toward your reality.
+					if (marginComp > 0 && yourMarginPer < marginComp)
+						personalFactor *= (1 - personalW) + personalW * Math.max(0.3, yourMarginPer / marginComp);
+				}
 				personalized = true;
 			}
 			Double t90 = t90s.get(id);
@@ -676,13 +689,18 @@ class GeflipScanner
 			double buyFillH = sellersFc > 0 ? f.quantity / (PART * sellersFc) : 999.0;
 			double sellFillH = buyersFc > 0 ? f.quantity / (PART * buyersFc) : 999.0;
 			double fillH = Math.min(999.0, buyFillH + sellFillH);
+			// REALISED-HOLD blend: the Poisson fill time is optimistic; if YOUR history shows this item
+			// takes longer to actually fill, blend your realised hold in (weighted by sample size) so the
+			// gp/hr headline reflects your real fill speed, not the model's best case.
+			if (personalized && yourHoldH > 0)
+				fillH = Math.min(999.0, (1 - personalW) * fillH + personalW * yourHoldH);
 			double effCycleH = Math.max(fillH, cycleH);   // floor at the 4h buy-limit reset
 			f.roi = roi; f.fillHours = fillH;
 			f.gph = (double) marginComp * qty / effCycleH;
 			f.expGph = f.gph * conf * pen;   // short-term confidence x long-term trend penalty
 			f.confidence = conf * pen; f.t90 = t90; f.decliner = pen < 1.0; f.dumping = dumping; f.unstable = unstable;
 			f.fillProb = fillProb; f.wontFill = wontFill;
-			f.personalized = personalized; f.yourWinRate = yourWr;
+			f.personalized = personalized; f.yourWinRate = yourWr; f.yourMarginPer = yourMarginPer; f.yourHoldH = yourHoldH;
 			// apply your-record weighting to the RANKING value (expGph isn't capped at 1, so a proven
 			// winner actually rises); keep the displayed confidence a valid ≤1 probability.
 			if (personalized) { f.expGph *= personalFactor; f.confidence = Math.min(1, f.confidence * personalFactor); }
