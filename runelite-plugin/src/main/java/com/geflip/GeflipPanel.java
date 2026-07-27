@@ -79,7 +79,7 @@ class GeflipPanel extends PluginPanel
 		calib.setFont(FontManager.getRunescapeSmallFont());
 		legend.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		legend.setFont(FontManager.getRunescapeSmallFont());
-		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · %fill · 🔥dip · ⚠decline · ⚡volatile · ⏳low</span></html>");
+		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · %fill · ★basket ×qty · ✓margin-verified · 🔥dip · ⚠decline · ⚡volatile · ⏳low</span></html>");
 
 		// --- top: rescan + status + legend ---
 		JButton refresh = new JButton("Rescan");
@@ -651,7 +651,8 @@ class GeflipPanel extends PluginPanel
 		// --- line 1: item name (left, clips if long) + gp/hour headline (right) ---
 		JPanel top = new JPanel(new BorderLayout(6, 0));
 		top.setOpaque(false);
-		String tag = (f.dumping ? "🔥 " : "") + (f.decliner ? "⚠ " : "") + (f.unstable ? "⚡ " : "");
+		String tag = (f.basketQty > 0 ? "★ " : "") + (f.dumping ? "🔥 " : "") + (f.decliner ? "⚠ " : "")
+			+ (f.unstable ? "⚡ " : "") + (f.tsChecked && f.marginPersist >= 0.7 ? "✓ " : "");
 		JLabel name = new JLabel(tag + f.name);
 		name.setForeground(f.decliner ? ColorScheme.PROGRESS_ERROR_COLOR
 			: f.unstable ? ColorScheme.PROGRESS_INPROGRESS_COLOR
@@ -670,9 +671,10 @@ class GeflipPanel extends PluginPanel
 		String ft = fillTxt(f.fillHours);
 		String reset = f.resetMins > 0 ? "   ↻" + (f.resetMins >= 60 ? (f.resetMins / 60) + "h" : f.resetMins + "m") : "";
 		String fill = f.wontFill ? "   ⏳low" : "   " + Math.round(f.fillProb * 100) + "% fill";
+		String bask = f.basketQty > 0 ? "   ★×" + f.basketQty : "";   // suggested slot size (#3)
 		JLabel sub = new JLabel(gp(f.buy) + " → " + gp(f.sell)
 			+ "   +" + gp(f.margin) + "×" + f.quantity + " = +" + gp((long) f.margin * f.quantity)
-			+ (ft.isEmpty() ? "" : "   " + ft) + reset + fill);
+			+ (ft.isEmpty() ? "" : "   " + ft) + reset + fill + bask);
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 
@@ -700,6 +702,13 @@ class GeflipPanel extends PluginPanel
 		if (f.dumping) tip.append("🔥 cheap right now vs its recent norm — a dip<br>");
 		if (f.decliner) tip.append("⚠ in a long-term decline — risky<br>");
 		if (f.t90 != null) tip.append("90-day trend ").append(pct(f.t90)).append("<br>");
+		// timeseries grounding (#1) + your own record (#2) + basket (#3)
+		if (f.tsChecked) tip.append(f.marginPersist >= 0.7 ? "✓ margin held ~" : "margin present ~")
+			.append((int) (f.marginPersist * 100)).append("% of the last 2h")
+			.append(f.tsDir < -0.03 ? ", price falling ~" + (int) Math.round(-f.tsDir * 100) + "%" : "").append("<br>");
+		if (f.personalized && f.yourWinRate >= 0)
+			tip.append("● your record here: ").append((int) Math.round(f.yourWinRate * 100)).append("% of past flips paid<br>");
+		if (f.basketQty > 0) tip.append("★ suggested basket: put ").append(f.basketQty).append(" of these in a GE slot<br>");
 		tip.append("<i>Click to copy the name for the GE search</i></html>");
 		name.setToolTipText(tip.toString());
 

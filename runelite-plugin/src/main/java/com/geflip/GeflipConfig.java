@@ -114,6 +114,26 @@ public interface GeflipConfig extends Config
 	)
 	default boolean safeMode() { return false; }
 
+	@ConfigItem(
+		keyName = "groundTimeseries",
+		name = "Verify margin (timeseries)",
+		description = "For each top pick, pull its recent 5m price history to confirm the margin actually "
+			+ "persisted (not a one-tick phantom) and isn't quietly crashing, then re-rank. Costs one small "
+			+ "API call per shown row — worth it: this is what stops the 'bought green, sold red' picks.",
+		position = 64
+	)
+	default boolean groundTimeseries() { return true; }
+
+	@Range(min = 1, max = 8)
+	@ConfigItem(
+		keyName = "geSlots",
+		name = "Free GE slots",
+		description = "How many Grand Exchange slots you have free for flipping. The panel suggests a "
+			+ "capital-and-slots basket — what to actually put in those slots right now.",
+		position = 65
+	)
+	default int geSlots() { return 8; }
+
 	@Range(min = 60, max = 900)
 	@ConfigItem(
 		keyName = "refreshSec",

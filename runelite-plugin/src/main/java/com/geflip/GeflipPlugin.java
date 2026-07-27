@@ -766,7 +766,8 @@ public class GeflipPlugin extends Plugin
 			{
 				if (p != null) p.setStatus("scanning…");
 				long bank = bankrollGp();
-				java.util.List<GeflipScanner.Flip> flips = scanner.scan(config, remainingLimits(), bank);
+				// pass your realised per-item journal so the scan personalises confidence (#2)
+				java.util.List<GeflipScanner.Flip> flips = scanner.scan(config, remainingLimits(), bank, ledger.byItem);
 				for (GeflipScanner.Flip f : flips) f.resetMins = limitResetMins(f.id);   // buy-limit timer
 				if (p != null) p.setBankroll(bank, config.autoBankroll() && liveGp >= 0);
 				lastFlips = flips;                       // share with the bridge/cloud

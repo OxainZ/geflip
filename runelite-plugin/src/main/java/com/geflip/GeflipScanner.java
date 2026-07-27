@@ -1,5 +1,6 @@
 package com.geflip;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -56,6 +57,15 @@ class GeflipScanner
 		double fillProb;      // P(the round-trip actually completes in a 4h cycle), 0..1
 		boolean wontFill;     // too little counter-flow — expect slow/failed fills
 		String why = "";      // one-line plain-English rationale (the transparency edge)
+		// --- timeseries grounding (#1): did the margin actually persist recently? ---
+		double marginPersist = -1;   // fraction of the last ~2h where a real margin existed (−1 = not checked)
+		double tsDir;                // price direction over that window (e.g. −0.04 = fell 4%)
+		boolean tsChecked;           // timeseries grounding ran for this pick
+		// --- personalisation (#2): your own realised fills adjusted this pick ---
+		boolean personalized;        // your fill history moved the confidence
+		double yourWinRate = -1;     // your realised win-rate on this item (−1 = no history)
+		// --- capital/slot basket (#3) ---
+		int basketQty;               // suggested units if you put this in one of your GE slots (0 = not picked)
 	}
 
 	/** Item name from the cached mapping (null if not loaded / unknown). */
@@ -402,6 +412,8 @@ class GeflipScanner
 	List<Flip> scan(GeflipConfig cfg) throws Exception { return scan(cfg, java.util.Collections.emptyMap()); }
 	List<Flip> scan(GeflipConfig cfg, java.util.Map<Integer, Integer> remaining) throws Exception
 	{ return scan(cfg, remaining, cfg.bankrollM() * 1_000_000L); }
+	List<Flip> scan(GeflipConfig cfg, java.util.Map<Integer, Integer> remaining, long bankrollGp) throws Exception
+	{ return scan(cfg, remaining, bankrollGp, java.util.Collections.emptyMap()); }
 
 	/**
 	 * Full scan → ranked flips. `remaining` maps item id → units still buyable in the
@@ -409,7 +421,10 @@ class GeflipScanner
 	 * dropped, and quantity is capped by what's left — so it never recommends a flip you
 	 * can't act on right now.
 	 */
-	List<Flip> scan(GeflipConfig cfg, java.util.Map<Integer, Integer> remaining, long bankrollGp) throws Exception
+	/** @param perf your realised per-item journal (ledger.byItem): id → [profit, completedFlips,
+	 *  winningFlips, holdSecSum, matchedUnits]. Used to personalise confidence (#2). */
+	List<Flip> scan(GeflipConfig cfg, java.util.Map<Integer, Integer> remaining, long bankrollGp,
+		java.util.Map<Integer, long[]> perf) throws Exception
 	{
 		Map<Integer, Meta> map = loadMapping();
 		JsonObject latest = new JsonParser().parse(httpGet(API + "/latest")).getAsJsonObject().getAsJsonObject("data");
@@ -615,6 +630,17 @@ class GeflipScanner
 			double volS = Math.sqrt(Math.min(1.0, vol1 / VOL_SAT));
 			double quality = Math.sqrt(fresh * volS);
 			double conf = Math.max(0, Math.min(1, quality * stab * trendPen * spikePen));
+			// PERSONALISATION (#2): once you've completed ≥3 flips on this item, nudge confidence by YOUR
+			// realised win-rate — proven winners up, items that kept going red down. Bounded 0.7–1.2 and
+			// needs a track record, so one unlucky flip can't tank a good item.
+			boolean personalized = false; double yourWr = -1;
+			long[] pi = perf.get(id);
+			if (pi != null && pi[1] >= 3)
+			{
+				yourWr = pi[2] / (double) pi[1];             // winningFlips / completedFlips
+				conf = Math.max(0, Math.min(1, conf * (0.7 + 0.5 * yourWr)));
+				personalized = true;
+			}
 			Double t90 = t90s.get(id);
 			double pen = trendPenalty(t90);   // long-term death-spiral, applied to expGph (like web applyTrends)
 
@@ -632,6 +658,7 @@ class GeflipScanner
 			f.expGph = f.gph * conf * pen;   // short-term confidence x long-term trend penalty
 			f.confidence = conf * pen; f.t90 = t90; f.decliner = pen < 1.0; f.dumping = dumping; f.unstable = unstable;
 			f.fillProb = fillProb; f.wontFill = wontFill;
+			f.personalized = personalized; f.yourWinRate = yourWr;
 			// WHY this pick ranks where it does — the honest, per-pick rationale no paid black box shows
 			int fp = (int) Math.round(fillProb * 100);
 			if (wontFill) f.why = "Thin market — may sit unfilled (little counter-flow)";
@@ -641,16 +668,95 @@ class GeflipScanner
 			else if (stab < 0.7) f.why = "Wide instant spread the 1h avg doesn't confirm — treated cautiously";
 			else if (fillProb >= 0.7) f.why = "Solid: ~" + fp + "% fill, spread corroborated by the 1h average";
 			else f.why = "OK: ~" + fp + "% fill — decent margin, watch the fill time";
+			// personalised note (your realised win-rate here), without hiding a live risk warning
+			if (personalized && !f.wontFill && !f.unstable && !f.decliner)
+			{
+				int wr = (int) Math.round(yourWr * 100);
+				if (yourWr >= 0.7) f.why = "Your winner (" + wr + "% of your flips here paid) — " + f.why;
+				else if (yourWr <= 0.34) f.why = "Careful: only " + wr + "% of your past flips here paid — " + f.why;
+			}
 			// SAFE MODE: only clean flips — drop won't-fill / volatile / long-term-decline rows.
 			if (cfg.safeMode() && (f.wontFill || f.unstable || f.decliner)) continue;
 			out.add(f);
 		}
 		// rank by expGph WEIGHTED by fill probability, so a fat margin that probably won't fill
 		// doesn't sit at #1 (the eye-catching-but-useless trap). Displayed gp/h is unchanged.
-		out.sort(Comparator.<Flip>comparingDouble(x -> -x.expGph * (0.6 + 0.4 * x.fillProb))
+		Comparator<Flip> byValue = Comparator.<Flip>comparingDouble(x -> -x.expGph * (0.6 + 0.4 * x.fillProb))
 			.thenComparing(Comparator.comparingDouble((Flip x) -> -x.confidence))
-			.thenComparing(x -> x.name));
+			.thenComparing(x -> x.name);
+		out.sort(byValue);
 		int rows = Math.max(5, cfg.rows());
-		return out.size() > rows ? new ArrayList<>(out.subList(0, rows)) : out;
+		// TIMESERIES GROUNDING (#1): everything above uses aggregate snapshots; now pull each top pick's
+		// recent 5m history to confirm the margin ACTUALLY persisted (not a one-tick phantom) and isn't
+		// quietly crashing. Only the shown pool is grounded (one HTTP call each), then we re-rank.
+		int groundN = Math.min(out.size(), Math.max(rows, 20));
+		List<Flip> pool = new ArrayList<>(out.subList(0, groundN));
+		if (cfg.groundTimeseries()) { groundWithTimeseries(pool, map); pool.sort(byValue); }
+		List<Flip> top = pool.size() > rows ? new ArrayList<>(pool.subList(0, rows)) : pool;
+		basket(top, bankroll, Math.max(1, cfg.geSlots()));   // #3: mark the capital/slot basket
+		return top;
+	}
+
+	/** #1 — pull each pick's recent 5m timeseries and fold "did the margin actually exist lately, and
+	 *  is it crashing" into confidence/expGph. Left untouched (tsChecked stays false) if the call fails. */
+	private void groundWithTimeseries(List<Flip> pool, Map<Integer, Meta> map)
+	{
+		for (Flip f : pool)
+		{
+			try
+			{
+				Meta meta = map.get(f.id);
+				boolean exempt = meta != null && meta.exempt;
+				JsonArray data = new JsonParser().parse(httpGet(API + "/timeseries?timestep=5m&id=" + f.id))
+					.getAsJsonObject().getAsJsonArray("data");
+				int n = data.size();
+				int from = Math.max(0, n - 24);   // last ~2h of 5m points
+				int pos = 0, tot = 0; double firstMid = 0, lastMid = 0;
+				for (int i = from; i < n; i++)
+				{
+					JsonObject p = data.get(i).getAsJsonObject();
+					if (p.get("avgHighPrice").isJsonNull() || p.get("avgLowPrice").isJsonNull()) continue;
+					int lo = p.get("avgLowPrice").getAsInt(), hi = p.get("avgHighPrice").getAsInt();
+					if (lo <= 0 || hi <= 0) continue;
+					tot++;
+					if (netMargin(lo, hi, exempt) >= Math.max(1, f.margin * 0.5)) pos++;
+					double mid = (lo + hi) / 2.0;
+					if (firstMid == 0) firstMid = mid;
+					lastMid = mid;
+				}
+				if (tot < 6) continue;   // too little history to judge — leave the pick as-is
+				double persist = pos / (double) tot;
+				double dir = firstMid > 0 ? (lastMid - firstMid) / firstMid : 0;
+				f.marginPersist = persist; f.tsDir = dir; f.tsChecked = true;
+				double tsConf = 0.4 + 0.6 * persist;          // 0.4 (never present) .. 1.0 (always present)
+				if (dir < -0.03) tsConf *= 0.7;               // falling over the window
+				f.confidence *= tsConf; f.expGph *= tsConf;
+				if (persist < 0.3)
+					f.why = "Margin present only ~" + (int) (persist * 100) + "% of the last 2h — likely a phantom";
+				else if (dir < -0.03)
+					f.why = "Price fell ~" + (int) Math.round(-dir * 100) + "% over 2h — the margin may not survive";
+				else if (persist >= 0.7)
+					f.why = "Reliable: the margin held ~" + (int) (persist * 100) + "% of the last 2h";
+			}
+			catch (Exception ignored) { /* timeseries optional — keep the snapshot-based verdict */ }
+		}
+	}
+
+	/** #3 — mark a capital/slot basket: greedily fill your free GE slots from the ranked list, sizing
+	 *  each by what your cash and its buy limit allow, so you see WHAT to actually put in your slots. */
+	void basket(List<Flip> ranked, long cashGp, int slots)
+	{
+		long cash = Math.max(0, cashGp);
+		int used = 0;
+		for (Flip f : ranked)
+		{
+			if (used >= slots || cash <= 0) break;
+			if (f.wontFill || f.buy <= 0) continue;
+			int q = (int) Math.min(f.quantity, cash / f.buy);
+			if (q <= 0) continue;
+			f.basketQty = q;
+			cash -= (long) q * f.buy;
+			used++;
+		}
 	}
 }
