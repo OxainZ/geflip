@@ -414,53 +414,77 @@ public class CoachPlugin extends Plugin
 		int spec = client.getVarpValue(net.runelite.api.VarPlayer.SPECIAL_ATTACK_PERCENT) / 10;
 		out.add("Spec: " + spec + "%  ·  HP: " + client.getBoostedSkillLevel(Skill.HITPOINTS) + "/" + client.getRealSkillLevel(Skill.HITPOINTS)
 			+ "  ·  Prayer: " + client.getBoostedSkillLevel(Skill.PRAYER) + "/" + client.getRealSkillLevel(Skill.PRAYER));
-		// est. max hit from your EQUIPPED strength/ranged-strength bonuses (base: no prayer/style)
-		int strB = 0, rstrB = 0;
-		Map<Integer, Integer> slotRstr = new java.util.HashMap<>();   // equipment slot -> its ranged-str bonus
+		// est. max hit from your EQUIPPED strength / ranged-str / magic-dmg bonuses (base: no prayer/style)
+		int strB = 0, rstrB = 0; double mdmgB = 0;
+		Map<Integer, Integer> slotStr = new java.util.HashMap<>();    // slot -> melee str bonus
+		Map<Integer, Integer> slotRstr = new java.util.HashMap<>();   // slot -> ranged str bonus
+		Map<Integer, Double> slotMdmg = new java.util.HashMap<>();    // slot -> magic dmg %
 		ItemContainer eq = client.getItemContainer(InventoryID.EQUIPMENT);
 		if (eq != null) for (Item it : eq.getItems())
 		{
 			if (it == null || it.getId() < 0) continue;
 			net.runelite.client.game.ItemStats s = itemManager.getItemStats(it.getId());
-			if (s != null && s.getEquipment() != null)
-			{
-				strB += s.getEquipment().getStr(); rstrB += s.getEquipment().getRstr();
-				slotRstr.merge(s.getEquipment().getSlot(), s.getEquipment().getRstr(), Integer::sum);
-			}
+			if (s == null || s.getEquipment() == null) continue;
+			net.runelite.client.game.ItemEquipmentStats e = s.getEquipment();
+			strB += e.getStr(); rstrB += e.getRstr(); mdmgB += e.getMdmg();
+			slotStr.merge(e.getSlot(), e.getStr(), Integer::sum);
+			slotRstr.merge(e.getSlot(), e.getRstr(), Integer::sum);
+			slotMdmg.merge(e.getSlot(), (double) e.getMdmg(), Double::sum);
 		}
+		int bStr = client.getBoostedSkillLevel(Skill.STRENGTH);
 		int bRng = client.getBoostedSkillLevel(Skill.RANGED);
-		int meleeMax = (int) (0.5 + (client.getBoostedSkillLevel(Skill.STRENGTH) + 8) * (strB + 64) / 640.0);
+		int meleeMax = (int) (0.5 + (bStr + 8) * (strB + 64) / 640.0);
 		int rangeMax = (int) (0.5 + (bRng + 8) * (rstrB + 64) / 640.0);
 		out.add("Est. max hit — melee ~" + meleeMax + " · ranged ~" + rangeMax + "  (base: no prayer/combat style)");
-		out.addAll(rangedUpgrades(rstrB, bRng, rangeMax, slotRstr));
+		out.addAll(strengthUpgrades("Best melee upgrades (max-hit gain):", MELEE_UPGRADES, true, strB, bStr, meleeMax, slotStr));
+		out.addAll(strengthUpgrades("Best ranged upgrades (max-hit gain):", RANGED_UPGRADES, false, rstrB, bRng, rangeMax, slotRstr));
+		out.addAll(magicUpgrades(mdmgB, slotMdmg));
 		out.add("(Bank + banked coins are NOT at risk — only what's equipped/carried.)");
 		return out;
 	}
 
-	// curated high-value RANGED upgrades (ids verified vs ItemID 1.12.33). Stats/prices are read LIVE
-	// from ItemManager, so nothing here is a hardcoded stat that could go stale.
+	// curated high-value upgrades per style (ids verified vs ItemID 1.12.33). Stats + prices are read
+	// LIVE from ItemManager, so nothing here is a hardcoded stat that could go stale.
+	private static final int[] MELEE_UPGRADES = {
+		19553,                // Amulet of torture (neck)
+		21295, 6570,          // Infernal cape / Fire cape
+		11832, 11834,         // Bandos chestplate / tassets
+		24271,                // Neitiznot faceguard (helm)
+		22981, 7462,          // Ferocious gloves / Barrows gloves
+		25485, 11773,         // Ultor ring / Berserker (i)
+		13239, 11840,         // Primordial boots / Dragon boots
+		22322,                // Avernic defender (offhand)
+	};
 	private static final int[] RANGED_UPGRADES = {
-		19547, // Amulet of anguish (neck)
-		22109, // Ava's assembler (cape)
-		11826, 11828, 11830, // Armadyl helmet / chestplate / chainskirt
-		26235, // Zaryte vambraces (gloves)
-		7462,  // Barrows gloves (gloves, budget)
-		11771, // Archer's ring (i)
-		13237, // Pegasian boots
+		19547,                // Amulet of anguish (neck)
+		22109,                // Ava's assembler (cape)
+		11826, 11828, 11830,  // Armadyl helmet / chestplate / chainskirt
+		26235, 7462,          // Zaryte vambraces / Barrows gloves
+		11771, 13237,         // Archer's ring (i) / Pegasian boots
+	};
+	private static final int[] MAGIC_UPGRADES = {
+		12002,                // Occult necklace (neck)
+		19544,                // Tormented bracelet (gloves)
+		21018, 21021, 21024,  // Ancestral hat / top / bottom
+		21791, 21793, 21795,  // Imbued god capes (sara/guthix/zammy)
+		13235,                // Eternal boots
+		20714, 6889,          // Tome of fire / Mage's book (offhand)
 	};
 
-	/** "Best ranged upgrade" finder: for each candidate, the max-hit gain if you swapped it into its
-	 *  slot, ranked, with the live GE price — so you see the biggest bang and its cost. */
-	private List<String> rangedUpgrades(int curRstr, int bRng, int curMax, Map<Integer, Integer> slotRstr)
+	/** Max-hit-gain finder for a strength-based style (melee=getStr, ranged=getRstr). For each candidate
+	 *  it reports the max-hit gain from swapping it into its slot, ranked, with the live GE price. */
+	private List<String> strengthUpgrades(String header, int[] ids, boolean melee,
+		int curBonus, int boostedLvl, int curMax, Map<Integer, Integer> slotBonus)
 	{
 		java.util.List<Object[]> ups = new ArrayList<>();   // {label, gain, price}
-		for (int id : RANGED_UPGRADES)
+		for (int id : ids)
 		{
 			net.runelite.client.game.ItemStats s = itemManager.getItemStats(id);
 			if (s == null || s.getEquipment() == null) continue;
 			int slot = s.getEquipment().getSlot();
-			int newRstr = curRstr - slotRstr.getOrDefault(slot, 0) + s.getEquipment().getRstr();
-			int newMax = (int) (0.5 + (bRng + 8) * (newRstr + 64) / 640.0);
+			int cand = melee ? s.getEquipment().getStr() : s.getEquipment().getRstr();
+			int newBonus = curBonus - slotBonus.getOrDefault(slot, 0) + cand;
+			int newMax = (int) (0.5 + (boostedLvl + 8) * (newBonus + 64) / 640.0);
 			int gain = newMax - curMax;
 			if (gain <= 0) continue;   // already equal/better in that slot
 			net.runelite.api.ItemComposition c = itemManager.getItemComposition(id);
@@ -469,9 +493,34 @@ public class CoachPlugin extends Plugin
 		if (ups.isEmpty()) return java.util.Collections.emptyList();
 		ups.sort((a, b) -> Integer.compare((int) b[1], (int) a[1]));   // biggest max-hit gain first
 		List<String> out = new ArrayList<>();
-		out.add("Best ranged upgrades (max-hit gain):");
+		out.add(header);
 		int n = 0;
 		for (Object[] u : ups) { if (n++ >= 5) break; out.add("  " + u[0] + ": +" + u[1] + "  (~" + CoachGoals.gp((int) u[2]) + ")"); }
+		return out;
+	}
+
+	/** Magic upgrades: ranked by the % magic-damage gain from swapping into their slot (magic max hit
+	 *  scales with the spell, so gear is measured by its magic-damage bonus, matching the gear screen). */
+	private List<String> magicUpgrades(double curMdmg, Map<Integer, Double> slotMdmg)
+	{
+		java.util.List<Object[]> ups = new ArrayList<>();   // {label, gain%, price}
+		for (int id : MAGIC_UPGRADES)
+		{
+			net.runelite.client.game.ItemStats s = itemManager.getItemStats(id);
+			if (s == null || s.getEquipment() == null) continue;
+			int slot = s.getEquipment().getSlot();
+			double newMdmg = curMdmg - slotMdmg.getOrDefault(slot, 0.0) + s.getEquipment().getMdmg();
+			double gain = newMdmg - curMdmg;
+			if (gain <= 0.05) continue;   // already equal/better in that slot
+			net.runelite.api.ItemComposition c = itemManager.getItemComposition(id);
+			ups.add(new Object[]{ c != null ? c.getName() : "#" + id, gain, itemManager.getItemPrice(id) });
+		}
+		if (ups.isEmpty()) return java.util.Collections.emptyList();
+		ups.sort((a, b) -> Double.compare((double) b[1], (double) a[1]));
+		List<String> out = new ArrayList<>();
+		out.add("Best magic upgrades (magic-dmg gain):");
+		int n = 0;
+		for (Object[] u : ups) { if (n++ >= 5) break; out.add("  " + u[0] + ": +" + String.format("%.1f", (double) u[1]) + "%  (~" + CoachGoals.gp((int) u[2]) + ")"); }
 		return out;
 	}
 
