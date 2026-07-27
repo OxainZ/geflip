@@ -62,6 +62,8 @@ public class GeflipPlugin extends Plugin
 	private volatile java.util.Map<Integer, Integer> invCounts;
 	private volatile java.util.Set<Integer> excludedIds = java.util.Collections.emptySet();   // personal-use ids
 	private final java.util.concurrent.atomic.AtomicBoolean scanning = new java.util.concurrent.atomic.AtomicBoolean(false);
+	private volatile java.util.concurrent.ScheduledFuture<?> persistDebounce;   // coalesces fill-event saves
+	private volatile int pendingSoldId = -1;   // a sell seen during the debounce window (for the flip alert)
 	private volatile java.util.Map<Integer, Integer> bankCounts;
 
 	private final GeflipScanner scanner = new GeflipScanner();
@@ -250,8 +252,8 @@ public class GeflipPlugin extends Plugin
 				if (id == ItemID.COINS_995 || shown.contains(id) || excludedIds.contains(id)) continue;
 				String nm = scanner.nameFor(id);
 				if (nm == null) continue;                              // not on the GE mapping ⇒ can't sell it there
-				int qty = ie.getValue() - listedForSaleQty(id);        // don't re-list what's already selling
-				if (qty <= 0) continue;
+				int qty = ie.getValue();   // inventory count ALREADY excludes units listed on the GE (listing
+				if (qty <= 0) continue;    // moves them out of your bag) — don't subtract listedForSaleQty again
 				out.add(new Hold(id, nm, qty, -1, scanner.sellHint(id), scanner.isExempt(id)));   // −1 = cost untracked
 			}
 		}
@@ -685,7 +687,11 @@ public class GeflipPlugin extends Plugin
 		try
 		{
 			com.google.gson.JsonObject o = new com.google.gson.JsonObject();
-			o.add("fills", new com.google.gson.Gson().toJsonTree(fills));
+			// cap the pushed fills to the last 3000 (matches the disk cap) so a marathon session doesn't
+			// serialize + PUT a huge payload every scan
+			java.util.List<Fill> fillsOut = fills.size() > 3000
+				? new java.util.ArrayList<>(fills.subList(fills.size() - 3000, fills.size())) : fills;
+			o.add("fills", new com.google.gson.Gson().toJsonTree(fillsOut));
 			o.add("flips", new com.google.gson.Gson().toJsonTree(lastFlips));
 			o.add("offers", new com.google.gson.Gson().toJsonTree(offerSnapshot));
 			GeflipLedger l = ledger;
@@ -769,6 +775,7 @@ public class GeflipPlugin extends Plugin
 	protected void shutDown()
 	{
 		if (refresh != null) refresh.cancel(true);
+		if (persistDebounce != null) persistDebounce.cancel(false);   // a pending batch is re-booked by reconcile on next login
 		if (bridge != null) { bridge.stop(); bridge = null; }
 		clientToolbar.removeNavigation(navButton);
 		panel = null;
@@ -844,8 +851,25 @@ public class GeflipPlugin extends Plugin
 			GrandExchangeOfferState s = o.getState();
 			boolean sell = s == GrandExchangeOfferState.SELLING || s == GrandExchangeOfferState.SOLD
 				|| s == GrandExchangeOfferState.CANCELLED_SELL;
-			persistAndRecompute(sell ? o.getItemId() : -1);   // sell → may alert; buy → re-baseline only
+			schedulePersist(sell ? o.getItemId() : -1);   // sell → may alert; buy → re-baseline only
 		}
+	}
+
+	/** Coalesce a burst of fill events into ONE save+recompute. A big offer fills in many small
+	 *  increments → many events/min; without this each did an O(n) fill-list copy + full ledger re-sort
+	 *  + full disk rewrite. Debounced ~1.2s: the offer/To-sell view still updates per event (above),
+	 *  only the heavy persist+P&L reflow is coalesced. A sell in the window is remembered so the
+	 *  flip-complete alert still fires. persistAndRecompute snapshots on the client thread as before. */
+	private void schedulePersist(int soldId)
+	{
+		if (soldId >= 0) pendingSoldId = soldId;
+		java.util.concurrent.ScheduledFuture<?> pd = persistDebounce;
+		if (pd != null && !pd.isDone()) return;   // one already pending → coalesce into it
+		persistDebounce = executor.schedule(() ->
+		{
+			int sid = pendingSoldId; pendingSoldId = -1;
+			clientThread.invoke(() -> persistAndRecompute(sid));
+		}, 1200, TimeUnit.MILLISECONDS);
 	}
 
 	/**
@@ -964,10 +988,12 @@ public class GeflipPlugin extends Plugin
 		return true;
 	}
 
-	// 25k (was 5k): the prune drops closed items' fills, which also erases their per-item journal (the
-	// "learn from your fills" memory). A higher cap defers that far past any normal session; each Fill is
-	// tiny and recompute is O(n) but not hot-path. Open positions are never pruned regardless.
-	private static final int FILL_CAP = 25000;
+	// In-memory fill cap. Kept modest: the on-disk cap is 3000 (saveFills), so a reload baselines to
+	// ≤3000 and a much larger in-memory cap only accumulates during one uninterrupted marathon session
+	// while adding CopyOnWriteArrayList O(N²) append cost. 8000 gives session headroom above the reload
+	// baseline without the 25k tail. (Truly permanent per-item journal retention would need a separate
+	// persisted journal — noted as a future improvement, not worth the P&L-path risk here.)
+	private static final int FILL_CAP = 8000;
 
 	/** Keep the fill log bounded WITHOUT corrupting P&L. A blind remove(0) could drop a BUY whose
 	 *  SELL is still in the log → that sell becomes an unmatched "pure-profit" phantom (overstated

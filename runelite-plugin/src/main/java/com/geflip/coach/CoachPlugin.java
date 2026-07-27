@@ -168,7 +168,7 @@ public class CoachPlugin extends Plugin
 				+ (st.bankKnown ? "" : " · (open bank for full net worth)");
 			String sess = sessionStats(st);
 			List<CoachEngine.Scored> next = CoachEngine.doNext(all);
-			List<String> path = criticalPath(st);
+			List<String> path = criticalPath(st, all);   // reuse the already-computed goal graph (no 2nd evaluate)
 			List<String> risk = riskLines();
 			List<String> farmLines = config.farmingHelper() ? CoachFarm.run(farmRunType, st, farmElapsedMin()) : null;
 			p.setSummary(summary);
@@ -590,9 +590,8 @@ public class CoachPlugin extends Plugin
 	/** Ordered plan to the focus goal: every skill to train (with a live ETA if you're training it)
 	 *  and quest to do, prerequisites first. Focus = config.focusGoal (name match) or the
 	 *  highest-impact blocked goal. Client thread (reads live skill XP). */
-	private List<String> criticalPath(CoachState st)
+	private List<String> criticalPath(CoachState st, List<CoachEngine.Scored> all)
 	{
-		List<CoachEngine.Scored> all = CoachEngine.evaluate(st);
 		CoachGoals.Goal target = null;
 		String want = config.focusGoal().trim().toLowerCase();
 		if (!want.isEmpty())
