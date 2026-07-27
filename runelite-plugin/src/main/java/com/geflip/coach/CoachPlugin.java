@@ -77,6 +77,8 @@ public class CoachPlugin extends Plugin
 	private volatile net.runelite.client.hiscore.HiscoreResult hiscore;
 	private volatile String hiscoreName;
 	private volatile long lastHiscoreMs = 0;
+	private ScheduledFuture<?> priceRefresh;   // the net-worth price poller (cancelled on shutdown)
+	private boolean wealthBaselined = false;   // session gp/hr baseline only once the bank is known
 
 	@Provides
 	CoachConfig provideConfig(net.runelite.client.config.ConfigManager cm) { return cm.getConfig(CoachConfig.class); }
@@ -90,13 +92,15 @@ public class CoachPlugin extends Plugin
 		clientToolbar.addNavigation(navButton);
 		int s = Math.max(10, config.refreshSec());
 		refresh = executor.scheduleWithFixedDelay(this::rescan, 3, s, TimeUnit.SECONDS);
-		executor.scheduleWithFixedDelay(this::fetchPrices, 0, 600, TimeUnit.SECONDS);   // net-worth prices
+		priceRefresh = executor.scheduleWithFixedDelay(this::fetchPrices, 0, 600, TimeUnit.SECONDS);   // net-worth prices
 	}
 
 	@Override
 	protected void shutDown()
 	{
 		if (refresh != null) refresh.cancel(true);
+		if (priceRefresh != null) priceRefresh.cancel(true);
+		clientThread.invoke(client::clearHintArrow);   // don't leave a stale guide arrow behind
 		clientToolbar.removeNavigation(navButton);
 		panel = null;
 	}
@@ -271,20 +275,22 @@ public class CoachPlugin extends Plugin
 		long now = System.currentTimeMillis(), xp = totalXp();
 		if (sessStartMs == 0)
 		{
-			sessStartMs = now; sessStartXp = xp; sessStartWealth = st.wealth;
+			sessStartMs = now; sessStartXp = xp;
 			for (Skill sk : Skill.values()) if (sk != Skill.OVERALL) startSkillXp.put(sk, (long) client.getSkillExperience(sk));
-			return "session: tracking…";
 		}
-		if (sessStartWealth < 0 && st.wealth >= 0) sessStartWealth = st.wealth;   // baseline once prices load
+		// gp/hr baseline is snapped ONLY once the bank has been read — otherwise the baseline is just
+		// carried gp, and opening the bank later fabricates a giant fake "+500m gp/hr".
+		if (!wealthBaselined && st.bankKnown && st.wealth >= 0) { sessStartWealth = st.wealth; wealthBaselined = true; }
 		double hrs = (now - sessStartMs) / 3_600_000.0;
 		if (hrs < 1.0 / 60) return "session: warming up…";
 		long xpH = Math.round((xp - sessStartXp) / hrs);
 		String s = "session: " + CoachGoals.gp(xpH) + " xp/hr";
-		if (st.wealth >= 0 && sessStartWealth >= 0)
+		if (wealthBaselined && st.bankKnown && st.wealth >= 0)
 		{
 			long gpH = Math.round((st.wealth - sessStartWealth) / hrs);
 			s += " · " + (gpH >= 0 ? "+" : "-") + CoachGoals.gp(Math.abs(gpH)) + " gp/hr";
 		}
+		else s += " · gp/hr: open bank";
 		return s;
 	}
 
@@ -523,7 +529,12 @@ public class CoachPlugin extends Plugin
 	void guideTo(String goalName)
 	{
 		int[] d = GUIDE_DEST.get(goalName);
-		if (d == null) { if (panel != null) panel.setStatus("see the popup — Quest Helper / shortest-path will route you"); return; }
+		if (d == null)
+		{
+			clientThread.invoke(client::clearHintArrow);   // no fixed spot → clear any old arrow, don't misdirect
+			if (panel != null) panel.setStatus("see the popup — Quest Helper / shortest-path will route you");
+			return;
+		}
 		clientThread.invoke(() -> client.setHintArrow(new net.runelite.api.coords.WorldPoint(d[0], d[1], d[2])));
 		if (panel != null) panel.setStatus("→ hint arrow set to the Grand Exchange for " + goalName);
 	}
@@ -541,7 +552,7 @@ public class CoachPlugin extends Plugin
 	{
 		String v = configManager.getConfiguration("geflipcoach", "lastFarmRunMs");
 		if (v == null) return -1;
-		try { long last = Long.parseLong(v.trim()); return last > 0 ? (int) ((System.currentTimeMillis() - last) / 60000) : -1; }
+		try { long last = Long.parseLong(v.trim()); long mins = (System.currentTimeMillis() - last) / 60000; return last > 0 && mins >= 0 ? (int) mins : -1; }
 		catch (NumberFormatException e) { return -1; }
 	}
 
@@ -623,7 +634,7 @@ public class CoachPlugin extends Plugin
 		for (CoachEngine.Scored sc : CoachEngine.blocked(all)) b.append(sc.goal.name).append(" [").append(String.join(", ", sc.gaps)).append("]; ");
 		// QUESTS — the coach reads EVERY quest, so it knows what you've done and what's left that matters
 		int done = 0; for (Quest q : st.quests.keySet()) if (st.finished(q)) done++;
-		b.append("\n\nQUESTS (").append(done).append(" of ").append(st.quests.size()).append(" tracked done). High-value not-done:\n");
+		b.append("\n\nQUESTS: ").append(done).append(" done. High-value not-done:\n");
 		for (CoachEngine.QuestScored qs : CoachEngine.quests(st))
 			b.append("- ").append(CoachGoals.pretty(qs.rec.q)).append(qs.ready ? " — DO NOW" : " [" + String.join(", ", qs.gaps) + "]")
 				.append(" (").append(qs.rec.note).append(")\n");

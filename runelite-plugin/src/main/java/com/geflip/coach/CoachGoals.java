@@ -61,15 +61,16 @@ final class CoachGoals
 	static final int AVAS_ACC = 10499, VOID_HELM = 11664, VOID_TOP = 8839, VOID_ETOP = 13072;
 	static final int SLAYER_HELM = 11864, SLAYER_HELM_I = 11865, TRIDENT_SWAMP = 12899, TRIDENT_SWAMP_E = 22292;
 	static final int RUNE_POUCH = 12791, RUNE_POUCH2 = 23650, BOOK_OF_DEAD = 25818;
-	// any slayer-helmet (i) recolour counts as having the imbued helm
-	private static final int[] SLAYER_HELMS = { SLAYER_HELM, SLAYER_HELM_I, 19641, 19645, 19649, 21266, 21890, 23075, 24444, 25900, 25906, 25912 };
+	// only the IMBUED helm (i) + its recolours count — the plain 11864 is NOT imbued, so it must not
+	// mark the "imbued" goal done.
+	private static final int[] SLAYER_HELMS = { SLAYER_HELM_I, 19641, 19645, 19649, 21266, 21890, 23075, 24444, 25900, 25906, 25912 };
 
 	/** goal name -> item ids that mean "you already have this / it's DONE". */
 	static final java.util.Map<String, int[]> DONE_IF_OWN = new java.util.HashMap<>();
 	static
 	{
 		DONE_IF_OWN.put("Ava's accumulator (ranged QoL)", new int[]{ AVAS_ACC, 23609, ASSEMBLER });
-		DONE_IF_OWN.put("Void ranged set", new int[]{ VOID_HELM, VOID_TOP, VOID_ETOP });
+		DONE_IF_OWN.put("Void ranged set", new int[]{ VOID_HELM });   // ranger helm is the ranged-defining piece (top 8839 is shared with melee/mage)
 		DONE_IF_OWN.put("Barrows gloves", new int[]{ BARROWS_GLOVES, 23593 });
 		DONE_IF_OWN.put("Occult necklace", new int[]{ OCCULT });
 		DONE_IF_OWN.put("Amulet of anguish", new int[]{ ANGUISH });

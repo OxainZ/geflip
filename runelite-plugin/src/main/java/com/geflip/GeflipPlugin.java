@@ -96,12 +96,10 @@ public class GeflipPlugin extends Plugin
 	// treat an in-slot offer that matches the saved key as already-booked (its fills are on disk).
 	private volatile boolean upgradeMode = false;
 	private final boolean[] slotSeeded = new boolean[8];
-	// flip-complete alerts: a SELL just booked (so the realized-P&L jump is a completed flip, not an
-	// exclude-list edit); lastSoldId names it; lastRealizedNotified/notifyPrimed dedup + skip startup.
-	private volatile boolean sellBookedPending = false;
-	private volatile int lastSoldId = -1;
-	private long lastRealizedNotified = 0;
-	private boolean notifyPrimed = false;
+	// flip-complete alerts: the sell intent + item id are threaded through recompute(fromSell,soldId)
+	// (NOT a shared flag), so only a real sell can fire. Baseline re-set on every recompute.
+	private volatile long lastRealizedNotified = 0;
+	private volatile boolean notifyPrimed = false;
 	private int tickCounter;   // paces the periodic offer-age refresh
 	// per-item 4h buy-limit window: id -> [windowStartMs, unitsBoughtThisWindow]
 	private final java.util.Map<Integer, long[]> buyWindows = new java.util.concurrent.ConcurrentHashMap<>();
@@ -395,7 +393,7 @@ public class GeflipPlugin extends Plugin
 
 	/** Run recompute() off the EDT (these are Swing button callbacks) so the ledger replay + the
 	 *  volatile ledger write happen on the executor, consistent with the scan/fill paths. */
-	private void recomputeAsync() { executor.submit(this::recompute); }
+	private void recomputeAsync() { executor.submit(() -> recompute()); }
 
 	/** Live buy/sell for each watched item, cheap ones first. */
 	private java.util.List<Watch> buildWatch()
@@ -512,27 +510,26 @@ public class GeflipPlugin extends Plugin
 		return lines;
 	}
 
-	/** Rebuild the flip ledger from the raw fills + current exclude list, and refresh the panel. */
-	private void recompute()
+	private void recompute() { recompute(false, -1); }
+
+	/** Rebuild the flip ledger from the raw fills + current exclude list, and refresh the panel.
+	 *  The flip-complete alert fires ONLY when fromSell is true (the sell-fill path passes the sold
+	 *  item id) — so an exclude edit, rescan, or journal reset can never mis-fire it. We ALWAYS
+	 *  re-baseline lastRealizedNotified afterwards, so the next sell's delta is exactly its profit
+	 *  regardless of what changed realizedFlip in between (reset to 0, exclude move, etc.). */
+	private void recompute(boolean fromSell, int soldId)
 	{
 		java.util.Set<Integer> excluded = scanner.idsForNames(excludeLowered());
 		ledger = GeflipLedger.compute(fills, excluded, costOverride);
-		// FLIP-COMPLETE ALERT: a sell just booked (even a partial — 28/100 then a relist each ping)
-		// and realized P&L moved → tell you the profit. Skips startup + non-sell recomputes.
-		if (sellBookedPending)
+		if (notifyPrimed && fromSell && config.flipAlerts() && ledger.realizedFlip != lastRealizedNotified)
 		{
-			sellBookedPending = false;
-			if (notifyPrimed && config.flipAlerts() && ledger.realizedFlip != lastRealizedNotified)
-			{
-				long delta = ledger.realizedFlip - lastRealizedNotified;
-				String nm = scanner.nameFor(lastSoldId);
-				notifier.notify("Geflip: sold " + (nm != null ? nm : "item")
-					+ " → " + (delta >= 0 ? "+" : "") + gpn(delta) + " flip profit");
-			}
-			lastRealizedNotified = ledger.realizedFlip;
-			notifyPrimed = true;
+			long delta = ledger.realizedFlip - lastRealizedNotified;
+			String nm = scanner.nameFor(soldId);
+			notifier.notify("Geflip: sold " + (nm != null ? nm : "item")
+				+ " → " + (delta >= 0 ? "+" : "") + gpn(delta) + " flip profit");
 		}
-		else if (!notifyPrimed) { lastRealizedNotified = ledger.realizedFlip; notifyPrimed = true; }
+		lastRealizedNotified = ledger.realizedFlip;   // re-baseline on EVERY recompute (sell or not)
+		notifyPrimed = true;
 		if (panel != null)
 		{
 			panel.setSession(ledger); panel.setHoldings(buildHoldings());
@@ -811,7 +808,13 @@ public class GeflipPlugin extends Plugin
 		if (panel != null) panel.setOffers(snap);
 		refreshHoldingsView();
 
-		if (booked) persistAndRecompute();
+		if (booked)
+		{
+			GrandExchangeOfferState s = o.getState();
+			boolean sell = s == GrandExchangeOfferState.SELLING || s == GrandExchangeOfferState.SOLD
+				|| s == GrandExchangeOfferState.CANCELLED_SELL;
+			persistAndRecompute(sell ? o.getItemId() : -1);   // sell → may alert; buy → re-baseline only
+		}
 	}
 
 	/**
@@ -925,7 +928,6 @@ public class GeflipPlugin extends Plugin
 		{
 			int tax = GeflipScanner.saleTax(unit, scanner.isExempt(o.getItemId())) * deltaQty;
 			fills.add(new Fill(o.getItemId(), "SELL", unit, deltaQty, tax, now));
-			sellBookedPending = true; lastSoldId = o.getItemId();   // → flip-complete alert on recompute
 		}
 		pruneFills();
 		return true;
@@ -949,14 +951,18 @@ public class GeflipPlugin extends Plugin
 
 	/** Snapshot the fill/slot state on the CLIENT thread, then persist + re-match off-thread
 	 *  (so the executor never serialises arrays/list the client thread is mutating). */
-	private void persistAndRecompute()
+	private void persistAndRecompute() { persistAndRecompute(-1); }
+
+	/** soldId >= 0 => this booking was a SELL of that item → the recompute may fire a flip-complete
+	 *  alert. -1 (buys, reconcile) => re-baseline only, never alert. */
+	private void persistAndRecompute(int soldId)
 	{
 		java.util.List<Fill> fillSnap = new java.util.ArrayList<>(fills);
 		String[] sigSnap = slotSig.clone(), keySnap = slotKey.clone();
 		long[] sinceSnap = slotSince.clone();
 		int[] bookedSnap = slotBookedQty.clone(); long[] bookedSpentSnap = slotBookedSpent.clone();
 		java.util.Map<Integer, long[]> winSnap = deepCopyWindows();
-		executor.submit(() -> { saveFills(fillSnap, sigSnap, keySnap, sinceSnap, winSnap, bookedSnap, bookedSpentSnap); recompute(); });
+		executor.submit(() -> { saveFills(fillSnap, sigSnap, keySnap, sinceSnap, winSnap, bookedSnap, bookedSpentSnap); recompute(soldId >= 0, soldId); });
 	}
 
 	/**

@@ -310,8 +310,20 @@ class CoachPanel extends PluginPanel
 		if (!sc.gaps.isEmpty()) b.append("\nStill need: ").append(String.join(", ", sc.gaps)).append("\n");
 		boolean questGap = sc.gaps.stream().anyMatch(g -> g.startsWith("quest:") || g.startsWith("start:"));
 		if (questGap) b.append("\n→ Install the Quest Helper plugin — it draws turn-by-turn arrows + item lists for the quest. The Coach picks WHICH quest and the order; Quest Helper walks you through it.");
-		b.append("\n\n(A guide arrow has been placed toward the destination where the Coach knows it; your shortest-path plugin can route you to it.)");
-		javax.swing.JOptionPane.showMessageDialog(this, b.toString(), sc.goal.name, javax.swing.JOptionPane.INFORMATION_MESSAGE);
+		b.append("\n\n(For a destination with a fixed spot, the Coach sets an in-game hint arrow; otherwise use Quest Helper / your shortest-path plugin to route there.)");
+		// offer the OSRS Wiki — the deepest, always-current knowledge base — for this exact goal
+		Object[] opts = { "Close", "📖 Open Wiki" };
+		int r = javax.swing.JOptionPane.showOptionDialog(this, b.toString(), sc.goal.name,
+			javax.swing.JOptionPane.DEFAULT_OPTION, javax.swing.JOptionPane.INFORMATION_MESSAGE, null, opts, opts[0]);
+		if (r == 1) net.runelite.client.util.LinkBrowser.browse(wikiSearch(sc.goal.name));
+	}
+
+	/** OSRS Wiki search URL for a goal (search, not a direct page, so a name mismatch never 404s). */
+	private static String wikiSearch(String goal)
+	{
+		String q = goal.replaceAll("\\(.*?\\)", " ").replaceAll("[^A-Za-z0-9 ]", " ").trim();   // drop "(...)" + symbols
+		try { return "https://oldschool.runescape.wiki/?search=" + java.net.URLEncoder.encode(q, "UTF-8"); }
+		catch (Exception e) { return "https://oldschool.runescape.wiki/"; }
 	}
 
 	private JLabel header(String t)
