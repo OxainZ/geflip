@@ -40,6 +40,11 @@ class GeflipScanner
 	private volatile Map<Integer, Meta> mapping;
 	private volatile long mappingAt = 0;
 
+	/** #1 timeseries measurements cached per item: id -> {marginPersist, priceDir, fetchedMs}. Spares
+	 *  the API from re-fetching the same top picks every scan. */
+	private final Map<Integer, double[]> tsCache = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final long TS_TTL_MS = 300_000L;   // 5 minutes
+
 	static final class Meta
 	{
 		final int id; final String name; final boolean members; final int limit; final boolean exempt;
@@ -111,7 +116,22 @@ class GeflipScanner
 	}
 
 	// --- HTTP --------------------------------------------------------------
+	/** GET with one retry on a transient failure (a lone 429/5xx/timeout otherwise aborts the whole
+	 *  scan — the audit's "no partial result" gap). Runs on the executor thread, so the brief backoff
+	 *  sleep is off the EDT. */
 	private static String httpGet(String url) throws Exception
+	{
+		Exception last = null;
+		for (int attempt = 0; attempt < 2; attempt++)
+		{
+			if (attempt > 0) Thread.sleep(400L);   // brief backoff before the single retry
+			try { return httpGetOnce(url); }
+			catch (Exception e) { last = e; }
+		}
+		throw last;
+	}
+
+	private static String httpGetOnce(String url) throws Exception
 	{
 		HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
 		c.setRequestProperty("User-Agent", UA);
@@ -706,11 +726,16 @@ class GeflipScanner
 	}
 
 	/** #1 — pull each pick's recent 5m timeseries and fold "did the margin actually exist lately, and
-	 *  is it crashing" into confidence/expGph. Left untouched (tsChecked stays false) if the call fails. */
+	 *  is it crashing" into confidence/expGph. Results are CACHED per item for TS_TTL_MS so repeated
+	 *  scans of the same top picks don't re-hit the API. Left untouched (tsChecked stays false) if the
+	 *  call fails and nothing is cached. */
 	private void groundWithTimeseries(List<Flip> pool, Map<Integer, Meta> map)
 	{
+		long nowMs = System.currentTimeMillis();
 		for (Flip f : pool)
 		{
+			double[] c = tsCache.get(f.id);   // {persist, dir, fetchedMs}
+			if (c != null && nowMs - (long) c[2] < TS_TTL_MS) { applyTsResult(f, c[0], c[1]); continue; }
 			try
 			{
 				Meta meta = map.get(f.id);
@@ -735,19 +760,29 @@ class GeflipScanner
 				if (tot < 6) continue;   // too little history to judge — leave the pick as-is
 				double persist = pos / (double) tot;
 				double dir = firstMid > 0 ? (lastMid - firstMid) / firstMid : 0;
-				f.marginPersist = persist; f.tsDir = dir; f.tsChecked = true;
-				double tsConf = 0.4 + 0.6 * persist;          // 0.4 (never present) .. 1.0 (always present)
-				if (dir < -0.03) tsConf *= 0.7;               // falling over the window
-				f.confidence *= tsConf; f.expGph *= tsConf;
-				if (persist < 0.3)
-					f.why = "Margin present only ~" + (int) (persist * 100) + "% of the last 2h — likely a phantom";
-				else if (dir < -0.03)
-					f.why = "Price fell ~" + (int) Math.round(-dir * 100) + "% over 2h — the margin may not survive";
-				else if (persist >= 0.7)
-					f.why = "Reliable: the margin held ~" + (int) (persist * 100) + "% of the last 2h";
+				tsCache.put(f.id, new double[]{ persist, dir, nowMs });
+				applyTsResult(f, persist, dir);
 			}
 			catch (Exception ignored) { /* timeseries optional — keep the snapshot-based verdict */ }
 		}
+	}
+
+	/** Fold a timeseries measurement (persistence + direction) into a pick's confidence/expGph + why.
+	 *  Shared by the fresh-fetch and cache-hit paths. Applied once per scan to a fresh Flip, so there's
+	 *  no double-application across scans (only the raw measurement is cached, not the applied state). */
+	private void applyTsResult(Flip f, double persist, double dir)
+	{
+		f.marginPersist = persist; f.tsDir = dir; f.tsChecked = true;
+		double tsConf = 0.4 + 0.6 * persist;          // 0.4 (never present) .. 1.0 (always present)
+		if (dir < -0.03) tsConf *= 0.7;               // falling over the window
+		f.confidence *= tsConf; f.expGph *= tsConf;
+		// don't clobber a personalised "your winner/loser" note with a merely-reliable ts note
+		if (persist < 0.3)
+			f.why = "Margin present only ~" + (int) (persist * 100) + "% of the last 2h — likely a phantom";
+		else if (dir < -0.03)
+			f.why = "Price fell ~" + (int) Math.round(-dir * 100) + "% over 2h — the margin may not survive";
+		else if (persist >= 0.7 && !f.personalized)
+			f.why = "Reliable: the margin held ~" + (int) (persist * 100) + "% of the last 2h";
 	}
 
 	/** #3 — mark a capital/slot basket: greedily fill your free GE slots from the ranked list, sizing

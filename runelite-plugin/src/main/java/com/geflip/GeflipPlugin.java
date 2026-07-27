@@ -964,7 +964,10 @@ public class GeflipPlugin extends Plugin
 		return true;
 	}
 
-	private static final int FILL_CAP = 5000;
+	// 25k (was 5k): the prune drops closed items' fills, which also erases their per-item journal (the
+	// "learn from your fills" memory). A higher cap defers that far past any normal session; each Fill is
+	// tiny and recompute is O(n) but not hot-path. Open positions are never pruned regardless.
+	private static final int FILL_CAP = 25000;
 
 	/** Keep the fill log bounded WITHOUT corrupting P&L. A blind remove(0) could drop a BUY whose
 	 *  SELL is still in the log → that sell becomes an unmatched "pure-profit" phantom (overstated

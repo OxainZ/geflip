@@ -495,7 +495,7 @@ public class CoachPlugin extends Plugin
 		int bRng = client.getBoostedSkillLevel(Skill.RANGED);
 		int meleeMax = (int) (0.5 + (bStr + 8) * (strB + 64) / 640.0);
 		int rangeMax = (int) (0.5 + (bRng + 8) * (rstrB + 64) / 640.0);
-		out.add("Est. max hit — melee ~" + meleeMax + " · ranged ~" + rangeMax + "  (base: no prayer/combat style)");
+		out.add("Est. max hit — melee ~" + meleeMax + " · ranged ~" + rangeMax + "  (current levels + any potion; no prayer/combat style)");
 		out.addAll(strengthUpgrades("Best melee upgrades (max-hit gain):", MELEE_UPGRADES, true, strB, bStr, meleeMax, slotStr, twoH));
 		out.addAll(strengthUpgrades("Best ranged upgrades (max-hit gain):", RANGED_UPGRADES, false, rstrB, bRng, rangeMax, slotRstr, twoH));
 		out.addAll(magicUpgrades(mdmgB, slotMdmg, twoH));

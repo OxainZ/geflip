@@ -55,8 +55,21 @@ final class GeflipLedger
 	{
 		GeflipLedger l = new GeflipLedger();
 		if (fills == null) return l;
+		// FIFO relies on chronological order. Live appends are ordered, but the logged-out GE reconcile
+		// books deltas in SLOT-index order, which can append a SELL before its own BUY and leak the
+		// round-trip to unmatchedProceeds. Stable-sort a COPY by timestamp (buys before sells on a tie,
+		// since you must buy before you sell) so those cases match correctly; the caller's list is untouched.
+		java.util.List<GeflipPlugin.Fill> ordered = new java.util.ArrayList<>(fills);
+		ordered.sort((a, b) ->
+		{
+			if (a == null || b == null) return 0;
+			int c = Long.compare(a.ts, b.ts);
+			if (c != 0) return c;
+			boolean ab = "BUY".equals(a.side), bb = "BUY".equals(b.side);
+			return ab == bb ? 0 : (ab ? -1 : 1);
+		});
 		Map<Integer, Deque<long[]>> lots = new HashMap<>();   // id -> FIFO of [unitCost, qtyRemaining, buyTs]
-		for (GeflipPlugin.Fill f : fills)
+		for (GeflipPlugin.Fill f : ordered)
 		{
 			if (f == null) continue;
 			if (f.ts > 0) { if (l.firstTs == 0 || f.ts < l.firstTs) l.firstTs = f.ts; if (f.ts > l.lastTs) l.lastTs = f.ts; }
