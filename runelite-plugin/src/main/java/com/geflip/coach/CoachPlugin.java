@@ -701,26 +701,79 @@ public class CoachPlugin extends Plugin
 	private void ask(String question)
 	{
 		final String ctx = buildContext();
-		final String url = config.askUrl().trim();
-		if (url.isEmpty())
-		{
-			// no endpoint → answer from the coach's own engine instead of a dead message
-			if (panel != null) panel.setAskResult(localAnswer(question));
-			return;
-		}
+		final String q = question;
+		if (panel != null) panel.setAskResult("looking it up…");
+		// EVERYTHING off the EDT: fetch live OSRS wiki knowledge for the question, then either ground
+		// the LLM with it (endpoint set) or show the wiki + the coach's own plan (no endpoint). This is
+		// how the coach "knows everything" — it pulls the current wiki on demand, never a stale copy.
 		executor.submit(() ->
 		{
-			try
+			String wiki = wikiSummary(q);
+			String url = config.askUrl().trim();
+			if (!url.isEmpty())
 			{
-				String reply = callLlm(url, config.askKey().trim(), config.askModel().trim(), ctx, question);
-				if (panel != null) panel.setAskResult(reply);
+				try
+				{
+					String grounded = (wiki.isEmpty() ? "" : "OSRS WIKI (current, authoritative):\n" + wiki + "\n\n") + ctx;
+					String reply = callLlm(url, config.askKey().trim(), config.askModel().trim(), grounded, q);
+					if (panel != null) panel.setAskResult(reply);
+				}
+				catch (Exception e)
+				{
+					if (panel != null) panel.setAskResult((wiki.isEmpty() ? "" : "📖 " + wiki + "\n\n") + localAnswer(q)
+						+ "\n\n(LLM endpoint failed: " + e.getMessage() + ")");
+				}
 			}
-			catch (Exception e)
+			else if (panel != null)
 			{
-				if (panel != null) panel.setAskResult("Ask failed: " + e.getMessage()
-					+ "\n\nTip: leave the endpoint blank and use Copy-context → paste into Claude.");
+				// no LLM: still answer with live wiki knowledge + the coach's computed plan
+				panel.setAskResult((wiki.isEmpty() ? "" : "📖 " + wiki + "\n\n") + localAnswer(q));
 			}
 		});
+	}
+
+	/** Pull the current OSRS Wiki summary for a question — search → top page → plaintext extract.
+	 *  Live + authoritative, so the coach answers from real game knowledge, never a bundled snapshot. */
+	private String wikiSummary(String question)
+	{
+		try
+		{
+			// strip conversational filler so "how do i do zulrah" searches the topic ("zulrah"), not "how"
+			String topic = question.toLowerCase().replaceAll(
+				"\\b(how|to|do|i|get|got|the|a|an|what|whats|is|are|where|when|best|for|at|my|me|in|on|and|with|should|can|need|of|vs|good|way|it)\\b", " ")
+				.replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim();
+			if (topic.isEmpty()) topic = question;
+			String base = "https://oldschool.runescape.wiki/api.php?format=json&action=query";
+			String search = base + "&list=search&srlimit=1&srsearch="
+				+ java.net.URLEncoder.encode(topic, "UTF-8");
+			JsonObject sj = new JsonParser().parse(httpGet(search)).getAsJsonObject();
+			JsonArray hits = sj.getAsJsonObject("query").getAsJsonArray("search");
+			if (hits.size() == 0) return "";
+			String title = hits.get(0).getAsJsonObject().get("title").getAsString();
+			String ext = base + "&prop=extracts&explaintext=1&exchars=1200&redirects=1&titles="
+				+ java.net.URLEncoder.encode(title, "UTF-8");
+			JsonObject ej = new JsonParser().parse(httpGet(ext)).getAsJsonObject();
+			JsonObject pages = ej.getAsJsonObject("query").getAsJsonObject("pages");
+			for (Map.Entry<String, com.google.gson.JsonElement> e : pages.entrySet())
+			{
+				JsonObject pg = e.getValue().getAsJsonObject();
+				if (pg.has("extract") && !pg.get("extract").isJsonNull())
+				{
+					String x = pg.get("extract").getAsString().trim();
+					return title + ": " + (x.length() > 1000 ? x.substring(0, 1000) + "…" : x);
+				}
+			}
+			return "";
+		}
+		catch (Exception e) { log.debug("coach: wiki lookup failed", e); return ""; }
+	}
+
+	private static String httpGet(String url) throws Exception
+	{
+		HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+		c.setRequestProperty("User-Agent", "geflip-coach - live wiki lookup");
+		c.setConnectTimeout(12000); c.setReadTimeout(20000);
+		return new String(readAll(c.getInputStream()), StandardCharsets.UTF_8);
 	}
 
 	/** Minimal OpenAI-compatible chat-completions POST; parses OpenAI or Anthropic response shapes. */
