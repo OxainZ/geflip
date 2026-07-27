@@ -510,6 +510,31 @@ public class GeflipPlugin extends Plugin
 		});
 	}
 
+	/** #1 — proven winners (≥3 flips, net positive) that AREN'T in the current ranked list, each with the
+	 *  reason it's suppressed right now (thin volume / margin below your min / falling / spike / stale).
+	 *  Turns "my winner went quiet" from a black box into an explanation. */
+	private java.util.List<String> suppressedWinners(java.util.List<GeflipScanner.Flip> shown)
+	{
+		java.util.Set<Integer> shownIds = new java.util.HashSet<>();
+		for (GeflipScanner.Flip f : shown) shownIds.add(f.id);
+		java.util.List<java.util.Map.Entry<Integer, long[]>> winners = new java.util.ArrayList<>();
+		for (java.util.Map.Entry<Integer, long[]> e : ledger.byItem.entrySet())
+			if (e.getValue()[0] > 0 && e.getValue()[1] >= 3) winners.add(e);   // net profit > 0, ≥3 flips
+		winners.sort((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]));
+		java.util.List<String> out = new java.util.ArrayList<>();
+		for (java.util.Map.Entry<Integer, long[]> e : winners)
+		{
+			if (out.size() >= 8) break;
+			int id = e.getKey();
+			if (shownIds.contains(id)) continue;   // it IS showing — nothing to explain
+			String why = scanner.whyNotShowing(id, config);
+			if (why == null) continue;
+			String nm = scanner.nameFor(id);
+			out.add((nm != null ? nm : "#" + id) + " — " + why);
+		}
+		return out;
+	}
+
 	/** Your items ranked by realized profit — the journal analytics ("what actually pays me"). */
 	private java.util.List<String> topItems()
 	{
@@ -808,6 +833,7 @@ public class GeflipPlugin extends Plugin
 				if (p != null) p.setBankroll(bank, config.autoBankroll() && liveGp >= 0);
 				lastFlips = flips;                       // share with the bridge/cloud
 				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " finds · " + timeNow()); }
+				if (p != null) p.setSuppressedWinners(suppressedWinners(flips));   // #1: proven winners not showing + why
 				if (p != null) p.setDecants(scanner.scanDecants(config));   // decanting opportunities
 				if (p != null) p.setSets(scanner.scanSets(config));         // set-exchange arbitrage
 				recompute();   // mapping is loaded now → exclude list resolves, P&L reflows

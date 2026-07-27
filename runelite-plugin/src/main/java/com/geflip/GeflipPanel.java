@@ -38,6 +38,7 @@ class GeflipPanel extends PluginPanel
 	private final JPanel offersBox = new JPanel();     // "Your GE" — live open offers (You tab)
 	private final JPanel holdBox = new JPanel();       // "To sell" — items you hold + sell price (You tab)
 	private final JPanel perfBox = new JPanel();       // "Best items" — realized per-item profit (You tab)
+	private final JPanel suppressedBox = new JPanel(); // "Winners not showing" — proven items + why (You tab)
 	private final java.awt.CardLayout cards = new java.awt.CardLayout();
 	private final JPanel cardPanel = new JPanel(cards);
 	private final JButton tabFlips = new JButton("Flips");
@@ -160,6 +161,8 @@ class GeflipPanel extends PluginPanel
 		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
 		holdBox.setLayout(new BoxLayout(holdBox, BoxLayout.Y_AXIS));
 		perfBox.setLayout(new BoxLayout(perfBox, BoxLayout.Y_AXIS));
+		suppressedBox.setLayout(new BoxLayout(suppressedBox, BoxLayout.Y_AXIS));
+		suppressedBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		watchBox.setLayout(new BoxLayout(watchBox, BoxLayout.Y_AXIS));
 
 		// "You" card = session P&L + your record + what to sell + best items + live GE offers
@@ -176,6 +179,7 @@ class GeflipPanel extends PluginPanel
 		youBox.add(holdBox);
 		youBox.add(watchBox);
 		youBox.add(perfBox);
+		youBox.add(suppressedBox);
 		youBox.add(offersBox);
 		// reset the realized-P&L journal (keeps watchlist + exclude list). Confirmed first — it wipes
 		// your fill history, used when the numbers got polluted (e.g. a one-time upgrade double-book).
@@ -361,6 +365,36 @@ class GeflipPanel extends PluginPanel
 			}
 			perfBox.revalidate();
 			perfBox.repaint();
+		});
+	}
+
+	/** Render "Your winners — not showing now" — proven items absent from the list + why (#1). */
+	void setSuppressedWinners(List<String> lines)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			suppressedBox.removeAll();
+			if (lines != null && !lines.isEmpty())
+			{
+				JLabel hdr = new JLabel("Your winners — not flippable now");
+				hdr.setForeground(ColorScheme.BRAND_ORANGE);
+				hdr.setBorder(BorderFactory.createEmptyBorder(6, 1, 2, 1));
+				hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
+				hdr.setToolTipText("Items your journal shows you profit on that aren't in the current list — "
+					+ "and the reason each is suppressed right now, so the list never looks arbitrary.");
+				suppressedBox.add(hdr);
+				for (String s : lines)
+				{
+					JLabel l = new JLabel(s);
+					l.setFont(FontManager.getRunescapeSmallFont());
+					l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+					l.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
+					l.setAlignmentX(Component.LEFT_ALIGNMENT);
+					suppressedBox.add(l);
+				}
+			}
+			suppressedBox.revalidate();
+			suppressedBox.repaint();
 		});
 	}
 

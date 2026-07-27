@@ -100,6 +100,64 @@ class GeflipScanner
 		return out;
 	}
 
+	/** #1 — for a proven-winner item that ISN'T in the current ranked list, the most likely REASON,
+	 *  read from the last scan's cached quotes using the same gates scan() applies. So "my winner went
+	 *  quiet" becomes "Magic logs — 24h volume below the gate" instead of an unexplained absence.
+	 *  Returns null if we can't tell yet (no cached scan). */
+	String whyNotShowing(int id, GeflipConfig cfg)
+	{
+		Map<Integer, Meta> map = mapping;
+		if (map == null || lastLatest == null) return null;
+		Meta m = map.get(id);
+		if (m == null) return "not a GE-tradeable item";
+		if (m.limit <= 0) return "no buy limit — not flippable";
+		if (m.members && !cfg.members()) return "members item (members off in config)";
+		String k = String.valueOf(id);
+		if (!lastLatest.has(k)) return "no live price right now";
+		JsonObject q = lastLatest.getAsJsonObject(k);
+		if (q.get("high").isJsonNull() || q.get("low").isJsonNull()) return "no live buy/sell quote";
+		int hi = q.get("high").getAsInt(), lo = q.get("low").getAsInt();
+		if (lo <= 0 || hi <= lo) return "no spread right now";
+		long now = System.currentTimeMillis() / 1000;
+		boolean hasHi = q.has("highTime") && !q.get("highTime").isJsonNull();
+		boolean hasLo = q.has("lowTime") && !q.get("lowTime").isJsonNull();
+		long newest = hasHi && hasLo ? Math.min(q.get("highTime").getAsLong(), q.get("lowTime").getAsLong())
+			: hasHi ? q.get("highTime").getAsLong() : hasLo ? q.get("lowTime").getAsLong() : now;
+		if (now - newest > 3600) return "no trade in the last hour (stale quote)";
+		int margin = netMargin(lo, hi, m.exempt);
+		if (margin < Math.max(1, cfg.minMargin())) return "margin ~" + margin + "gp is below your " + cfg.minMargin() + "gp min";
+		if (lastH1 != null && lastH1.has(k))
+		{
+			JsonObject w1 = lastH1.getAsJsonObject(k);
+			if (!w1.get("highPriceVolume").isJsonNull() && !w1.get("lowPriceVolume").isJsonNull())
+			{
+				int vol1 = Math.min(w1.get("highPriceVolume").getAsInt(), w1.get("lowPriceVolume").getAsInt());
+				if (vol1 < cfg.minVol1h()) return "1h volume thin (" + vol1 + " < your " + cfg.minVol1h() + " min)";
+			}
+			if (!w1.get("avgHighPrice").isJsonNull() && !w1.get("avgLowPrice").isJsonNull())
+			{
+				double mid1h = (w1.get("avgLowPrice").getAsInt() + w1.get("avgHighPrice").getAsInt()) / 2.0;
+				double midNow = (lo + hi) / 2.0;
+				if (mid1h > 0 && (midNow - mid1h) / mid1h < -0.03 && cfg.hideFalling()) return "price is falling this hour (hidden as a falling knife)";
+			}
+		}
+		if (lastD24 != null && lastD24.has(k))
+		{
+			JsonObject w24 = lastD24.getAsJsonObject(k);
+			if (!w24.get("highPriceVolume").isJsonNull() && !w24.get("lowPriceVolume").isJsonNull())
+			{
+				int vol24 = Math.min(w24.get("highPriceVolume").getAsInt(), w24.get("lowPriceVolume").getAsInt());
+				if (vol24 < MIN_VOL24) return "24h volume below the " + MIN_VOL24 + " liquidity gate";
+			}
+			if (!w24.get("avgHighPrice").isJsonNull() && !w24.get("avgLowPrice").isJsonNull())
+			{
+				int m24 = netMargin(w24.get("avgLowPrice").getAsInt(), w24.get("avgHighPrice").getAsInt(), m.exempt);
+				if (m24 > 0 && margin > 3.0 * m24 && cfg.hideSpikes()) return "margin looks like a transient spike (hidden)";
+			}
+		}
+		return "just outside the top " + Math.max(5, cfg.rows()) + " right now";
+	}
+
 	// --- tax (identical math to the app) -----------------------------------
 	static int saleTax(int sell, boolean exempt)
 	{
@@ -353,7 +411,7 @@ class GeflipScanner
 	}
 
 	// raw quotes from the last scan, so we can price any held item on demand
-	private volatile JsonObject lastLatest, lastM5, lastH1;
+	private volatile JsonObject lastLatest, lastM5, lastH1, lastD24;
 
 	/** True if the item is trading cheap right now vs its recent norm (a dip / good buy). */
 	boolean isCheap(int id)
@@ -461,6 +519,7 @@ class GeflipScanner
 		JsonObject d24 = null;
 		try { d24 = new JsonParser().parse(httpGet(API + "/24h")).getAsJsonObject().getAsJsonObject("data"); }
 		catch (Exception ignored) { /* optional liquidity gate */ }
+		lastD24 = d24;   // cached for whyNotShowing()
 		Map<Integer, Double> t90s = loadT90(cfg.useTrends());
 
 		long bankroll = Math.max(1, bankrollGp);
