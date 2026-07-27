@@ -416,17 +416,62 @@ public class CoachPlugin extends Plugin
 			+ "  ·  Prayer: " + client.getBoostedSkillLevel(Skill.PRAYER) + "/" + client.getRealSkillLevel(Skill.PRAYER));
 		// est. max hit from your EQUIPPED strength/ranged-strength bonuses (base: no prayer/style)
 		int strB = 0, rstrB = 0;
+		Map<Integer, Integer> slotRstr = new java.util.HashMap<>();   // equipment slot -> its ranged-str bonus
 		ItemContainer eq = client.getItemContainer(InventoryID.EQUIPMENT);
 		if (eq != null) for (Item it : eq.getItems())
 		{
 			if (it == null || it.getId() < 0) continue;
 			net.runelite.client.game.ItemStats s = itemManager.getItemStats(it.getId());
-			if (s != null && s.getEquipment() != null) { strB += s.getEquipment().getStr(); rstrB += s.getEquipment().getRstr(); }
+			if (s != null && s.getEquipment() != null)
+			{
+				strB += s.getEquipment().getStr(); rstrB += s.getEquipment().getRstr();
+				slotRstr.merge(s.getEquipment().getSlot(), s.getEquipment().getRstr(), Integer::sum);
+			}
 		}
+		int bRng = client.getBoostedSkillLevel(Skill.RANGED);
 		int meleeMax = (int) (0.5 + (client.getBoostedSkillLevel(Skill.STRENGTH) + 8) * (strB + 64) / 640.0);
-		int rangeMax = (int) (0.5 + (client.getBoostedSkillLevel(Skill.RANGED) + 8) * (rstrB + 64) / 640.0);
+		int rangeMax = (int) (0.5 + (bRng + 8) * (rstrB + 64) / 640.0);
 		out.add("Est. max hit — melee ~" + meleeMax + " · ranged ~" + rangeMax + "  (base: no prayer/combat style)");
+		out.addAll(rangedUpgrades(rstrB, bRng, rangeMax, slotRstr));
 		out.add("(Bank + banked coins are NOT at risk — only what's equipped/carried.)");
+		return out;
+	}
+
+	// curated high-value RANGED upgrades (ids verified vs ItemID 1.12.33). Stats/prices are read LIVE
+	// from ItemManager, so nothing here is a hardcoded stat that could go stale.
+	private static final int[] RANGED_UPGRADES = {
+		19547, // Amulet of anguish (neck)
+		22109, // Ava's assembler (cape)
+		11826, 11828, 11830, // Armadyl helmet / chestplate / chainskirt
+		26235, // Zaryte vambraces (gloves)
+		7462,  // Barrows gloves (gloves, budget)
+		11771, // Archer's ring (i)
+		13237, // Pegasian boots
+	};
+
+	/** "Best ranged upgrade" finder: for each candidate, the max-hit gain if you swapped it into its
+	 *  slot, ranked, with the live GE price — so you see the biggest bang and its cost. */
+	private List<String> rangedUpgrades(int curRstr, int bRng, int curMax, Map<Integer, Integer> slotRstr)
+	{
+		java.util.List<Object[]> ups = new ArrayList<>();   // {label, gain, price}
+		for (int id : RANGED_UPGRADES)
+		{
+			net.runelite.client.game.ItemStats s = itemManager.getItemStats(id);
+			if (s == null || s.getEquipment() == null) continue;
+			int slot = s.getEquipment().getSlot();
+			int newRstr = curRstr - slotRstr.getOrDefault(slot, 0) + s.getEquipment().getRstr();
+			int newMax = (int) (0.5 + (bRng + 8) * (newRstr + 64) / 640.0);
+			int gain = newMax - curMax;
+			if (gain <= 0) continue;   // already equal/better in that slot
+			net.runelite.api.ItemComposition c = itemManager.getItemComposition(id);
+			ups.add(new Object[]{ c != null ? c.getName() : "#" + id, gain, itemManager.getItemPrice(id) });
+		}
+		if (ups.isEmpty()) return java.util.Collections.emptyList();
+		ups.sort((a, b) -> Integer.compare((int) b[1], (int) a[1]));   // biggest max-hit gain first
+		List<String> out = new ArrayList<>();
+		out.add("Best ranged upgrades (max-hit gain):");
+		int n = 0;
+		for (Object[] u : ups) { if (n++ >= 5) break; out.add("  " + u[0] + ": +" + u[1] + "  (~" + CoachGoals.gp((int) u[2]) + ")"); }
 		return out;
 	}
 
