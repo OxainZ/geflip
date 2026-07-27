@@ -126,6 +126,7 @@ public class CoachPlugin extends Plugin
 			p.setNext(CoachEngine.doNext(all));
 			p.setGoals(all, questLines(st), pvmLines(), diaryLines());
 			p.setPath(criticalPath(st));
+			p.setRisk(riskLines());
 			p.setBlocked(CoachEngine.blocked(all));
 			p.setFarm(config.farmingHelper() ? CoachFarm.plan(st.level(Skill.FARMING), farmElapsedMin()) : null);
 			fireUnlockAlerts(all, st);
@@ -345,6 +346,55 @@ public class CoachPlugin extends Plugin
 			int v = sk.getLevel();
 			if (v > 0) out.add(row[0] + ": " + String.format("%,d", v));
 		}
+		return out;
+	}
+
+	// --- PvP risk / loot-keep + own stats (reads YOUR OWN state — rules-safe) ---
+	/** What you'd lose if you died in the Wilderness right now: values every item you're wearing +
+	 *  carrying, keeps your 3 most valuable (4 with Protect Item; 0/1 if skulled), and reports the
+	 *  rest as risked — plus your live spec %, HP and prayer. All own-state; no opponent reads. */
+	private List<String> riskLines()
+	{
+		Map<Integer, Integer> px = prices;
+		if (px == null) return java.util.Collections.singletonList("Loading prices…");
+		java.util.List<Long> vals = new ArrayList<>();
+		long total = 0;
+		for (InventoryID which : new InventoryID[]{ InventoryID.EQUIPMENT, InventoryID.INVENTORY })
+		{
+			ItemContainer c = client.getItemContainer(which);
+			if (c == null) continue;
+			for (Item it : c.getItems())
+			{
+				if (it == null || it.getId() < 0) continue;
+				long v = it.getId() == 995 ? it.getQuantity() : (long) px.getOrDefault(it.getId(), 0) * it.getQuantity();
+				if (v > 0) { vals.add(v); total += v; }
+			}
+		}
+		if (vals.isEmpty()) return java.util.Collections.singletonList("Nothing valuable on you.");
+		vals.sort(java.util.Collections.reverseOrder());
+
+		net.runelite.api.Player me = client.getLocalPlayer();
+		boolean skulled = me != null && me.getSkullIcon() != -1;
+		boolean protectItem = client.getVarbitValue(Varbits.PRAYER_PROTECT_ITEM) > 0;
+		int keepN = (skulled ? 0 : 3) + (protectItem ? 1 : 0);
+		long kept = 0;
+		for (int i = 0; i < keepN && i < vals.size(); i++) kept += vals.get(i);
+		long lost = total - kept;
+
+		List<String> out = new ArrayList<>();
+		out.add("RISK (if you die in the Wild now)");
+		out.add("On you: " + CoachGoals.gp(total) + "  ·  " + (skulled ? "SKULLED" : "unskulled")
+			+ (protectItem ? " + Protect Item" : ""));
+		out.add("Keep " + keepN + " item" + (keepN == 1 ? "" : "s") + ": " + CoachGoals.gp(kept));
+		out.add("LOSE: " + CoachGoals.gp(lost));
+		if (!skulled && !protectItem) out.add("(Protect Item prayer would save 1 more.)");
+		out.add("");
+		int spec = client.getVarpValue(net.runelite.api.VarPlayer.SPECIAL_ATTACK_PERCENT) / 10;
+		int hp = client.getBoostedSkillLevel(Skill.HITPOINTS), hpMax = client.getRealSkillLevel(Skill.HITPOINTS);
+		int pray = client.getBoostedSkillLevel(Skill.PRAYER), prayMax = client.getRealSkillLevel(Skill.PRAYER);
+		out.add("Spec: " + spec + "%  ·  HP: " + hp + "/" + hpMax + "  ·  Prayer: " + pray + "/" + prayMax);
+		out.add("");
+		out.add("(Your bank + banked coins are NOT at risk — only what's equipped/carried.)");
 		return out;
 	}
 

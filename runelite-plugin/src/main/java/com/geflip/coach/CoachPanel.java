@@ -38,6 +38,7 @@ class CoachPanel extends PluginPanel
 	private final JPanel blockedBox = new JPanel();
 	private final JPanel pathBox = new JPanel();
 	private final JPanel farmBox = new JPanel();
+	private final JPanel riskBox = new JPanel();
 	private final JTextField askInput = new JTextField();
 	private final JTextArea askResult = new JTextArea();
 
@@ -46,6 +47,7 @@ class CoachPanel extends PluginPanel
 	private final JButton tabPath = new JButton("Path");
 	private final JButton tabBlocked = new JButton("Blocked");
 	private final JButton tabFarm = new JButton("Farm");
+	private final JButton tabRisk = new JButton("Risk");
 	private final JButton tabAsk = new JButton("Ask");
 	private final JPanel cards = new JPanel(new java.awt.CardLayout());
 
@@ -76,19 +78,19 @@ class CoachPanel extends PluginPanel
 		top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 		top.add(refresh); top.add(status); top.add(summary); top.add(sessionStats);
 
-		JPanel tabBar = new JPanel(new GridLayout(1, 6, 2, 0));
+		JPanel tabBar = new JPanel(new GridLayout(2, 4, 2, 2));   // two rows so all tabs stay readable
 		tabBar.setBorder(BorderFactory.createEmptyBorder(6, 0, 4, 0));
-		tabBar.add(tabNext); tabBar.add(tabGoals); tabBar.add(tabPath); tabBar.add(tabBlocked); tabBar.add(tabFarm); tabBar.add(tabAsk);
-		for (JButton b : new JButton[]{ tabNext, tabGoals, tabPath, tabBlocked, tabFarm, tabAsk })
-			b.setMargin(new java.awt.Insets(2, 1, 2, 1));
+		for (JButton b : new JButton[]{ tabNext, tabGoals, tabPath, tabBlocked, tabFarm, tabRisk, tabAsk })
+		{ tabBar.add(b); b.setMargin(new java.awt.Insets(2, 1, 2, 1)); }
 		tabNext.addActionListener(e -> show("next"));
 		tabGoals.addActionListener(e -> show("goals"));
 		tabPath.addActionListener(e -> show("path"));
 		tabBlocked.addActionListener(e -> show("blocked"));
 		tabFarm.addActionListener(e -> show("farm"));
+		tabRisk.addActionListener(e -> show("risk"));
 		tabAsk.addActionListener(e -> show("ask"));
 
-		for (JPanel p : new JPanel[]{ nextBox, goalsBox, blockedBox, pathBox, farmBox })
+		for (JPanel p : new JPanel[]{ nextBox, goalsBox, blockedBox, pathBox, farmBox, riskBox })
 			p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 
 		cards.add(scroll(nextBox), "next");
@@ -96,6 +98,7 @@ class CoachPanel extends PluginPanel
 		cards.add(scroll(pathBox), "path");
 		cards.add(scroll(blockedBox), "blocked");
 		cards.add(farmCard(), "farm");
+		cards.add(scroll(riskBox), "risk");
 		cards.add(askCard(), "ask");
 
 		JPanel north = new JPanel(new BorderLayout());
@@ -164,6 +167,7 @@ class CoachPanel extends PluginPanel
 		tabPath.setForeground("path".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabBlocked.setForeground("blocked".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabFarm.setForeground("farm".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+		tabRisk.setForeground("risk".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabAsk.setForeground("ask".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 	}
 
@@ -215,6 +219,16 @@ class CoachPanel extends PluginPanel
 				for (String d : diaries) goalsBox.add(hint(d));
 			}
 			goalsBox.revalidate(); goalsBox.repaint();
+		});
+	}
+
+	void setRisk(List<String> lines)
+	{
+		SwingUtilities.invokeLater(() -> {
+			riskBox.removeAll();
+			if (lines == null || lines.isEmpty()) riskBox.add(hint("Log in to see what you're risking."));
+			else for (String l : lines) riskBox.add(l.isEmpty() ? hint(" ") : (l.startsWith("RISK") ? header(l) : hint(l)));
+			riskBox.revalidate(); riskBox.repaint();
 		});
 	}
 
