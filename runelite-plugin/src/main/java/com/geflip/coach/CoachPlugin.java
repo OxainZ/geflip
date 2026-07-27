@@ -81,6 +81,8 @@ public class CoachPlugin extends Plugin
 	private ScheduledFuture<?> priceRefresh;   // the net-worth price poller (cancelled on shutdown)
 	private boolean wealthBaselined = false;   // session gp/hr baseline only once the bank is known
 	private volatile String farmRunType = "Herb";   // which preset farm run the Farm tab shows
+	private CoachServer phoneServer;   // the LAN phone bridge (started only when the toggle is on)
+	private volatile CoachServer.Snapshot snapshot = new CoachServer.Snapshot();   // last state, served to phone
 
 	@Provides
 	CoachConfig provideConfig(net.runelite.client.config.ConfigManager cm) { return cm.getConfig(CoachConfig.class); }
@@ -102,9 +104,39 @@ public class CoachPlugin extends Plugin
 	{
 		if (refresh != null) refresh.cancel(true);
 		if (priceRefresh != null) priceRefresh.cancel(true);
+		if (phoneServer != null) { try { phoneServer.stop(); } catch (Exception ignored) {} phoneServer = null; }
 		clientThread.invoke(client::clearHintArrow);   // don't leave a stale guide arrow behind
 		clientToolbar.removeNavigation(navButton);
 		panel = null;
+	}
+
+	/** Start/stop the phone bridge to match the toggle (cheap to call every rescan). A failed bind
+	 *  (port already in use) just leaves it off rather than throwing into the refresh loop. */
+	private void ensurePhoneServer()
+	{
+		boolean want = config.phoneSync();
+		if (want && phoneServer == null)
+		{
+			try { phoneServer = new CoachServer(config.phonePort(), config.phoneToken().trim()).withState(() -> snapshot); phoneServer.start(); }
+			catch (Exception e) { phoneServer = null; }
+		}
+		else if (!want && phoneServer != null)
+		{
+			try { phoneServer.stop(); } catch (Exception ignored) {}
+			phoneServer = null;
+		}
+	}
+
+	/** Render scored goals to plain phone lines: "name — first gaps" (or "ready ✓"). */
+	private static List<String> scoredLines(List<CoachEngine.Scored> rows)
+	{
+		List<String> o = new ArrayList<>();
+		if (rows != null) for (CoachEngine.Scored s : rows)
+		{
+			String gaps = s.gaps.isEmpty() ? "ready ✓" : String.join(", ", s.gaps.subList(0, Math.min(3, s.gaps.size())));
+			o.add(s.goal.name + " — " + gaps);
+		}
+		return o;
 	}
 
 	/** Read the account on the client thread, evaluate goals, push to the panel. */
@@ -122,19 +154,38 @@ public class CoachPlugin extends Plugin
 			String ca = caTier();
 			int slayerPts = client.getVarbitValue(Varbits.SLAYER_POINTS);
 			int streak = client.getVarbitValue(Varbits.SLAYER_TASK_STREAK);
-			p.setSummary("combat " + st.combatLevel + " · " + st.qp + " QP"
+			String summary = "combat " + st.combatLevel + " · " + st.qp + " QP"
 				+ (st.wealth >= 0 ? " · " + CoachGoals.gp(st.wealth) + " net" : st.coins >= 0 ? " · " + CoachGoals.gp(st.coins) + " gp" : "")
 				+ (ca != null ? " · CA " + ca : "")
 				+ (slayerPts > 0 || streak > 0 ? " · Slayer " + slayerPts + "pt/" + streak + " streak" : "")
-				+ (st.bankKnown ? "" : " · (open bank for full net worth)"));
-			p.setSessionStats(sessionStats(st));
+				+ (st.bankKnown ? "" : " · (open bank for full net worth)");
+			String sess = sessionStats(st);
+			List<CoachEngine.Scored> next = CoachEngine.doNext(all);
+			List<String> path = criticalPath(st);
+			List<String> risk = riskLines();
+			List<String> farmLines = config.farmingHelper() ? CoachFarm.run(farmRunType, st, farmElapsedMin()) : null;
+			p.setSummary(summary);
+			p.setSessionStats(sess);
 			refreshHiscore();
-			p.setNext(CoachEngine.doNext(all));
+			p.setNext(next);
 			p.setGoals(all, questLines(st), pvmLines(), diaryLines());
-			p.setPath(criticalPath(st));
-			p.setRisk(riskLines());
+			p.setPath(path);
+			p.setRisk(risk);
 			p.setBlocked(CoachEngine.blocked(all));
-			p.setFarm(config.farmingHelper() ? CoachFarm.run(farmRunType, st.level(Skill.FARMING), farmElapsedMin()) : null);
+			p.setFarm(farmLines);
+			// mirror the same data to the phone snapshot (served by CoachServer if enabled)
+			CoachServer.Snapshot snap = new CoachServer.Snapshot();
+			snap.updated = System.currentTimeMillis() / 1000;
+			snap.status = "read " + timeShort();
+			snap.summary = summary;
+			snap.session = sess;
+			snap.next = scoredLines(next);
+			snap.path = path;
+			snap.risk = risk;
+			snap.farm = farmLines != null ? farmLines : java.util.Collections.emptyList();
+			snap.goals = scoredLines(all);
+			snapshot = snap;
+			ensurePhoneServer();
 			fireUnlockAlerts(all, st);
 		});
 	}

@@ -37,8 +37,25 @@ public interface CoachConfig extends Config
 		position = 5)
 	default String webhookUrl() { return ""; }
 
+	@ConfigSection(name = "Phone sync", description = "Read your Coach on your phone over your own wifi.",
+		position = 8, closedByDefault = true)
+	String phone = "phone";
+
+	@ConfigItem(keyName = "phoneSync", name = "Serve Coach to phone", section = phone, position = 8,
+		description = "Start a tiny local web page (on this PC, your wifi only) that shows your live Coach. "
+			+ "Open http://<this-pc-ip>:<port>/?t=<token> in your phone browser. READ-ONLY toward the game.")
+	default boolean phoneSync() { return false; }
+
+	@ConfigItem(keyName = "phonePort", name = "Phone sync port", section = phone, position = 9,
+		description = "Port for the phone page (default 7778). Must differ from the flipper's bridge port.")
+	default int phonePort() { return 7778; }
+
+	@ConfigItem(keyName = "phoneToken", name = "Phone sync token", section = phone, position = 10, secret = true,
+		description = "A password appended as ?t=… so only you can read it. Blank = anyone on your wifi can.")
+	default String phoneToken() { return ""; }
+
 	@ConfigSection(name = "Ask (LLM coach)", description = "Optional: ask a live-context question about your account.",
-		position = 10, closedByDefault = true)
+		position = 11, closedByDefault = true)
 	String ask = "ask";
 
 	@ConfigItem(keyName = "askUrl", name = "LLM endpoint URL", section = ask, position = 11,

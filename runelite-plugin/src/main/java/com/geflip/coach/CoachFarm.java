@@ -2,12 +2,20 @@ package com.geflip.coach;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
+import net.runelite.api.Quest;
+import net.runelite.api.Skill;
 
 /**
- * Farming-run guide, keyed to your Farming level: what to plant in each patch type right now (the
- * highest-value seed you can use), where those patches are + how to teleport, and the run tips that
- * matter (compost, disease, yield gear). Pure data → lines; the panel only shows it when you enable
- * the toggle, so it stays out of the way until you want it.
+ * Farming-run guide, keyed to YOUR account: what to plant in each patch type right now (the highest
+ * seed you meet), and — the important part — the BEST route for what you've actually unlocked. Every
+ * patch carries its real access gate (quest and/or Farming level, verified vs the wiki 2026-07), so a
+ * patch you can't reach is moved to a "locked" list with exactly what unlocks it, instead of sending
+ * you somewhere you can't go. Pure data → lines; shown only when you enable the toggle.
+ *
+ * Access facts baked in (post-Jan-2024): Kourend/Hosidius FAVOUR was removed — Hosidius patches and
+ * Farming-Guild entry need NO favour, only the guild's Farming-level tiers (45/65/85). Fossil Island
+ * has NO herb patch. Troll Stronghold's herb patch needs My Arm's Big Adventure (not Eadgar's Ruse).
  */
 final class CoachFarm
 {
@@ -27,50 +35,69 @@ final class CoachFarm
 		{"Redberry", 10}, {"Cadava", 22}, {"Dwellberry", 36}, {"Jangerberry", 48},
 		{"Whiteberry", 59}, {"Poison ivy", 70} };
 
-	// preset routes per crop type — each entry "LOCATION — teleport (access note)"
+	/** One farm patch: where it is + how to teleport, and its access gate. gate==null means always
+	 *  reachable; otherwise reqLabel says what unlocks it (a quest name or "NN Farming"). */
+	private static final class Patch
+	{
+		final String loc, tele, reqLabel;
+		final Predicate<CoachState> gate;
+		Patch(String loc, String tele, String reqLabel, Predicate<CoachState> gate)
+		{ this.loc = loc; this.tele = tele; this.reqLabel = reqLabel; this.gate = gate; }
+		boolean open(CoachState st) { return gate == null || gate.test(st); }
+	}
+	private static Patch free(String loc, String tele) { return new Patch(loc, tele, null, null); }
+	private static Patch lvl(String loc, String tele, int f) { return new Patch(loc, tele, f + " Farming", st -> st.level(Skill.FARMING) >= f); }
+	private static Patch quest(String loc, String tele, String name, Quest q) { return new Patch(loc, tele, name, st -> st.finished(q)); }
+
 	static final String[] TYPES = { "Herb", "Tree", "Fruit", "Flower", "Bush", "All" };
-	private static final String[] HERB_PATCHES = {
-		"Ardougne — Ardougne cloak → Monastery, run S",
-		"Catherby — Camelot tele, run E along the shore",
-		"Falador — Explorer's ring (cabbage tele), run S to the farm",
-		"Hosidius — Xeric's talisman (Xeric's Glade), run S",
-		"Farming Guild — Skills necklace  [needs 65 Farming]",
-		"Troll Stronghold — Stony basalt / Trollheim tele  [needs Eadgar's Ruse]",
-		"Weiss — Icy basalt  [needs Making Friends with My Arm]",
-		"Fossil Island — Digsite pendant  [needs Bone Voyage]",
-		"Civitas illa Fortis — Quetzal whistle  [Varlamore access]",
-		"Harmony Island — Ectophial + boat  [needs The Great Brain Robbery]",
+
+	private static final Patch[] HERB_PATCHES = {
+		free("Falador farm", "Explorer's ring (cabbage tele) → run N to Elstan"),
+		free("Catherby", "Catherby teleport tab (or Camelot tele → run E)"),
+		free("Ardougne", "Ardougne cloak 2+ (farm tele) → Kragen"),
+		free("Morytania (Ectofuntus)", "Ectophial → run W to Lyra"),
+		free("Hosidius", "Xeric's talisman → Xeric's Glade → run SW (no favour needed)"),
+		lvl("Farming Guild (W wing)", "Skills necklace → Farming Guild", 65),
+		quest("Troll Stronghold (roof)", "Stony basalt / Trollheim teleport", "My Arm's Big Adventure", Quest.MY_ARMS_BIG_ADVENTURE),
+		quest("Weiss", "Icy basalt (lands by the patch)", "Making Friends with My Arm", Quest.MAKING_FRIENDS_WITH_MY_ARM),
+		quest("Harmony Island", "Harmony Island Teleport (Arceuus) → run S", "The Great Brain Robbery", Quest.THE_GREAT_BRAIN_ROBBERY),
 	};
-	private static final String[] TREE_PATCHES = {
-		"Lumbridge — Home teleport, E of the castle",
-		"Varrock — Varrock tele, castle courtyard",
-		"Falador — Falador tele / Ring of wealth → the park",
-		"Taverley — Falador tele, run NW (or Games necklace → Burthorpe)",
-		"Gnome Stronghold — Spirit tree / Royal seed pod",
-		"Farming Guild — Skills necklace  [needs 65 Farming]",
+	private static final Patch[] TREE_PATCHES = {
+		free("Lumbridge", "Home / Lumbridge teleport → W of the castle (Fayeth)"),
+		free("Varrock", "Varrock teleport → run W to Gertrude's (Treznor)"),
+		free("Falador Park", "Falador teleport / Ring of wealth → the park (Heskel)"),
+		free("Taverley", "Games necklace → Burthorpe → run to Alain"),
+		free("Gnome Stronghold", "Spirit tree / Royal seed pod (Prissy Scilla)"),
+		lvl("Farming Guild (W wing)", "Skills necklace → Farming Guild", 65),
 	};
-	private static final String[] FRUIT_PATCHES = {
-		"Gnome Stronghold — Spirit tree / Royal seed pod",
-		"Tree Gnome Village — Royal seed pod / spirit tree",
-		"Catherby — Camelot tele, run E",
-		"Brimhaven — fairy ring CKR / charter ship",
-		"Lletya — Teleport crystal  [needs Mourning's End Pt I partial]",
-		"Farming Guild — Skills necklace  [needs 85 Farming]",
+	private static final Patch[] FRUIT_PATCHES = {
+		free("Gnome Stronghold", "Spirit tree / Royal seed pod (Bolongo)"),
+		free("Tree Gnome Village", "Fairy ring CIQ (quest-free)"),
+		free("Catherby", "Catherby teleport tab → E beach (Ellena)"),
+		free("Brimhaven", "House teleport set to Brimhaven / charter ship (Garth)"),
+		new Patch("Lletya", "Teleport crystal", "Regicide + Mourning's End Pt I (started)",
+			st -> st.started(Quest.MOURNINGS_END_PART_I)),
+		lvl("Farming Guild (N wing)", "Skills necklace → Farming Guild", 85),
 	};
-	private static final String[] FLOWER_PATCHES = {   // flowers + allotments share the 5 main farms
-		"Ardougne — Ardougne cloak",
-		"Catherby — Camelot tele",
-		"Falador — Explorer's ring",
-		"Hosidius — Xeric's talisman",
-		"Morytania / Canifis — Ectophial  [needs Nature Spirit]",
+	private static final Patch[] FLOWER_PATCHES = {   // flowers + allotments share these sites
+		free("Falador farm", "Explorer's ring (cabbage tele)"),
+		free("Catherby", "Catherby teleport tab / Camelot tele"),
+		free("Ardougne", "Ardougne cloak 2+"),
+		free("Morytania (Ectofuntus)", "Ectophial → run W"),
+		free("Hosidius", "Xeric's talisman → Xeric's Glade (no favour)"),
+		free("Ortus Farm (Varlamore)", "Quetzal whistle"),
+		lvl("Farming Guild (E wing)", "Skills necklace → Farming Guild", 45),
 	};
-	private static final String[] BUSH_PATCHES = {
-		"Champions' Guild — Varrock tele, run S",
-		"Rimmington — Explorer's ring / House tele",
-		"Etceteria — Fremennik boat / Enchanted lyre",
-		"Ardougne — Ardougne cloak",
+	private static final Patch[] BUSH_PATCHES = {
+		free("Champions' Guild", "Combat bracelet → Champions' Guild (or Varrock tele → run S), Dreven"),
+		free("Rimmington", "House teleport set to Rimmington (Taria)"),
+		free("Ardougne", "Ardougne cloak 1+ → Monastery (Torrell), or fairy ring DJP"),
+		quest("Etceteria", "Fairy ring CIP → run over (Rhazien)", "The Fremennik Trials", Quest.THE_FREMENNIK_TRIALS),
+		lvl("Farming Guild (E wing)", "Skills necklace → Farming Guild", 45),
 	};
+
 	private static final int FLOWER_MIN = 20, BUSH_MIN = 320;
+	static final int HERB_MIN = 80, TREE_MIN = 360, FRUIT_MIN = 960;
 
 	private static String bare(Object[][] tbl, int lvl)   // the seed you'd plant at this level
 	{
@@ -78,9 +105,6 @@ final class CoachFarm
 		for (Object[] row : tbl) if (lvl >= (int) row[1]) best = (String) row[0];
 		return best;
 	}
-
-	// approximate grow times (minutes): herbs ~80m, trees ~6h, fruit trees ~16h.
-	static final int HERB_MIN = 80, TREE_MIN = 360, FRUIT_MIN = 960;
 
 	private static String eta(int elapsedMin, int cycle, String label)
 	{
@@ -102,29 +126,46 @@ final class CoachFarm
 		return o;
 	}
 
-	/** A PRESET run for one crop type (Herb / Tree / Fruit / Flower / Bush), or the combined "All".
-	 *  Header (what to plant + when it's ready) → BRING → the ordered patch route for THAT type. */
-	static List<String> run(String type, int level, int elapsedMin)
+	/** Split a patch set into the route you can do now vs what's locked, and append both. Returns the
+	 *  number of OPEN stops (so callers can note when a run is empty). */
+	private static int appendRoute(List<String> o, Patch[] patches, CoachState st)
 	{
-		if (type == null || type.equals("All")) return plan(level, elapsedMin);
-		String seed; int cycle; String[] patches; String bring;
+		List<Patch> open = new ArrayList<>(), locked = new ArrayList<>();
+		for (Patch p : patches) (p.open(st) ? open : locked).add(p);
+		int n = 1;
+		for (Patch p : open) o.add("  " + n++ + ") " + p.loc + " — " + p.tele);
+		if (!locked.isEmpty())
+		{
+			o.add("  LOCKED (unlock to add stops):");
+			for (Patch p : locked) o.add("    ✖ " + p.loc + " — unlock: " + p.reqLabel);
+		}
+		return open.size();
+	}
+
+	/** A PRESET run for one crop type (Herb / Tree / Fruit / Flower / Bush), or the combined "All",
+	 *  routed to what YOUR account has unlocked. */
+	static List<String> run(String type, CoachState st, int elapsedMin)
+	{
+		if (type == null || type.equals("All")) return plan(st, elapsedMin);
+		int level = st.level(Skill.FARMING);
+		String seed; int cycle; Patch[] patches; String bring;
 		switch (type)
 		{
 			case "Tree":
 				seed = bare(TREES, level); cycle = TREE_MIN; patches = TREE_PATCHES;
-				bring = patches.length + "x " + seed + " saplings + coins/produce to pay each gardener"; break;
+				bring = "one " + seed + " sapling per open stop + coins/produce to pay each gardener"; break;
 			case "Fruit":
 				seed = bare(FRUIT, level); cycle = FRUIT_MIN; patches = FRUIT_PATCHES;
-				bring = patches.length + "x " + seed + " saplings + baskets of fruit to pay each gardener"; break;
+				bring = "one " + seed + " sapling per open stop + baskets of fruit to pay each gardener"; break;
 			case "Flower":
 				seed = "Marigolds (protect allotments) or Limpwurt/Rosemary"; cycle = FLOWER_MIN; patches = FLOWER_PATCHES;
 				bring = "flower seeds (+ allotment seeds if doing allotments)"; break;
 			case "Bush":
 				seed = bare(BUSH, level); cycle = BUSH_MIN; patches = BUSH_PATCHES;
-				bring = patches.length + "x " + seed + " seeds + ultracompost + coins to pay gardeners"; break;
+				bring = "one " + seed + " seed per open stop + ultracompost + coins to pay gardeners"; break;
 			default: // Herb
 				seed = bare(HERBS, level); cycle = HERB_MIN; patches = HERB_PATCHES;
-				bring = patches.length + "x " + seed + " seeds + ultracompost (or bottomless bucket) per patch"; break;
+				bring = "one " + seed + " seed per open stop + ultracompost (or bottomless bucket) each"; break;
 		}
 		List<String> o = new ArrayList<>();
 		o.add(type.toUpperCase() + " RUN — plant " + seed + "  (Farming " + level + ")");
@@ -133,68 +174,49 @@ final class CoachFarm
 		o.add("BRING: " + bring);
 		o.add("KIT: spade, seed dibber, rake (skip w/ a diary), secateurs" + ("Herb".equals(type) ? ", Magic secateurs (+10% yield)" : "") + ", Farmer's outfit, the teleports below.");
 		o.add("");
-		o.add("ROUTE — each stop: HARVEST → clear → " + ("Tree".equals(type) || "Fruit".equals(type) ? "PLANT → PAY the gardener to protect" : "ULTRACOMPOST → PLANT") + ":");
-		int n = 1;
-		for (String p : patches) o.add(n++ + ") " + p);
+		o.add("ROUTE (best for what you've unlocked) — each stop: HARVEST → clear → "
+			+ ("Tree".equals(type) || "Fruit".equals(type) ? "PLANT → PAY the gardener to protect" : "ULTRACOMPOST → PLANT") + ":");
+		int open = appendRoute(o, patches, st);
 		o.add("");
 		o.add("GETTING THERE: each stop shows its teleport — take it, then set the patch as your");
 		o.add("  shortest-path target for a drawn walking route the last few tiles.");
-		o.add("Skip any stop you can't reach yet — the rest still pays. Mark the run done to start the timer.");
-		if ("Herb".equals(type)) o.add("TIP: ultracompost + the Ardougne Medium diary = disease-free herbs; Resurrect Crops (78 Mag) revives a dead one.");
+		o.add(open == 0 ? "No stops unlocked yet — see LOCKED above." : "Mark the run done to start the cycle timer.");
+		if ("Herb".equals(type)) o.add("TIP: ultracompost + Ardougne Medium diary = disease-free herbs; Resurrect Crops (78 Mag) revives a dead one.");
 		if ("Tree".equals(type) || "Fruit".equals(type)) o.add("TIP: NEVER skip paying a gardener — a dead sapling is a big loss. Trees can't be cured, only protected.");
 		return o;
 	}
 
-	/** A step-by-step COMBINED herb + tree + fruit-tree run ("All"). */
-	static List<String> plan(int farmingLevel, int elapsedMin)
+	/** The combined daily pass — herb + tree + fruit-tree, each routed to your unlocks. */
+	static List<String> plan(CoachState st, int elapsedMin)
 	{
-		String herb = bare(HERBS, farmingLevel), tree = bare(TREES, farmingLevel),
-			fruit = bare(FRUIT, farmingLevel), bush = bare(BUSH, farmingLevel);
-		// Farming Guild is TIERED: 45 = bush/flower/allotment/cactus only; 65 = herb + tree;
-		// 85 = fruit tree. The valuable herb/tree stop isn't available until 65.
-		boolean guildBush = farmingLevel >= 45, guildHerbTree = farmingLevel >= 65, guildFruit = farmingLevel >= 85;
+		int level = st.level(Skill.FARMING);
+		String herb = bare(HERBS, level), tree = bare(TREES, level), fruit = bare(FRUIT, level);
 		List<String> o = new ArrayList<>();
 
-		o.add("FARM RUN — Farming " + farmingLevel + " (herbs + trees + fruit trees)");
-		o.add("Herb=" + herb + " · Tree=" + tree + " · Fruit=" + fruit + " · Bush=" + bush);
+		o.add("FARM RUN — Farming " + level + " (herbs + trees + fruit trees)");
+		o.add("Herb=" + herb + " · Tree=" + tree + " · Fruit=" + fruit);
 		o.add("");
 		o.addAll(readiness(elapsedMin));
 		o.add("");
 		o.add("BRING:");
-		o.add("• " + (guildHerbTree ? 6 : 5) + "x " + herb + " (herb) seeds");
-		o.add("• 5x " + tree + " saplings  +  4x " + fruit + " saplings");
-		o.add("• Ultracompost (or a Bottomless bucket) — one per herb/allotment patch");
-		o.add("• Rake (skip if you have any diary that clears weeds), spade, seed dibber, secateurs");
-		o.add("• Protection pay: coins + baskets of fruit / veg for the tree & fruit-tree gardeners");
-		o.add("• GEAR: Magic secateurs (+10% herb yield), full Farmer's outfit (XP), Ectophial/teleports");
+		o.add("• " + herb + " (herb) seeds — one per open herb stop below");
+		o.add("• " + tree + " saplings (tree) + " + fruit + " saplings (fruit) — one per open stop");
+		o.add("• Ultracompost (or Bottomless bucket) per herb/allotment patch");
+		o.add("• Rake (skip w/ any diary), spade, seed dibber, secateurs; pay: coins + baskets to protect trees");
+		o.add("• GEAR: Magic secateurs (+10% herb yield), full Farmer's outfit (XP)");
 		o.add("");
-		o.add("TELEPORTS to carry: Ardougne cloak, Camelot tab, Explorer's ring, Ring of wealth,");
-		o.add("  Xeric's talisman, Varrock tab, Home tele" + (guildHerbTree ? ", Skills necklace" : "")
-			+ ", Spirit tree / Royal seed pod, Ectophial (Morytania), Icy basalt (Weiss), Quetzal whistle (Varlamore).");
+		o.add("HERB stops:");
+		appendRoute(o, HERB_PATCHES, st);
 		o.add("");
-		o.add("STEPS — each stop: HARVEST → clear → ULTRACOMPOST → PLANT → PAY to protect:");
-		int n = 1;
-		o.add(n++ + ") Home tele → LUMBRIDGE: tree patch (" + tree + ").");
-		o.add(n++ + ") Varrock tab → VARROCK palace: tree patch.");
-		o.add(n++ + ") Explorer's ring → FALADOR: herb patch (" + herb + "). Then Ring of wealth → FALADOR PARK: tree patch.");
-		o.add(n++ + ") Camelot tab → CATHERBY: herb + fruit tree + allotment.");
-		o.add(n++ + ") Ardougne cloak → ARDOUGNE: herb + allotment + flower.");
-		o.add(n++ + ") Xeric's talisman (Glade) → run S to HOSIDIUS: herb + allotment.");
-		if (guildHerbTree)
-			o.add(n++ + ") Skills necklace → FARMING GUILD: herb + tree" + (guildFruit ? " + fruit tree" : "") + " (needs 65 Farm).");
-		o.add(n++ + ") Spirit tree / Royal seed pod → GNOME STRONGHOLD: fruit tree + tree.");
-		o.add(n++ + ") Spirit tree → TREE GNOME VILLAGE: fruit tree.");
-		o.add(n++ + ") Ectophial → CANIFIS (Morytania): herb — needs Nature Spirit (disease-free w/ Morytania Hard diary).");
-		o.add(n++ + ") Digsite pendant → FOSSIL ISLAND: herb — needs Bone Voyage.");
-		o.add(n++ + ") Icy basalt → WEISS: herb (disease-free) — needs Making Friends with My Arm.");
-		o.add(n++ + ") Quetzal whistle → CIVITAS ILLA FORTIS (Varlamore): herb — needs Varlamore access.");
+		o.add("TREE stops:");
+		appendRoute(o, TREE_PATCHES, st);
 		o.add("");
-		if (!guildBush) o.add("LOCKED: Farming Guild low tier (45 Farm = bush/allotments).");
-		else if (!guildHerbTree) o.add("NEXT UNLOCK: 65 Farming = Farming Guild herb + tree patches (a big one-stop).");
-		o.add("SKIP any stop you can't reach yet (Weiss/Varlamore/gnome = quest/access gated) — the rest still pays.");
-		o.add("TIPS: ultracompost + Ardougne Medium diary = disease-free herbs. Resurrect Crops (78 Magic,");
-		o.add("  Arceuus) revives a dead herb. NEVER skip paying a tree/fruit gardener — a dead sapling is a big loss.");
-		o.add("CADENCE: herbs ~80 min, trees/fruit ~ once a day — so do the herb loop often, trees on the daily pass.");
+		o.add("FRUIT-TREE stops:");
+		appendRoute(o, FRUIT_PATCHES, st);
+		o.add("");
+		o.add("Order geographically (Falador+park, Catherby herb+fruit, Ardougne, Hosidius, guild if unlocked,");
+		o.add("  then the spirit-tree gnome patches) to save hops. Mark the run done to start the timer.");
+		o.add("CADENCE: herbs ~80 min, trees/fruit ~once a day — herb loop often, trees on the daily pass.");
 		return o;
 	}
 }
