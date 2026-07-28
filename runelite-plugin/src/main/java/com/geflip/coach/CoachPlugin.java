@@ -482,6 +482,7 @@ public class CoachPlugin extends Plugin
 			+ "  ·  Prayer: " + client.getBoostedSkillLevel(Skill.PRAYER) + "/" + client.getRealSkillLevel(Skill.PRAYER));
 		// est. max hit from your EQUIPPED strength / ranged-str / magic-dmg bonuses (base: no prayer/style)
 		int strB = 0, rstrB = 0; double mdmgB = 0;
+		int aStab = 0, aSlash = 0, aCrush = 0, aRange = 0, weaponSpeed = 0;   // attack bonuses + weapon speed (for DPS)
 		boolean twoH = false;   // a 2H weapon leaves the shield slot forced-empty — don't credit shield upgrades
 		Map<Integer, Integer> slotStr = new java.util.HashMap<>();    // slot -> melee str bonus
 		Map<Integer, Integer> slotRstr = new java.util.HashMap<>();   // slot -> ranged str bonus
@@ -494,7 +495,8 @@ public class CoachPlugin extends Plugin
 			if (s == null || s.getEquipment() == null) continue;
 			net.runelite.client.game.ItemEquipmentStats e = s.getEquipment();
 			strB += e.getStr(); rstrB += e.getRstr(); mdmgB += e.getMdmg();
-			if (e.getSlot() == 3 && e.isTwoHanded()) twoH = true;   // slot 3 = weapon
+			aStab += e.getAstab(); aSlash += e.getAslash(); aCrush += e.getAcrush(); aRange += e.getArange();
+			if (e.getSlot() == 3) { if (e.isTwoHanded()) twoH = true; if (e.getAspeed() > 0) weaponSpeed = e.getAspeed(); }   // slot 3 = weapon
 			slotStr.merge(e.getSlot(), e.getStr(), Integer::sum);
 			slotRstr.merge(e.getSlot(), e.getRstr(), Integer::sum);
 			slotMdmg.merge(e.getSlot(), (double) e.getMdmg(), Double::sum);
@@ -507,7 +509,32 @@ public class CoachPlugin extends Plugin
 		out.addAll(strengthUpgrades("Best melee upgrades (max-hit gain):", MELEE_UPGRADES, true, strB, bStr, meleeMax, slotStr, twoH));
 		out.addAll(strengthUpgrades("Best ranged upgrades (max-hit gain):", RANGED_UPGRADES, false, rstrB, bRng, rangeMax, slotRstr, twoH));
 		out.addAll(magicUpgrades(mdmgB, slotMdmg, twoH));
+		out.addAll(dpsLines(client.getBoostedSkillLevel(Skill.ATTACK) + 8, aStab, aSlash, aCrush, meleeMax,
+			bRng + 8, aRange, rangeMax, weaponSpeed > 0 ? weaponSpeed : 4));
 		out.add("(Bank + banked coins are NOT at risk — only what's equipped/carried.)");
+		return out;
+	}
+
+	/** Est. DPS vs each boss with your CURRENT gear (base — no prayer/combat style). Melee auto-picks the
+	 *  best of stab/slash/crush against that boss's defence; ranged uses your ranged gear. Uses your equipped
+	 *  weapon's attack speed for both (ranged Rapid saves a tick — real ranged DPS is a bit higher). */
+	private List<String> dpsLines(int effAtk, int aStab, int aSlash, int aCrush, int meleeMax,
+		int effRange, int aRange, int rangeMax, int speed)
+	{
+		List<String> out = new ArrayList<>();
+		out.add("Est. DPS vs bosses (current gear, base — no prayer/style):");
+		boolean anyMelee = meleeMax > 1 && (aStab > 0 || aSlash > 0 || aCrush > 0);
+		boolean anyRange = rangeMax > 1 && aRange > 0;
+		if (!anyMelee && !anyRange) { out.add("  (equip a weapon to estimate DPS)"); return out; }
+		for (CoachDps.Boss b : CoachDps.BOSSES)
+		{
+			double melee = anyMelee ? Math.max(CoachDps.dps(effAtk, aStab, meleeMax, b.defLvl, b.dStab, speed),
+				Math.max(CoachDps.dps(effAtk, aSlash, meleeMax, b.defLvl, b.dSlash, speed),
+					CoachDps.dps(effAtk, aCrush, meleeMax, b.defLvl, b.dCrush, speed))) : 0;
+			double ranged = anyRange ? CoachDps.dps(effRange, aRange, rangeMax, b.defLvl, b.dRange, speed) : 0;
+			out.add("  " + b.name + ": " + (anyMelee ? "melee ~" + String.format("%.1f", melee) : "")
+				+ (anyMelee && anyRange ? " · " : "") + (anyRange ? "ranged ~" + String.format("%.1f", ranged) : "") + " dps");
+		}
 		return out;
 	}
 
