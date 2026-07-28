@@ -769,7 +769,7 @@ public class CoachPlugin extends Plugin
 	 *  its own richer trainer in the Farm tab. Lines prefixed "*" are headers. */
 	private List<String> skillLines(CoachState st)
 	{
-		List<String> o = new ArrayList<>();
+		List<String> o = new ArrayList<>(CoachDailies.lines(st));   // the compounding dailies most players skip
 		o.add("*SKILLS — your road to 99 (nearest first)");
 		java.util.List<Object[]> rows = new ArrayList<>();   // {skill, level, band, hours}
 		for (Skill sk : Skill.values())

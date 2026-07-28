@@ -887,6 +887,7 @@ public class GeflipPlugin extends Plugin
 				if (p != null) p.setAccountNeeds(buildAccountNeeds());            // cross-ref: what the Coach says your account needs
 				if (p != null) p.setDecants(scanner.scanDecants(config));   // decanting opportunities
 				if (p != null) p.setSets(scanner.scanSets(config));         // set-exchange arbitrage
+				if (p != null) p.setAlch(scanner.scanAlch(config));         // high-alch edge (tax-free)
 				recompute();   // mapping is loaded now → exclude list resolves, P&L reflows
 			}
 			catch (Exception e)

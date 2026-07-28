@@ -34,6 +34,7 @@ class GeflipPanel extends PluginPanel
 	private final JPanel rows = new JPanel();          // Flips tab
 	private final JPanel dipsRows = new JPanel();      // Dips tab (🔥 items cheap vs their norm)
 	private final JPanel decantRows = new JPanel();    // Decant tab (buy low-dose → sell (4))
+	private final JPanel alchRows = new JPanel();       // Alch tab (buy < alch value, tax-free)
 	private final JPanel setsRows = new JPanel();      // Sets tab (combine/split set exchange)
 	private final JPanel offersBox = new JPanel();     // "Your GE" — live open offers (You tab)
 	private final JPanel holdBox = new JPanel();       // "To sell" — items you hold + sell price (You tab)
@@ -46,6 +47,7 @@ class GeflipPanel extends PluginPanel
 	private final JButton tabDips = new JButton("Dips");
 	private final JButton tabDecant = new JButton("Decant");
 	private final JButton tabSets = new JButton("Sets");
+	private final JButton tabAlch = new JButton("Alch");
 	private final JButton tabYou = new JButton("You");
 	private final javax.swing.JTextField priceInput = new javax.swing.JTextField();
 	private final JLabel priceResult = new JLabel(" ");
@@ -138,15 +140,16 @@ class GeflipPanel extends PluginPanel
 		top.add(legend);
 
 		// --- tab bar: Flips | Dips | You ---
-		JPanel tabBar = new JPanel(new GridLayout(1, 5, 2, 0));
+		JPanel tabBar = new JPanel(new GridLayout(2, 3, 2, 2));
 		tabBar.setBorder(BorderFactory.createEmptyBorder(6, 0, 4, 0));
-		tabBar.add(tabFlips); tabBar.add(tabDips); tabBar.add(tabDecant); tabBar.add(tabSets); tabBar.add(tabYou);
-		for (JButton b : new JButton[]{tabFlips, tabDips, tabDecant, tabSets, tabYou})
+		tabBar.add(tabFlips); tabBar.add(tabDips); tabBar.add(tabDecant); tabBar.add(tabSets); tabBar.add(tabAlch); tabBar.add(tabYou);
+		for (JButton b : new JButton[]{tabFlips, tabDips, tabDecant, tabSets, tabAlch, tabYou})
 			b.setMargin(new java.awt.Insets(2, 1, 2, 1));
 		tabFlips.addActionListener(e -> showCard("flips"));
 		tabDips.addActionListener(e -> showCard("dips"));
 		tabDecant.addActionListener(e -> showCard("decant"));
 		tabSets.addActionListener(e -> showCard("sets"));
+		tabAlch.addActionListener(e -> showCard("alch"));
 		tabYou.addActionListener(e -> showCard("you"));
 
 		JPanel north = new JPanel(new BorderLayout());
@@ -158,6 +161,7 @@ class GeflipPanel extends PluginPanel
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
 		dipsRows.setLayout(new BoxLayout(dipsRows, BoxLayout.Y_AXIS));
 		decantRows.setLayout(new BoxLayout(decantRows, BoxLayout.Y_AXIS));
+		alchRows.setLayout(new BoxLayout(alchRows, BoxLayout.Y_AXIS));
 		setsRows.setLayout(new BoxLayout(setsRows, BoxLayout.Y_AXIS));
 		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
 		holdBox.setLayout(new BoxLayout(holdBox, BoxLayout.Y_AXIS));
@@ -207,6 +211,7 @@ class GeflipPanel extends PluginPanel
 		cardPanel.add(scrollOf(dipsRows), "dips");
 		cardPanel.add(scrollOf(decantRows), "decant");
 		cardPanel.add(scrollOf(setsRows), "sets");
+		cardPanel.add(scrollOf(alchRows), "alch");
 		cardPanel.add(scrollOf(youBox), "you");
 		add(cardPanel, BorderLayout.CENTER);
 		showCard("flips");
@@ -228,7 +233,72 @@ class GeflipPanel extends PluginPanel
 		tabDips.setForeground("dips".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabDecant.setForeground("decant".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabSets.setForeground("sets".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+		tabAlch.setForeground("alch".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabYou.setForeground("you".equals(name) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+	}
+
+	/** Render the high-alch edge: items whose buy price + nature rune is below their alch value (tax-free). */
+	void setAlch(List<GeflipScanner.Alch> alchs)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			alchRows.removeAll();
+			JLabel hint = new JLabel("<html><span style='color:#999'>buy < alch value → High Alch (55 Mag). NO GE tax — only the buy costs.</span></html>");
+			hint.setFont(FontManager.getRunescapeSmallFont());
+			hint.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+			hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+			alchRows.add(hint);
+			if (alchs == null || alchs.isEmpty())
+			{
+				JLabel none = new JLabel("no profitable alchs right now");
+				none.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				none.setFont(FontManager.getRunescapeSmallFont());
+				none.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+				none.setAlignmentX(Component.LEFT_ALIGNMENT);
+				alchRows.add(none);
+			}
+			else for (GeflipScanner.Alch a : alchs) alchRows.add(alchRow(a));
+			tabAlch.setText(alchs != null && !alchs.isEmpty() ? "Alch (" + alchs.size() + ")" : "Alch");
+			alchRows.revalidate(); alchRows.repaint();
+		});
+	}
+
+	private JPanel alchRow(GeflipScanner.Alch a)
+	{
+		JPanel p = new JPanel(new BorderLayout(0, 2));
+		p.setBorder(BorderFactory.createEmptyBorder(5, 7, 5, 7));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel top = new JPanel(new BorderLayout(6, 0));
+		top.setOpaque(false);
+		JLabel name = new JLabel(a.name);
+		name.setForeground(ColorScheme.TEXT_COLOR);
+		JLabel prof = new JLabel("+" + gp(a.profit) + "/ea");
+		prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		prof.setHorizontalAlignment(JLabel.RIGHT);
+		top.add(name, BorderLayout.CENTER);
+		top.add(prof, BorderLayout.EAST);
+		JLabel sub = new JLabel("buy @" + gp(a.buy) + "  →  alch " + gp(a.alch) + "   ·   limit " + a.limit + "/4h  (~" + gp((long) a.profit * a.limit) + "/limit)");
+		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		sub.setFont(FontManager.getRunescapeSmallFont());
+		JPanel col = new JPanel();
+		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+		col.setOpaque(false);
+		top.setAlignmentX(Component.LEFT_ALIGNMENT); sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+		col.add(top); col.add(sub);
+		p.add(col, BorderLayout.CENTER);
+		name.setToolTipText("Buy at ~" + gp(a.buy) + ", High Alch for " + gp(a.alch) + " → +" + gp(a.profit)
+			+ " each (after the nature rune, no GE tax). Buy limit " + a.limit + "/4h. Click to copy the name.");
+		final String copyName = a.name;
+		p.addMouseListener(new java.awt.event.MouseAdapter()
+		{
+			@Override public void mouseClicked(java.awt.event.MouseEvent e)
+			{
+				java.awt.datatransfer.StringSelection sel = new java.awt.datatransfer.StringSelection(copyName);
+				java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, sel);
+				status.setText("copied \"" + copyName + "\"");
+			}
+		});
+		return p;
 	}
 
 	void setStatus(String s) { SwingUtilities.invokeLater(() -> status.setText(s)); }

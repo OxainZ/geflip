@@ -47,9 +47,9 @@ class GeflipScanner
 
 	static final class Meta
 	{
-		final int id; final String name; final boolean members; final int limit; final boolean exempt;
-		Meta(int id, String name, boolean members, int limit, boolean exempt)
-		{ this.id = id; this.name = name; this.members = members; this.limit = limit; this.exempt = exempt; }
+		final int id; final String name; final boolean members; final int limit; final boolean exempt; final int highalch;
+		Meta(int id, String name, boolean members, int limit, boolean exempt, int highalch)
+		{ this.id = id; this.name = name; this.members = members; this.limit = limit; this.exempt = exempt; this.highalch = highalch; }
 	}
 
 	/** A ranked flip, ready for the panel. */
@@ -221,11 +221,53 @@ class GeflipScanner
 			String name = o.get("name").getAsString();
 			boolean members = o.has("members") && o.get("members").getAsBoolean();
 			int limit = o.has("limit") && !o.get("limit").isJsonNull() ? o.get("limit").getAsInt() : -1;
+			int highalch = o.has("highalch") && !o.get("highalch").isJsonNull() ? o.get("highalch").getAsInt() : 0;
 			boolean exempt = GeflipExempt.EXEMPT.contains(name.trim().toLowerCase());
-			m.put(id, new Meta(id, name, members, limit, exempt));
+			m.put(id, new Meta(id, name, members, limit, exempt, highalch));
 		}
 		mapping = m; mappingAt = System.currentTimeMillis();
 		return m;
+	}
+
+	/** One high-alch opportunity: buy at `buy`, alch for `alch` (tax-free), `profit` per item after the nat rune. */
+	static final class Alch { public int id; public String name; public int buy, profit, limit, alch; }
+
+	/** High-alch profit scanner: items whose live buy price + nature rune sits BELOW their fixed alch value —
+	 *  a tax-free, always-repeatable edge (you never sell on the GE, so no 2% tax; the only cost is the buy).
+	 *  Most players never monitor this continuously. Reuses the cached /latest + /mapping alch values; ranks
+	 *  by profit × buy-limit (the scalable ones first). Needs 55 Magic + nature runes to actually use. */
+	List<Alch> scanAlch(GeflipConfig cfg) throws Exception
+	{
+		Map<Integer, Meta> map = loadMapping();
+		JsonObject latest = lastLatest;
+		if (latest == null) latest = new JsonParser().parse(httpGet(API + "/latest")).getAsJsonObject().getAsJsonObject("data");
+		int nat = 100;   // nature rune (id 561) live price, the break-even hinge
+		if (latest.has("561")) { JsonObject nq = latest.getAsJsonObject("561"); if (!nq.get("high").isJsonNull()) nat = nq.get("high").getAsInt(); }
+		List<Alch> out = new ArrayList<>();
+		for (Meta meta : map.values())
+		{
+			if (meta.highalch <= 0 || meta.limit <= 0) continue;
+			if (meta.members && !cfg.members()) continue;
+			String k = String.valueOf(meta.id);
+			if (!latest.has(k)) continue;
+			JsonObject q = latest.getAsJsonObject(k);
+			if (q.get("high").isJsonNull()) continue;
+			int buy = q.get("high").getAsInt();
+			if (buy <= 0) continue;
+			int profit = meta.highalch - buy - nat;   // TAX-FREE: no GE sale, so no 2% — only the buy costs
+			if (profit < Math.max(1, cfg.minMargin())) continue;
+			// liquidity: a margin on an item that barely trades is fake — need real 24h flow to buy the limit
+			if (lastD24 != null && lastD24.has(k))
+			{
+				JsonObject w24 = lastD24.getAsJsonObject(k);
+				if (!w24.get("lowPriceVolume").isJsonNull() && w24.get("lowPriceVolume").getAsInt() < 50) continue;
+			}
+			Alch a = new Alch(); a.id = meta.id; a.name = meta.name; a.buy = buy; a.profit = profit; a.limit = meta.limit; a.alch = meta.highalch;
+			out.add(a);
+		}
+		out.sort((a, b) -> Long.compare((long) b.profit * Math.min(b.limit, 1000), (long) a.profit * Math.min(a.limit, 1000)));
+		int rows = Math.max(5, cfg.rows());
+		return out.size() > rows ? new ArrayList<>(out.subList(0, rows)) : out;
 	}
 
 	private static Map<Integer, Double> loadT90(boolean useTrends)
