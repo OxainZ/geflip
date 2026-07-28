@@ -189,7 +189,7 @@ final class CoachGoals
 	static
 	{
 		QUESTS.add(new QuestRec(Quest.DESERT_TREASURE_I, "Ancient Magicks (Ice Barrage/Burst) — turbo-charges Slayer.",
-			skill(Skill.FIREMAKING, 50), skill(Skill.MAGIC, 50), skill(Skill.SLAYER, 10),
+			skill(Skill.THIEVING, 53), skill(Skill.FIREMAKING, 50), skill(Skill.MAGIC, 50), skill(Skill.SLAYER, 10),
 			quest(Quest.THE_DIG_SITE), quest(Quest.TEMPLE_OF_IKOV), quest(Quest.THE_TOURIST_TRAP),
 			quest(Quest.TROLL_STRONGHOLD), quest(Quest.PRIEST_IN_PERIL), quest(Quest.WATERFALL_QUEST)));
 		QUESTS.add(new QuestRec(Quest.MONKEY_MADNESS_I, "Dragon scimitar + opens MM2 and the RFD monkey subquest."));
