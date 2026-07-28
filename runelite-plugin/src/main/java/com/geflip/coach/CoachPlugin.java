@@ -177,6 +177,7 @@ public class CoachPlugin extends Plugin
 				farmLines.addAll(CoachFarm.run(farmRunType, st, farmElapsedMin()));
 			}
 			p.setFarmSteps(config.farmingHelper() ? farmSteps(st) : java.util.Collections.emptyList());
+			p.setSkills(skillLines(st));   // the all-skills 1→99 trainer
 			p.setSummary(summary);
 			p.setSessionStats(sess);
 			refreshHiscore();
@@ -734,6 +735,44 @@ public class CoachPlugin extends Plugin
 			o.add("NEXT: level " + nx.min + " → " + nx.unlock + "  (" + CoachGoals.gp(Math.max(0, CoachFarmPlan.xpForLevel(nx.min) - cur)) + " XP away)");
 		o.add("MUST: " + CoachFarmPlan.efficiencyChecklist(lvl));
 		o.add("");
+		return o;
+	}
+
+	private static String skName(Skill sk) { String n = sk.name(); return n.charAt(0) + n.substring(1).toLowerCase(); }
+	private static String fmtHrs(double h) { return h < 1 ? "<1h" : Math.round(h) + "h"; }
+
+	/** The "Skills" trainer: every skill below 99, sorted by nearest-to-99 first, with your level, the
+	 *  optimal method for your band, its XP/hr + cost tag, and a realistic active-hours ETA. Farming has
+	 *  its own richer trainer in the Farm tab. Lines prefixed "*" are headers. */
+	private List<String> skillLines(CoachState st)
+	{
+		List<String> o = new ArrayList<>();
+		o.add("*SKILLS — your road to 99 (nearest first)");
+		java.util.List<Object[]> rows = new ArrayList<>();   // {skill, level, band, hours}
+		for (Skill sk : Skill.values())
+		{
+			if (sk == Skill.OVERALL || sk == Skill.FARMING) continue;   // farming = its own Farm-tab trainer
+			int lvl = st.level(sk);
+			if (lvl >= 99) continue;
+			CoachSkillPlan.Band b = CoachSkillPlan.bestBand(sk, lvl);
+			if (b == null) continue;
+			rows.add(new Object[]{ sk, lvl, b, CoachSkillPlan.hoursTo99(sk, client.getSkillExperience(sk)) });
+		}
+		rows.sort((a, c) ->
+		{
+			double ha = (double) a[3], hc = (double) c[3];   // passive/unknown (≤0) sink to the bottom
+			return Double.compare(ha <= 0 ? Double.MAX_VALUE : ha, hc <= 0 ? Double.MAX_VALUE : hc);
+		});
+		for (Object[] r : rows)
+		{
+			Skill sk = (Skill) r[0]; int lvl = (int) r[1]; CoachSkillPlan.Band b = (CoachSkillPlan.Band) r[2]; double hrs = (double) r[3];
+			String eta = b.xpHr <= 0 ? "passive (from combat)" : hrs > 0 ? "~" + fmtHrs(hrs) + " of training to 99" : "";
+			o.add("*" + skName(sk) + " " + lvl + "   ·   " + eta);
+			o.add("  " + b.method + (b.xpHr > 0 ? "  (~" + CoachGoals.gp(b.xpHr) + "/hr" + (b.cost.isEmpty() ? "" : " · " + b.cost) + ")" : ""));
+		}
+		if (rows.isEmpty()) o.add("  every trainable skill is 99 — maxed! 🎉");
+		o.add("");
+		o.add("Farming → see the Farm tab for the full path-to-99 + lead-through.");
 		return o;
 	}
 

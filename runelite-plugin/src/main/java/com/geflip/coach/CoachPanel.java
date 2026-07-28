@@ -39,6 +39,7 @@ class CoachPanel extends PluginPanel
 	private final JPanel pathBox = new JPanel();
 	private final JPanel farmBox = new JPanel();
 	private final JPanel farmStepsBox = new JPanel();   // clickable "lead me there" steps (arrows)
+	private final JPanel skillsBox = new JPanel();       // 1→99 trainer for every skill
 
 	/** One tappable farm stop the panel shows: tap → the plugin drops a hint arrow on (x,y,plane).
 	 *  occupied: −1 unknown · 0 empty (go plant) · 1 occupied. locked = can't reach yet (shows reqLabel). */
@@ -56,6 +57,7 @@ class CoachPanel extends PluginPanel
 	private final JButton tabBlocked = new JButton("Blocked");
 	private final JButton tabFarm = new JButton("Farm");
 	private final JButton tabRisk = new JButton("Risk");
+	private final JButton tabSkills = new JButton("Skills");
 	private final JButton tabAsk = new JButton("Ask");
 	private final JPanel cards = new JPanel(new java.awt.CardLayout());
 
@@ -93,7 +95,7 @@ class CoachPanel extends PluginPanel
 
 		JPanel tabBar = new JPanel(new GridLayout(2, 4, 2, 2));   // two rows so all tabs stay readable
 		tabBar.setBorder(BorderFactory.createEmptyBorder(6, 0, 4, 0));
-		for (JButton b : new JButton[]{ tabNext, tabGoals, tabPath, tabBlocked, tabFarm, tabRisk, tabAsk })
+		for (JButton b : new JButton[]{ tabNext, tabGoals, tabPath, tabBlocked, tabFarm, tabRisk, tabSkills, tabAsk })
 		{ tabBar.add(b); b.setMargin(new java.awt.Insets(2, 1, 2, 1)); }
 		tabNext.addActionListener(e -> show("next"));
 		tabGoals.addActionListener(e -> show("goals"));
@@ -101,9 +103,10 @@ class CoachPanel extends PluginPanel
 		tabBlocked.addActionListener(e -> show("blocked"));
 		tabFarm.addActionListener(e -> show("farm"));
 		tabRisk.addActionListener(e -> show("risk"));
+		tabSkills.addActionListener(e -> show("skills"));
 		tabAsk.addActionListener(e -> show("ask"));
 
-		for (JPanel p : new JPanel[]{ nextBox, goalsBox, blockedBox, pathBox, farmBox, riskBox })
+		for (JPanel p : new JPanel[]{ nextBox, goalsBox, blockedBox, pathBox, farmBox, riskBox, skillsBox })
 			p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 
 		cards.add(scroll(nextBox), "next");
@@ -112,6 +115,7 @@ class CoachPanel extends PluginPanel
 		cards.add(scroll(blockedBox), "blocked");
 		cards.add(farmCard(), "farm");
 		cards.add(scroll(riskBox), "risk");
+		cards.add(scroll(skillsBox), "skills");
 		cards.add(askCard(), "ask");
 
 		JPanel north = new JPanel(new BorderLayout());
@@ -255,7 +259,30 @@ class CoachPanel extends PluginPanel
 		tabBlocked.setForeground("blocked".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabFarm.setForeground("farm".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabRisk.setForeground("risk".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+		tabSkills.setForeground("skills".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		tabAsk.setForeground("ask".equals(card) ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+	}
+
+	/** Render the "Skills" trainer: one row per skill (best method now + XP/hr + ETA), rich lines are
+	 *  passed pre-formatted by the plugin (which has the live levels). A leading "*" marks a header line. */
+	void setSkills(List<String> lines)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			skillsBox.removeAll();
+			if (lines != null) for (String s : lines)
+			{
+				boolean head = s.startsWith("*");
+				JLabel l = new JLabel(head ? s.substring(1) : s);
+				l.setFont(FontManager.getRunescapeSmallFont());
+				l.setForeground(head ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+				l.setBorder(BorderFactory.createEmptyBorder(head ? 6 : 1, 6, 1, 6));
+				l.setAlignmentX(Component.LEFT_ALIGNMENT);
+				skillsBox.add(l);
+			}
+			skillsBox.revalidate();
+			skillsBox.repaint();
+		});
 	}
 
 	private static JScrollPane scroll(Component c)
