@@ -724,13 +724,42 @@ class GeflipPanel extends PluginPanel
 			: o.stale ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.LIGHT_GRAY_COLOR);
 		r.setHorizontalAlignment(JLabel.RIGHT);
 		r.setFont(FontManager.getRunescapeSmallFont());
-		if (o.stale)
+		JPanel top = new JPanel(new BorderLayout(6, 0));
+		top.setOpaque(false);
+		top.add(l, BorderLayout.CENTER); top.add(r, BorderLayout.EAST);
+
+		// SELL GUIDANCE right on the row: buys → what to sell it for after; sells → the reprice target.
+		String guide = null; java.awt.Color gcol = ColorScheme.LIGHT_GRAY_COLOR;
+		if (o.sellHint > 0)
 		{
-			String age = o.ageSec >= 3600 ? "~" + (o.ageSec / 3600) + "h" : "~" + Math.max(1, o.ageSec / 60) + "m";
-			l.setToolTipText("Unfilled for " + age + " — the price likely moved. Reprice it.");
+			if (buy)
+				guide = "→ then sell at ~" + gp(o.sellHint);
+			else
+			{
+				int tick = GeflipScanner.tickSize(o.sellHint);
+				if (o.price > o.sellHint + tick)
+				{ guide = "⚠ reprice ↓ to ~" + gp(o.sellHint) + "  (buyers are below your " + gp(o.price) + ")"; gcol = ColorScheme.PROGRESS_ERROR_COLOR; }
+				else
+					guide = "sell target ~" + gp(o.sellHint) + " — your price is fine";
+			}
 		}
-		p.add(l, BorderLayout.CENTER);
-		p.add(r, BorderLayout.EAST);
+		JPanel col = new JPanel();
+		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+		col.setOpaque(false);
+		top.setAlignmentX(Component.LEFT_ALIGNMENT);
+		col.add(top);
+		if (guide != null)
+		{
+			JLabel sub = new JLabel(guide);
+			sub.setFont(FontManager.getRunescapeSmallFont());
+			sub.setForeground(gcol);
+			sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+			col.add(sub);
+		}
+		p.add(col, BorderLayout.CENTER);
+		String age = o.ageSec >= 3600 ? "~" + (o.ageSec / 3600) + "h" : "~" + Math.max(1, o.ageSec / 60) + "m";
+		l.setToolTipText(o.stale ? "Unfilled for " + age + " — the price moved; reprice it."
+			: (buy ? "Once this buys, sell it at ~" + gp(o.sellHint) : "Market sell price is ~" + gp(o.sellHint)));
 		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;

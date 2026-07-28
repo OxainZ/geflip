@@ -133,7 +133,7 @@ public class GeflipPlugin extends Plugin
 	static final class Offer
 	{
 		final int slot, id; final String state; final int price, qtySold, qtyTotal; final long spent;
-		String name; long ageSec; boolean stale;
+		String name; long ageSec; boolean stale; int sellHint;   // recommended sell price for this item (live)
 		Offer(int slot, int id, String state, int price, int qtySold, int qtyTotal, long spent)
 		{ this.slot = slot; this.id = id; this.state = state; this.price = price;
 		  this.qtySold = qtySold; this.qtyTotal = qtyTotal; this.spent = spent; }
@@ -728,6 +728,7 @@ public class GeflipPlugin extends Plugin
 			Offer of = new Offer(i, o.getItemId(), st.name(), o.getPrice(),
 				o.getQuantitySold(), o.getTotalQuantity(), o.getSpent());
 			of.name = scanner.nameFor(o.getItemId());
+			of.sellHint = scanner.sellHint(o.getItemId());   // recommended sell price, shown on the row
 			// age + staleness: an in-progress offer that hasn't filled after staleHours
 			// has almost certainly been priced out — reprice it instead of waiting days
 			boolean inProgress = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.SELLING;
