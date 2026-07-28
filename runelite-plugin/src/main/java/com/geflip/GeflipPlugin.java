@@ -963,7 +963,9 @@ public class GeflipPlugin extends Plugin
 		if (alchs != null && !alchs.isEmpty())
 		{
 			GeflipScanner.Alch a = alchs.get(0);   // best high-alch
-			double rate = Math.min(1200.0, a.limit > 0 ? a.limit / 4.0 : 1200.0);   // casts/hr, buy-limit bounded
+			// ~1100/hr SUSTAINED (1200 is the perfect-play ceiling — 5-tick recast; realistic is lower with
+			// banking/misclicks). Buy-limit also bounds it (limit/4 per hour).
+			double rate = Math.min(1100.0, a.limit > 0 ? a.limit / 4.0 : 1100.0);
 			long gpHr = (long) (a.profit * rate);
 			if (gpHr > 0) routes.add(new GeflipShared.Route("High-alch: " + a.name, gpHr, "alch"));
 		}

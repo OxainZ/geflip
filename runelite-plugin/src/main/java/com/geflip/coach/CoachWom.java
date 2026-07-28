@@ -49,7 +49,21 @@ final class CoachWom
 			try (BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8)))
 			{ String line; while ((line = br.readLine()) != null) sb.append(line); }
 			JsonObject o = new JsonParser().parse(sb.toString()).getAsJsonObject();
-			return new Result(num(o, "ehp"), num(o, "ehb"), num(o, "ttm"), true);
+			// EHP/EHB appear top-level on the player object; fall back to latestSnapshot.data.computed.{m}.value
+			// so we're robust to either API shape.
+			double ehp = num(o, "ehp"), ehb = num(o, "ehb");
+			if (ehp == 0 || ehb == 0)
+			{
+				JsonObject computed = nested(o, "latestSnapshot", "data", "computed");
+				if (computed != null)
+				{
+					if (ehp == 0 && computed.has("ehp") && computed.get("ehp").isJsonObject())
+						ehp = num(computed.getAsJsonObject("ehp"), "value");
+					if (ehb == 0 && computed.has("ehb") && computed.get("ehb").isJsonObject())
+						ehb = num(computed.getAsJsonObject("ehb"), "value");
+				}
+			}
+			return new Result(ehp, ehb, num(o, "ttm"), true);
 		}
 		catch (Exception e) { return null; }
 	}
@@ -76,5 +90,17 @@ final class CoachWom
 	private static double num(JsonObject o, String k)
 	{
 		return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsDouble() : 0;
+	}
+
+	/** Walk a chain of nested objects, null if any hop is missing/not an object. */
+	private static JsonObject nested(JsonObject o, String... path)
+	{
+		JsonObject cur = o;
+		for (String k : path)
+		{
+			if (cur == null || !cur.has(k) || !cur.get(k).isJsonObject()) return null;
+			cur = cur.getAsJsonObject(k);
+		}
+		return cur;
 	}
 }
