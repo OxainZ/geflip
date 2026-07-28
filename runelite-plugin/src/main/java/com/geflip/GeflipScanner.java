@@ -848,6 +848,9 @@ class GeflipScanner
 			double expUnits = PART * Math.min(sellersFc, buyersFc) * cycleH;
 			double zf = (expUnits - qty) / Math.sqrt(Math.max(1, expUnits));
 			double fillProb = 1.0 / (1.0 + Math.exp(-1.702 * zf));   // logistic approx of the normal CDF
+			// STALENESS DISCOUNT (quant): a quote that hasn't traded in a while is less likely to actually
+			// fill at that price — cut fill-prob by the age of the newest quote (≈30-min half-life).
+			fillProb *= 0.4 + 0.6 * Math.exp(-age / 1800.0);
 			boolean wontFill = Math.min(vh, vl) < 50 || fillProb < 0.15;   // too little counter-flow
 
 			// intra-hour trend (falling-knife) penalty — matches the web's trendPen
@@ -1074,19 +1077,22 @@ class GeflipScanner
 			f.why = "Reliable: the margin held ~" + (int) (persist * 100) + "% of the last 2h";
 	}
 
-	/** #3 — mark a capital/slot basket: greedily fill your free GE slots from the ranked list, sizing
-	 *  each by what your cash and its buy limit allow, so you see WHAT to actually put in your slots. */
+	/** #3 — mark a capital/slot basket: greedily fill your free GE slots from the ranked list, sizing each
+	 *  by cash + buy-limit + a per-item exposure cap that is SCALED by your realised win-rate on that item
+	 *  (a bounded quarter-Kelly-lite: proven winners get a bigger slice, items you lose on a smaller one). */
 	void basket(List<Flip> ranked, long cashGp, int slots, double maxPct)
 	{
 		long cash = Math.max(0, cashGp);
-		long perSlotCap = (long) (Math.max(0, cashGp) * Math.max(0.05, Math.min(1.0, maxPct)));   // exposure cap
+		long perSlotCap = (long) (Math.max(0, cashGp) * Math.max(0.05, Math.min(1.0, maxPct)));   // base exposure cap
 		int used = 0;
 		for (Flip f : ranked)
 		{
 			if (used >= slots || cash <= 0) break;
 			if (f.wontFill || f.buy <= 0) continue;
-			// size by the smallest of: quantity offered, cash left, and the per-item exposure cap
-			int q = (int) Math.min(f.quantity, Math.min(cash / f.buy, perSlotCap / f.buy));
+			// win-rate scaling: 0% wins → 0.6× the cap, 50% → 1.0×, 100% → 1.4× (bounded); neutral with no history
+			double kelly = f.yourWinRate >= 0 ? Math.max(0.6, Math.min(1.4, 0.6 + 0.8 * f.yourWinRate)) : 1.0;
+			long cap = (long) (perSlotCap * kelly);
+			int q = (int) Math.min(f.quantity, Math.min(cash / f.buy, cap / f.buy));
 			if (q <= 0) continue;
 			f.basketQty = q;
 			cash -= (long) q * f.buy;
