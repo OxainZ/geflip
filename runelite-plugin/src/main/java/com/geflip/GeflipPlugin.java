@@ -63,6 +63,7 @@ public class GeflipPlugin extends Plugin
 	private volatile java.util.Map<Integer, Integer> invCounts;
 	private volatile java.util.Set<Integer> excludedIds = java.util.Collections.emptySet();   // personal-use ids
 	private final java.util.concurrent.atomic.AtomicBoolean scanning = new java.util.concurrent.atomic.AtomicBoolean(false);
+	private final MarketClock marketClock = new MarketClock();   // hour-of-week activity logger
 	private volatile java.util.concurrent.ScheduledFuture<?> persistDebounce;   // coalesces fill-event saves
 	private volatile int pendingSoldId = -1;   // a sell seen during the debounce window (for the flip alert)
 	private volatile java.util.Map<Integer, Integer> bankCounts;
@@ -831,6 +832,7 @@ public class GeflipPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		marketClock.loadCsv(configManager.getConfiguration("geflip", "hourlyVol"));   // resume the activity log
 		panel = new GeflipPanel(this::triggerScan, this::clearHolding, this::priceCheck,
 			(id, cost) -> setCost(id, cost), this::markPersonalUse, this::toggleWatchLast, this::unwatch,
 			this::resetJournal);
@@ -901,7 +903,13 @@ public class GeflipPlugin extends Plugin
 				for (GeflipScanner.Flip f : flips) f.resetMins = limitResetMins(f.id);   // buy-limit timer
 				if (p != null) p.setBankroll(bank, config.autoBankroll() && liveGp >= 0);
 				lastFlips = flips;                       // share with the bridge/cloud
-				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " finds · " + timeNow()); }
+				// hour-of-week logger: record the current global market activity, persist, and surface it
+				int bin = MarketClock.hourOfWeekUtc();
+				long volIdx = scanner.globalVolumeIndex();
+				if (volIdx > 0) { marketClock.record(bin, volIdx); configManager.setConfiguration("geflip", "hourlyVol", marketClock.toCsv()); }
+				int act = marketClock.activityPct(bin);
+				String actStr = act >= 0 ? "  · mkt " + act + "% of peak" + (act >= 80 ? " (fast fills)" : act <= 40 ? " (slow)" : "") : "";
+				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " finds · " + timeNow() + actStr); }
 				if (p != null) p.setSuppressedWinners(suppressedWinners(flips));   // #1: proven winners not showing + why
 				if (p != null) p.setStable(stable());                             // your consistent-winner stable
 				if (p != null) p.setAccountNeeds(buildAccountNeeds());            // cross-ref: what the Coach says your account needs

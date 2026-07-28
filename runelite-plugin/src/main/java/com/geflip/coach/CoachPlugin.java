@@ -800,6 +800,7 @@ public class CoachPlugin extends Plugin
 	private List<String> skillLines(CoachState st)
 	{
 		List<String> o = new ArrayList<>(CoachDailies.lines(st));   // the compounding dailies most players skip
+		o.addAll(CoachUnlocks.lines(st));                           // permanent unlocks you don't have yet
 		o.add("*SKILLS — your road to 99 (nearest first)");
 		java.util.List<Object[]> rows = new ArrayList<>();   // {skill, level, band, hours}
 		for (Skill sk : Skill.values())

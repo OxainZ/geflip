@@ -94,6 +94,22 @@ class GeflipScanner
 		return m != null && m.exempt;
 	}
 
+	/** A global market-activity index = total 1h trade volume across all items (from the cached /1h).
+	 *  0 if no scan yet. Used by the hour-of-week logger to learn when the GE is busiest (fast fills). */
+	long globalVolumeIndex()
+	{
+		JsonObject h1 = lastH1;
+		if (h1 == null) return 0;
+		long total = 0;
+		for (Map.Entry<String, JsonElement> e : h1.entrySet())
+		{
+			JsonObject w = e.getValue().getAsJsonObject();
+			if (!w.get("highPriceVolume").isJsonNull()) total += w.get("highPriceVolume").getAsInt();
+			if (!w.get("lowPriceVolume").isJsonNull()) total += w.get("lowPriceVolume").getAsInt();
+		}
+		return total;
+	}
+
 	/** Resolve a set of lower-cased item names to their IDs (empty until mapping loads). */
 	java.util.Set<Integer> idsForNames(java.util.Set<String> loweredNames)
 	{
