@@ -170,7 +170,12 @@ public class CoachPlugin extends Plugin
 			List<CoachEngine.Scored> next = CoachEngine.doNext(all);
 			List<String> path = criticalPath(st, all);   // reuse the already-computed goal graph (no 2nd evaluate)
 			List<String> risk = riskLines();
-			List<String> farmLines = config.farmingHelper() ? CoachFarm.run(farmRunType, st, farmElapsedMin()) : null;
+			List<String> farmLines = null;
+			if (config.farmingHelper())
+			{
+				farmLines = new ArrayList<>(pathTo99(st));                 // the 1→99 trainer, then the run
+				farmLines.addAll(CoachFarm.run(farmRunType, st, farmElapsedMin()));
+			}
 			p.setFarmSteps(config.farmingHelper() ? farmSteps(st) : java.util.Collections.emptyList());
 			p.setSummary(summary);
 			p.setSessionStats(sess);
@@ -694,6 +699,42 @@ public class CoachPlugin extends Plugin
 		if (need <= 0 || rate <= 0) return null;
 		double eta = need / rate;
 		return eta < 1 ? Math.max(1, Math.round(eta * 60)) + "m" : String.format("%.1fh", eta);
+	}
+
+	private static String fmtDays(double d)
+	{
+		if (d < 1) return "<1 day";
+		long days = Math.round(d);
+		return days <= 60 ? days + " days" : days + " days (~" + Math.round(days / 30.0) + " months)";
+	}
+
+	/** The "Path to 99 Farming" trainer: your live level/XP + the optimal what-to-plant for your band,
+	 *  the next milestone, a realistic days-to-99 ETA (daily-run rate, not the bursty session rate), and
+	 *  the must-have efficiency items. Sourced from the wiki-verified 1→99 plan in CoachFarmPlan. */
+	private List<String> pathTo99(CoachState st)
+	{
+		List<String> o = new ArrayList<>();
+		int lvl = st.level(Skill.FARMING);
+		o.add("PATH TO 99 FARMING");
+		if (lvl >= 99) { o.add("99 Farming — done! The cape perk gives unlimited farming teleports."); o.add(""); return o; }
+		long cur = client.getSkillExperience(Skill.FARMING);
+		long xp99 = CoachFarmPlan.xpForLevel(99);
+		o.add("Level " + lvl + " · " + CoachGoals.gp(Math.max(0, xp99 - cur)) + " XP to 99 ("
+			+ (int) Math.min(100, 100.0 * cur / xp99) + "% there)");
+		o.add("ETA to 99: ~" + fmtDays(CoachFarmPlan.daysTo99(cur)) + " of daily runs");
+		o.add("");
+		CoachFarmPlan.Band b = CoachFarmPlan.bandFor(lvl);
+		o.add("DO NOW (level " + lvl + "):");
+		o.add("• Trees: " + b.tree + "    • Fruit: " + b.fruit);
+		o.add("• Herbs: " + b.herb + "    • Special: " + b.special);
+		o.add("• ~" + b.xpDay + " on the daily circuit");
+		if (b.note != null) o.add("• " + b.note);
+		CoachFarmPlan.Band nx = CoachFarmPlan.nextBand(lvl);
+		if (nx != null)
+			o.add("NEXT: level " + nx.min + " → " + nx.unlock + "  (" + CoachGoals.gp(Math.max(0, CoachFarmPlan.xpForLevel(nx.min) - cur)) + " XP away)");
+		o.add("MUST: " + CoachFarmPlan.efficiencyChecklist(lvl));
+		o.add("");
+		return o;
 	}
 
 	// Destinations I'm 100% sure of → an in-game hint arrow. Only certain tiles (no misdirection);
