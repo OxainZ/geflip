@@ -238,12 +238,12 @@ public class GeflipPlugin extends Plugin
 			String nm = scanner.nameFor(id);
 			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id), scanner.isExempt(id)));
 		}
-		// ALSO surface tradeable items sitting in your INVENTORY that the flip ledger never tracked you
-		// buying (drops, older buys, a flip where you bailed on the sell, anything you brought to the GE)
-		// so nothing you're holding is silently missing from To-sell. Cost is unknown for these (shown as
-		// "—"); already-listed units are netted out, and personal-use / non-tradeable items are skipped.
+		// OPT-IN: also surface tradeable items sitting in your INVENTORY that the flip ledger never tracked
+		// you buying (drops, older buys, a bailed flip). OFF by default because it also catches PvM
+		// supplies/gear you carry (potions, brews, bolts, boots) — turn on "Show bag items in To-sell" only
+		// if you want everything in your bag listed. Tracked flip holdings always show regardless.
 		java.util.Map<Integer, Integer> inv = invCounts;
-		if (inv != null)
+		if (inv != null && config.sellBagItems())
 		{
 			java.util.Set<Integer> shown = new java.util.HashSet<>();
 			for (Hold h : out) shown.add(h.id);
@@ -585,6 +585,24 @@ public class GeflipPlugin extends Plugin
 		return out;
 	}
 
+	/** Your TRUSTED STABLE: items you consistently profit on (≥5 completed flips, ≥60% win-rate, net
+	 *  positive) — the reliable core to flip repeatedly, vs the scanner's opportunistic satellite. */
+	private java.util.List<String> stable()
+	{
+		java.util.List<java.util.Map.Entry<Integer, long[]>> items = new java.util.ArrayList<>(ledger.byItem.entrySet());
+		items.removeIf(e -> { long[] v = e.getValue(); return !(v[1] >= 5 && v[0] > 0 && (double) v[2] / v[1] >= 0.6); });
+		items.sort((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]));
+		java.util.List<String> out = new java.util.ArrayList<>();
+		for (int i = 0; i < items.size() && i < 10; i++)
+		{
+			java.util.Map.Entry<Integer, long[]> e = items.get(i);
+			long[] v = e.getValue();
+			String nm = scanner.nameFor(e.getKey());
+			out.add((nm != null ? nm : "#" + e.getKey()) + " — " + (int) Math.round(100.0 * v[2] / v[1]) + "% win · " + gpn(v[0]) + " total");
+		}
+		return out;
+	}
+
 	/** Your items ranked by realized profit — the journal analytics ("what actually pays me"). */
 	private java.util.List<String> topItems()
 	{
@@ -885,6 +903,7 @@ public class GeflipPlugin extends Plugin
 				lastFlips = flips;                       // share with the bridge/cloud
 				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " finds · " + timeNow()); }
 				if (p != null) p.setSuppressedWinners(suppressedWinners(flips));   // #1: proven winners not showing + why
+				if (p != null) p.setStable(stable());                             // your consistent-winner stable
 				if (p != null) p.setAccountNeeds(buildAccountNeeds());            // cross-ref: what the Coach says your account needs
 				if (p != null) p.setDecants(scanner.scanDecants(config));   // decanting opportunities
 				if (p != null) p.setSets(scanner.scanSets(config));         // set-exchange arbitrage

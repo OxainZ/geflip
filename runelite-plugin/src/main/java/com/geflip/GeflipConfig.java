@@ -173,6 +173,16 @@ public interface GeflipConfig extends Config
 	)
 	default String excludeItems() { return ""; }
 
+	@ConfigItem(
+		keyName = "sellBagItems",
+		name = "Show bag items in To-sell",
+		description = "Also list tradeable items in your inventory that weren't tracked flip buys (drops, "
+			+ "old buys). OFF by default — it also catches PvM supplies/gear you carry (potions, brews, "
+			+ "bolts, boots). Your actual tracked flip holdings always show regardless of this.",
+		position = 81
+	)
+	default boolean sellBagItems() { return false; }
+
 	@Range(min = 1, max = 48)
 	@ConfigItem(
 		keyName = "staleHours",

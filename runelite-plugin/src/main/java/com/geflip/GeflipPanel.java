@@ -42,6 +42,7 @@ class GeflipPanel extends PluginPanel
 	private final JPanel holdBox = new JPanel();       // "To sell" — items you hold + sell price (You tab)
 	private final JPanel perfBox = new JPanel();       // "Best items" — realized per-item profit (You tab)
 	private final JPanel suppressedBox = new JPanel(); // "Winners not showing" — proven items + why (You tab)
+	private final JPanel stableBox = new JPanel();      // "Your stable" — consistent-winner items (You tab)
 	private final JPanel accountBox = new JPanel();     // "For your account" — Coach shopping list priced (You tab)
 	private final java.awt.CardLayout cards = new java.awt.CardLayout();
 	private final JPanel cardPanel = new JPanel(cards);
@@ -173,6 +174,8 @@ class GeflipPanel extends PluginPanel
 		suppressedBox.setLayout(new BoxLayout(suppressedBox, BoxLayout.Y_AXIS));
 		accountBox.setLayout(new BoxLayout(accountBox, BoxLayout.Y_AXIS));
 		accountBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+		stableBox.setLayout(new BoxLayout(stableBox, BoxLayout.Y_AXIS));
+		stableBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		suppressedBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		watchBox.setLayout(new BoxLayout(watchBox, BoxLayout.Y_AXIS));
 
@@ -190,6 +193,7 @@ class GeflipPanel extends PluginPanel
 		youBox.add(accountBox);
 		youBox.add(holdBox);
 		youBox.add(watchBox);
+		youBox.add(stableBox);
 		youBox.add(perfBox);
 		youBox.add(suppressedBox);
 		youBox.add(offersBox);
@@ -569,6 +573,36 @@ class GeflipPanel extends PluginPanel
 		});
 	}
 
+	/** Render "◆ Your stable" — items you consistently profit on (flip these repeatedly). */
+	void setStable(List<String> lines)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			stableBox.removeAll();
+			if (lines != null && !lines.isEmpty())
+			{
+				JLabel hdr = new JLabel("◆ Your stable — flip these repeatedly");
+				hdr.setForeground(ColorScheme.BRAND_ORANGE);
+				hdr.setBorder(BorderFactory.createEmptyBorder(6, 1, 2, 1));
+				hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
+				hdr.setToolTipText("Items your journal shows you consistently profit on (≥5 flips, ≥60% win, net positive) — "
+					+ "your reliable core. ◆ marks them in the flip list too.");
+				stableBox.add(hdr);
+				for (String s : lines)
+				{
+					JLabel l = new JLabel(s);
+					l.setFont(FontManager.getRunescapeSmallFont());
+					l.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+					l.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
+					l.setAlignmentX(Component.LEFT_ALIGNMENT);
+					stableBox.add(l);
+				}
+			}
+			stableBox.revalidate();
+			stableBox.repaint();
+		});
+	}
+
 	/** Render "Your winners — not showing now" — proven items absent from the list + why (#1). */
 	void setSuppressedWinners(List<String> lines)
 	{
@@ -933,7 +967,8 @@ class GeflipPanel extends PluginPanel
 		// --- line 1: item name (left, clips if long) + gp/hour headline (right) ---
 		JPanel top = new JPanel(new BorderLayout(6, 0));
 		top.setOpaque(false);
-		String tag = (f.basketQty > 0 ? "★ " : "") + (f.dumping ? "🔥 " : "") + (f.decliner ? "⚠ " : "")
+		String tag = (f.personalized && f.yourWinRate >= 0.6 ? "◆ " : "") + (f.basketQty > 0 ? "★ " : "")
+			+ (f.dumping ? "🔥 " : "") + (f.decliner ? "⚠ " : "")
 			+ (f.unstable ? "⚡ " : "") + (f.tsChecked && f.marginPersist >= 0.7 ? "✓ " : "");
 		JLabel name = new JLabel(tag + f.name);
 		name.setForeground(f.decliner ? ColorScheme.PROGRESS_ERROR_COLOR
