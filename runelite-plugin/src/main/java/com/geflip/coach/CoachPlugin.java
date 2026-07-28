@@ -81,6 +81,7 @@ public class CoachPlugin extends Plugin
 	// Wise Old Man efficiency metrics (EHP/EHB), fetched off-thread + cached
 	private volatile CoachWom.Result wom;
 	private volatile long lastWomMs = 0;
+	private volatile java.util.Map<String, double[][]> womRates;   // WOM community-optimal xp/hr rate tables (fetched once)
 	private ScheduledFuture<?> priceRefresh;   // the net-worth price poller (cancelled on shutdown)
 	private boolean wealthBaselined = false;   // session gp/hr baseline only once the bank is known
 	private volatile String farmRunType = "Herb";   // which preset farm run the Farm tab shows
@@ -320,10 +321,13 @@ public class CoachPlugin extends Plugin
 	private List<String> questLines(CoachState st)
 	{
 		List<String> out = new ArrayList<>();
-		for (CoachEngine.QuestScored qs : CoachEngine.quests(st))
-			out.add((qs.ready ? "✓ " : "○ ") + CoachGoals.pretty(qs.rec.q)
-				+ (qs.ready ? " — do now" : " — " + String.join(", ", qs.gaps)));
-		if (out.isEmpty()) out.add("all tracked quests done — nice");
+		List<CoachEngine.QuestScored> order = CoachEngine.questOrder(st);   // topological: prerequisites first
+		if (order.isEmpty()) { out.add("all tracked quests done — nice"); return out; }
+		out.add("📜 Optimal order (prerequisites first — do top-down):");
+		int n = 1;
+		for (CoachEngine.QuestScored qs : order)
+			out.add(n++ + ". " + (qs.ready ? "✓ " : "○ ") + CoachGoals.pretty(qs.rec.q)
+				+ (qs.ready ? " — ready now" : " — " + String.join(", ", qs.gaps.subList(0, Math.min(3, qs.gaps.size())))));
 		return out;
 	}
 
@@ -423,6 +427,7 @@ public class CoachPlugin extends Plugin
 				CoachWom.Result r = CoachWom.fetch(womName);
 				if (r != null && !r.tracked) { CoachWom.track(womName); r = CoachWom.fetch(womName); }   // first-time: track then read
 				if (r != null) { wom = r; lastWomMs = System.currentTimeMillis(); }
+				if (womRates == null) { java.util.Map<String, double[][]> rt = CoachWom.rates("main"); if (rt != null) womRates = rt; }
 			}
 			catch (Exception e) { log.debug("coach: WOM lookup failed", e); }
 		});
@@ -814,15 +819,49 @@ public class CoachPlugin extends Plugin
 	}
 
 	private static String skName(Skill sk) { String n = sk.name(); return n.charAt(0) + n.substring(1).toLowerCase(); }
+	/** RuneLite Skill → Wise Old Man metric name (lowercase; WOM calls Runecraft "runecrafting"). */
+	private static String womName(Skill sk) { return sk == Skill.RUNECRAFT ? "runecrafting" : sk.name().toLowerCase(); }
 	private static String fmtHrs(double h) { return h < 1 ? "<1h" : Math.round(h) + "h"; }
 
 	/** The "Skills" trainer: every skill below 99, sorted by nearest-to-99 first, with your level, the
 	 *  optimal method for your band, its XP/hr + cost tag, and a realistic active-hours ETA. Farming has
 	 *  its own richer trainer in the Farm tab. Lines prefixed "*" are headers. */
+	/** "So close" radar — every gear/prayer/boss goal AND quest you're ONE small step from unlocking:
+	 *  a single skill gap of ≤3 levels, or a single remaining prerequisite quest. Catches the "you're 2
+	 *  Defence off Rigour" wins that a big backlog buries. */
+	private List<String> almostRadar(CoachState st)
+	{
+		List<String> levels = new ArrayList<>();   // ≤3 levels away
+		List<String> oneStep = new ArrayList<>();  // one quest/prereq away
+		for (CoachEngine.Scored sc : CoachEngine.evaluate(st))
+		{
+			if (sc.status == CoachEngine.Status.DONE || sc.status == CoachEngine.Status.READY) continue;
+			if (sc.gaps.size() != 1) continue;                       // must be exactly one thing left
+			String g = sc.gaps.get(0);
+			if (g.startsWith("quest:")) oneStep.add(sc.goal.name + " — " + g);
+			else if (sc.maxWeight <= 3) levels.add(sc.goal.name + " — " + g);   // skill gap of ≤3 levels
+		}
+		for (CoachEngine.QuestScored qs : CoachEngine.quests(st))
+		{
+			if (qs.ready || qs.gaps.size() != 1) continue;
+			String g = qs.gaps.get(0);
+			if (g.startsWith("quest:")) oneStep.add("Quest " + CoachGoals.pretty(qs.rec.q) + " — " + g);
+			else if (qs.totalWeight <= 3) levels.add("Quest " + CoachGoals.pretty(qs.rec.q) + " — " + g);
+		}
+		List<String> out = new ArrayList<>();
+		if (levels.isEmpty() && oneStep.isEmpty()) return out;
+		out.add("*⚡ SO CLOSE — one step from an unlock");
+		for (int i = 0; i < levels.size() && i < 6; i++) out.add("*" + levels.get(i));
+		for (int i = 0; i < oneStep.size() && i < 4; i++) out.add("*" + oneStep.get(i));
+		out.add("");
+		return out;
+	}
+
 	private List<String> skillLines(CoachState st)
 	{
 		List<String> o = new ArrayList<>(CoachDailies.lines(st));   // the compounding dailies most players skip
 		o.addAll(CoachUnlocks.lines(st));                           // permanent unlocks you don't have yet
+		o.addAll(almostRadar(st));                                  // "so close" — one small step from an unlock
 		o.add("*SKILLS — your road to 99 (nearest first)");
 		java.util.List<Object[]> rows = new ArrayList<>();   // {skill, level, band, hours}
 		for (Skill sk : Skill.values())
@@ -847,6 +886,32 @@ public class CoachPlugin extends Plugin
 			o.add("  " + b.method + (b.xpHr > 0 ? "  (~" + CoachGoals.gp(b.xpHr) + "/hr" + (b.cost.isEmpty() ? "" : " · " + b.cost) + ")" : ""));
 		}
 		if (rows.isEmpty()) o.add("  every trainable skill is 99 — maxed! 🎉");
+			// WOM-optimal "quickest route": rank sub-99 skills by hours-to-99 at COMMUNITY-OPTIMAL xp/hr
+			// (the authoritative WOM rate tables) - a sharper "knock these out first" than the local bands.
+			java.util.Map<String, double[][]> wr = womRates;
+			if (wr != null)
+			{
+				java.util.List<Object[]> fast = new ArrayList<>();   // {skillName, hrs-to-99}
+				long xp99w = CoachFarmPlan.xpForLevel(99);
+				for (Skill sk : Skill.values())
+				{
+					if (sk == Skill.OVERALL) continue;
+					long cur = client.getSkillExperience(sk);
+					if (cur >= xp99w) continue;
+					double rate = CoachWom.activeRate(wr, womName(sk), cur);
+					if (rate <= 0) continue;
+					fast.add(new Object[]{ skName(sk), (xp99w - cur) / rate });
+				}
+				fast.sort((a, c) -> Double.compare((double) a[1], (double) c[1]));
+				if (!fast.isEmpty())
+				{
+					StringBuilder q = new StringBuilder("*⚡ QUICKEST 99s (WOM-optimal): ");
+					for (int i = 0; i < fast.size() && i < 5; i++)
+						q.append(i > 0 ? " · " : "").append(fast.get(i)[0]).append(" ~").append(fmtHrs((double) fast.get(i)[1]));
+					o.add("");
+					o.add(q.toString());
+				}
+			}
 		// money-maker advisor — gated by YOUR stats, ranked by gp/hr
 		o.add("");
 		o.add("*💰 BEST MONEY-MAKERS — every live route ranked (PvM · skilling · GE)");

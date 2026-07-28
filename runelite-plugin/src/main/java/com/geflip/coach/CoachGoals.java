@@ -40,7 +40,15 @@ final class CoachGoals
 
 	// --- requirement factories (weight ≈ levels/effort remaining) --------------
 	static Req skill(Skill sk, int lvl) { return s -> s.level(sk) >= lvl ? null : new Gap(cap(sk.name()) + " +" + (lvl - s.level(sk)), lvl - s.level(sk)); }
-	static Req quest(Quest q)           { return s -> s.finished(q) ? null : new Gap("quest: " + pretty(q), 6); }
+	/** A quest prerequisite — kept as a concrete type (not a lambda) so the planner can introspect the
+	 *  prereq Quest for topological ordering. */
+	static final class QuestReq implements Req
+	{
+		final Quest q;
+		QuestReq(Quest q) { this.q = q; }
+		public Gap gap(CoachState s) { return s.finished(q) ? null : new Gap("quest: " + pretty(q), 6); }
+	}
+	static Req quest(Quest q)           { return new QuestReq(q); }
 	static Req questStarted(Quest q)    { return s -> s.started(q) ? null : new Gap("start: " + pretty(q), 4); }
 	static Req qp(int n)                { return s -> s.qp >= n ? null : new Gap("QP +" + (n - s.qp), Math.min(20, n - s.qp)); }
 	static Req coins(long n)            { return s -> (s.coins < 0 || s.coins >= n) ? null : new Gap("need " + gp(n) + " gp", 5); }
@@ -184,6 +192,13 @@ final class CoachGoals
 	{
 		final Quest q; final String note; final List<Req> reqs;
 		QuestRec(Quest q, String note, Req... reqs) { this.q = q; this.note = note; this.reqs = Arrays.asList(reqs); }
+		/** The prerequisite quests this quest directly requires (for topological ordering). */
+		List<Quest> prereqQuests()
+		{
+			List<Quest> ps = new ArrayList<>();
+			for (Req r : reqs) if (r instanceof QuestReq) ps.add(((QuestReq) r).q);
+			return ps;
+		}
 	}
 	static final List<QuestRec> QUESTS = new ArrayList<>();
 	static

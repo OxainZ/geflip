@@ -54,6 +54,7 @@ public class GeflipPlugin extends Plugin
 	private final java.util.Set<Integer> watchlist = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	private final java.util.Set<Integer> watchAlerted = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	private final java.util.Set<Integer> sellAlerted = java.util.concurrent.ConcurrentHashMap.newKeySet();   // reprice nudges
+	private final java.util.Set<Integer> dipAlerted = java.util.concurrent.ConcurrentHashMap.newKeySet();    // buy-the-dip alerts (re-armed on recovery)
 	private volatile int lastCheckedId = -1;   // last item you priced (for the ☆ watch button)
 
 	// live coins you actually have (inventory + bank when opened); −1 = unknown yet
@@ -479,6 +480,25 @@ public class GeflipPlugin extends Plugin
 			}
 		}
 		watchAlerted.retainAll(cheapNow);
+	}
+
+	/** Buy-the-dip alerts: fire when a scanned item is a statistically STRONG dip right now — ≥2σ below its
+	 *  ~2h mean, still filling, and margin-trustworthy — so a real crash pings you to buy it. Deduped per
+	 *  item, re-armed once it's no longer a strong dip (so a slow bleed doesn't spam). */
+	private void checkDips()
+	{
+		if (!config.dipAlerts()) { dipAlerted.clear(); return; }
+		java.util.Set<Integer> dipNow = new java.util.HashSet<>();
+		for (GeflipScanner.Flip f : lastFlips)
+		{
+			boolean strongDip = f.dumping && f.tsChecked && f.zScore <= -2.0 && !f.wontFill && f.trust >= 50;
+			if (!strongDip) continue;
+			dipNow.add(f.id);
+			if (dipAlerted.add(f.id))
+				notifier.notify("Geflip dip: " + f.name + " is ~" + String.format("%.1f", -f.zScore)
+					+ "σ cheap — buy ~" + gpn(f.buy));
+		}
+		dipAlerted.retainAll(dipNow);   // re-arm once it recovers
 	}
 
 	/** Wipe the realized-P&L journal: fill log + all slot marks + cost corrections + buy windows,
@@ -943,6 +963,7 @@ public class GeflipPlugin extends Plugin
 			finally { scanning.set(false); }
 			checkDumps();  // warn if anything you HOLD has crashed below your buy
 			checkWatch();  // ping when a watched item goes cheap
+			checkDips();   // ping when a liquid item is a statistically strong dip — buy the crash
 			checkSells();  // #3: nudge when a resting sell is stale / priced above the market
 			cloudPush();   // push fills/session to the cloud store (no-op if not configured)
 		});

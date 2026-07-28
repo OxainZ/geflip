@@ -68,6 +68,56 @@ final class CoachWom
 		catch (Exception e) { return null; }
 	}
 
+	/** WOM efficiency rate table (metric=ehp): per WOM skill name, brackets of {startExp, xpPerHour} sorted
+	 *  ascending by startExp. The active bracket (highest startExp ≤ your xp) is your community-optimal xp/hr
+	 *  for that skill, so hours-to-99 = (xp99 − xp) / rate. Fetched once + cached (rates change rarely). */
+	static java.util.Map<String, double[][]> rates(String type)
+	{
+		try
+		{
+			String u = "https://api.wiseoldman.net/v2/efficiency/rates?metric=ehp&type=" + type;
+			HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
+			c.setRequestProperty("User-Agent", "geflip-coach RuneLite plugin (OSRS progression coach)");
+			c.setConnectTimeout(8000); c.setReadTimeout(8000);
+			if (c.getResponseCode() != 200) return null;
+			StringBuilder sb = new StringBuilder();
+			try (BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8)))
+			{ String line; while ((line = br.readLine()) != null) sb.append(line); }
+			com.google.gson.JsonArray arr = new JsonParser().parse(sb.toString()).getAsJsonArray();
+			java.util.Map<String, double[][]> out = new java.util.HashMap<>();
+			for (int i = 0; i < arr.size(); i++)
+			{
+				JsonObject o = arr.get(i).getAsJsonObject();
+				if (!o.has("skill") || !o.has("methods")) continue;
+				String skill = o.get("skill").getAsString();
+				com.google.gson.JsonArray ms = o.getAsJsonArray("methods");
+				java.util.List<double[]> br = new java.util.ArrayList<>();
+				for (int j = 0; j < ms.size(); j++)
+				{
+					JsonObject m = ms.get(j).getAsJsonObject();
+					double rate = num(m, "realRate") > 0 ? num(m, "realRate") : num(m, "rate");   // realRate nets 2nd-skill xp
+					br.add(new double[]{ num(m, "startExp"), rate });
+				}
+				br.sort((a, b) -> Double.compare(a[0], b[0]));
+				out.put(skill, br.toArray(new double[0][]));
+			}
+			return out.isEmpty() ? null : out;
+		}
+		catch (Exception e) { return null; }
+	}
+
+	/** Community-optimal xp/hr for this skill at the given current xp (0 if unknown / all-brackets-above). */
+	static double activeRate(java.util.Map<String, double[][]> rates, String womSkill, long xp)
+	{
+		if (rates == null) return 0;
+		double[][] br = rates.get(womSkill);
+		if (br == null) return 0;
+		double r = 0;
+		for (double[] b : br) if (xp >= b[0] && b[1] > 0) r = b[1];   // highest bracket whose startExp ≤ xp
+		if (r == 0 && br.length > 0) r = br[0][1];                    // below the first threshold → use the entry rate
+		return r;
+	}
+
 	/** Track / force-update a player (POST) — creates the player on WOM if never tracked, or refreshes
 	 *  their snapshot. Returns true on success. Blocking — never call on the client thread. */
 	static boolean track(String username)

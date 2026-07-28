@@ -109,4 +109,42 @@ final class CoachEngine
 		out.sort(Comparator.<QuestScored>comparingInt(x -> x.ready ? 0 : 1).thenComparingInt(x -> x.totalWeight));
 		return out;
 	}
+
+	/** Personalised OPTIMAL quest order: a topological sort of the unfinished recommended quests so every
+	 *  prerequisite quest comes before the quest that needs it, tie-broken by "ready now, then closest".
+	 *  Answers "what order do I actually do these in" instead of a flat nearest-first list. */
+	static List<QuestScored> questOrder(CoachState s)
+	{
+		List<QuestScored> nodes = quests(s);   // already excludes finished + carries ready/gaps
+		java.util.Map<net.runelite.api.Quest, QuestScored> byQuest = new java.util.HashMap<>();
+		for (QuestScored n : nodes) byQuest.put(n.rec.q, n);
+
+		// edges: prereq → dependent, but only among unfinished nodes (finished/out-of-list prereqs are gaps, not order)
+		java.util.Map<net.runelite.api.Quest, Integer> indeg = new java.util.HashMap<>();
+		java.util.Map<net.runelite.api.Quest, List<net.runelite.api.Quest>> adj = new java.util.HashMap<>();
+		for (QuestScored n : nodes) indeg.put(n.rec.q, 0);
+		for (QuestScored n : nodes)
+			for (net.runelite.api.Quest pre : n.rec.prereqQuests())
+				if (byQuest.containsKey(pre))
+				{
+					adj.computeIfAbsent(pre, k -> new ArrayList<>()).add(n.rec.q);
+					indeg.merge(n.rec.q, 1, Integer::sum);
+				}
+
+		Comparator<QuestScored> cmp = Comparator.<QuestScored>comparingInt(x -> x.ready ? 0 : 1).thenComparingInt(x -> x.totalWeight);
+		java.util.PriorityQueue<QuestScored> pq = new java.util.PriorityQueue<>(cmp);
+		for (QuestScored n : nodes) if (indeg.get(n.rec.q) == 0) pq.add(n);
+		List<QuestScored> order = new ArrayList<>();
+		while (!pq.isEmpty())
+		{
+			QuestScored n = pq.poll();
+			order.add(n);
+			for (net.runelite.api.Quest m : adj.getOrDefault(n.rec.q, java.util.Collections.emptyList()))
+				if (indeg.merge(m, -1, Integer::sum) == 0) pq.add(byQuest.get(m));
+		}
+		// any node left in a cycle (shouldn't happen with real quest data) — append so nothing is dropped
+		if (order.size() < nodes.size())
+			for (QuestScored n : nodes) if (!order.contains(n)) order.add(n);
+		return order;
+	}
 }

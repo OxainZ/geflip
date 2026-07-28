@@ -33,6 +33,8 @@ final class CoachMoney
 		new M("Green dragons (Wilderness)", 700_000, "low-req; PvP risk; ~60+ combat", st -> st.combatLevel >= 60),
 		new M("Making prayer potions", 800_000, "~5.6k/pot + Herblore xp; needs 38 Herblore", st -> st.level(Skill.HERBLORE) >= 38),
 		new M("Barrows", 1_000_000, "mid PvM; needs decent gear; ~90+ combat", st -> st.combatLevel >= 90),
+		new M("Combination runes (Magic Imbue)", 400_000, "RC method, NOT a GE flip: 1 pure essence + 1 element rune per rune at the opposite altar; Magic Imbue (82 Mag + Lunar Diplomacy) skips the talisman. ~23 RC for Lava.",
+			st -> st.level(Skill.MAGIC) >= 82 && st.finished(net.runelite.api.Quest.LUNAR_DIPLOMACY) && st.level(Skill.RUNECRAFT) >= 23),
 		new M("Blood-rune Runecrafting (Arceuus)", 1_000_000, "AFK-ish; needs 77 RC + Sins of the Father", st -> st.level(Skill.RUNECRAFT) >= 77),
 		new M("Black chinchompa hunting (Wilderness)", 2_000_000, "high profit; PvP risk; needs 73 Hunter", st -> st.level(Skill.HUNTER) >= 73),
 		new M("Rogues' Castle thieving (Wilderness)", 2_200_000, "fast; PvP risk; needs 84 Thieving", st -> st.level(Skill.THIEVING) >= 84),

@@ -89,6 +89,16 @@ public interface GeflipConfig extends Config
 	default boolean sellAlerts() { return true; }
 
 	@ConfigItem(
+		keyName = "dipAlerts",
+		name = "Buy-the-dip alerts",
+		description = "Notify when a liquid item is a statistically strong dip right now — ≥2σ below its "
+			+ "recent mean, still filling, and margin-trustworthy — so you can buy the crash. Deduped + "
+			+ "re-armed once it recovers.",
+		position = 7
+	)
+	default boolean dipAlerts() { return true; }
+
+	@ConfigItem(
 		keyName = "useTrends",
 		name = "Death-spiral filter",
 		description = "Haircut items in a steep long-term decline, using geflip's data/trends.json.",
