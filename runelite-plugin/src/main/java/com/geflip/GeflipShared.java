@@ -29,4 +29,22 @@ public final class GeflipShared
 
 	/** Flipper → read the current account shopping list (never null). */
 	public static List<Need> needs() { return needs; }
+
+	/** One live money ROUTE the flipper found (a flip / high-alch / repair edge), published for the Coach's
+	 *  unified GP/hr router so the passive GE routes rank alongside the Coach's boss/skilling routes. */
+	public static final class Route
+	{
+		public final String label;    // "Flip: Dragon bones", "High-alch: Rune platebody", "Repair: Dharok's helm"
+		public final long gpHr;        // estimated gp/hour for this route
+		public final String kind;      // "flip" | "alch" | "repair" — the GE-side, mostly-passive routes
+		public Route(String label, long gpHr, String kind) { this.label = label; this.gpHr = gpHr; this.kind = kind; }
+	}
+
+	private static volatile List<Route> flipRoutes = Collections.emptyList();
+
+	/** Flipper → publish its top live GE money routes (null clears). */
+	public static void setFlipRoutes(List<Route> r) { flipRoutes = (r != null) ? r : Collections.<Route>emptyList(); }
+
+	/** Coach → read the flipper's top GE routes for the unified GP/hr leaderboard (never null). */
+	public static List<Route> flipRoutes() { return flipRoutes; }
 }

@@ -78,6 +78,9 @@ public class CoachPlugin extends Plugin
 	private volatile net.runelite.client.hiscore.HiscoreResult hiscore;
 	private volatile String hiscoreName;
 	private volatile long lastHiscoreMs = 0;
+	// Wise Old Man efficiency metrics (EHP/EHB), fetched off-thread + cached
+	private volatile CoachWom.Result wom;
+	private volatile long lastWomMs = 0;
 	private ScheduledFuture<?> priceRefresh;   // the net-worth price poller (cancelled on shutdown)
 	private boolean wealthBaselined = false;   // session gp/hr baseline only once the bank is known
 	private volatile String farmRunType = "Herb";   // which preset farm run the Farm tab shows
@@ -161,10 +164,16 @@ public class CoachPlugin extends Plugin
 			String ca = caTier();
 			int slayerPts = client.getVarbitValue(Varbits.SLAYER_POINTS);
 			int streak = client.getVarbitValue(Varbits.SLAYER_TASK_STREAK);
+			CoachWom.Result w = wom;
+			String eff = w != null && w.tracked && (w.ehp > 0 || w.ehb > 0)
+				? " · " + Math.round(w.ehp) + " EHP" + (w.ehb >= 1 ? "/" + Math.round(w.ehb) + " EHB" : "")
+					+ (w.ttm > 0 ? " · " + Math.round(w.ttm) + "h to max" : "")
+				: "";
 			String summary = "combat " + st.combatLevel + " · " + st.qp + " QP"
 				+ (st.wealth >= 0 ? " · " + CoachGoals.gp(st.wealth) + " net" : st.coins >= 0 ? " · " + CoachGoals.gp(st.coins) + " gp" : "")
 				+ (ca != null ? " · CA " + ca : "")
 				+ (slayerPts > 0 || streak > 0 ? " · Slayer " + slayerPts + "pt/" + streak + " streak" : "")
+				+ eff
 				+ (st.bankKnown ? "" : " · (open bank for full net worth)");
 			String sess = sessionStats(st);
 			List<CoachEngine.Scored> next = CoachEngine.doNext(all);
@@ -405,6 +414,18 @@ public class CoachPlugin extends Plugin
 				.whenComplete((r, ex) -> { if (r != null) hiscore = r; });
 		}
 		catch (Exception e) { log.debug("coach: hiscore lookup failed", e); }
+		// Wise Old Man EHP/EHB — blocking HTTP, so run it on the executor (never the client thread), cached 10 min.
+		final String womName = nm;
+		executor.submit(() ->
+		{
+			try
+			{
+				CoachWom.Result r = CoachWom.fetch(womName);
+				if (r != null && !r.tracked) { CoachWom.track(womName); r = CoachWom.fetch(womName); }   // first-time: track then read
+				if (r != null) { wom = r; lastWomMs = System.currentTimeMillis(); }
+			}
+			catch (Exception e) { log.debug("coach: WOM lookup failed", e); }
+		});
 	}
 
 	/** Boss KCs + collection-log + clue totals from the hiscores (only entries you're ranked on). */
@@ -828,11 +849,22 @@ public class CoachPlugin extends Plugin
 		if (rows.isEmpty()) o.add("  every trainable skill is 99 — maxed! 🎉");
 		// money-maker advisor — gated by YOUR stats, ranked by gp/hr
 		o.add("");
-		o.add("*💰 BEST MONEY-MAKERS you qualify for (approx gp/hr)");
+		o.add("*💰 BEST MONEY-MAKERS — every live route ranked (PvM · skilling · GE)");
+		// UNIFIED GP/hr ROUTER: fuse the Coach's stat-gated PvM/skilling routes with the flipper's LIVE
+		// GE routes (flips + high-alch, via the in-process bridge) into one ranked leaderboard — the thing
+		// single-purpose tools can't do because they're a flipper OR a coach, never both.
+		java.util.List<Object[]> routes = new ArrayList<>();   // {name, gpHr(long), note, kind}
 		for (CoachMoney.M m : CoachMoney.eligible(st))
+			routes.add(new Object[]{ m.name, (long) m.gpHr, m.note == null ? "" : m.note, "PvM/skill" });
+		for (com.geflip.GeflipShared.Route r : com.geflip.GeflipShared.flipRoutes())
+			if (r.gpHr > 0) routes.add(new Object[]{ r.label, r.gpHr, "", r.kind });
+		routes.sort((x, y) -> Long.compare((Long) y[1], (Long) x[1]));   // highest gp/hr first (passive/varies sink to the end)
+		for (Object[] r : routes)
 		{
-			o.add("*" + m.name + "   ·   " + (m.gpHr > 0 ? "~" + CoachGoals.gp(m.gpHr) + "/hr" : "passive / varies"));
-			if (m.note != null && !m.note.isEmpty()) o.add("  " + m.note);
+			long gph = (Long) r[1];
+			o.add("*" + r[0] + "   ·   " + (gph > 0 ? "~" + CoachGoals.gp(gph) + "/hr" : "passive / varies") + "   [" + r[3] + "]");
+			String note = (String) r[2];
+			if (!note.isEmpty()) o.add("  " + note);
 		}
 		o.add("");
 		o.add("Farming → see the Farm tab for the full path-to-99 + lead-through.");

@@ -154,6 +154,17 @@ public interface GeflipConfig extends Config
 	)
 	default int maxItemPct() { return 25; }
 
+	@Range(min = 1, max = 99)
+	@ConfigItem(
+		keyName = "repairSmithing",
+		name = "Smithing (repair discount)",
+		description = "Your Smithing level — used for the Barrows-repair arbitrage. A POH armour stand "
+			+ "discounts repair cost by Smithing/200 (every 2 levels = 1% off; ~50% at 99). Leave at 1 to "
+			+ "use the full NPC repair price (conservative).",
+		position = 67
+	)
+	default int repairSmithing() { return 1; }
+
 	@Range(min = 60, max = 900)
 	@ConfigItem(
 		keyName = "refreshSec",

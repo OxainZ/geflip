@@ -36,6 +36,7 @@ class GeflipPanel extends PluginPanel
 	private final JPanel decantRows = new JPanel();    // Decant tab (buy low-dose → sell (4))
 	private final JPanel alchRows = new JPanel();       // Edges tab: high-alch (buy < alch value, tax-free)
 	private final JPanel procRows = new JPanel();       // Edges tab: processing arbitrage (make → sell)
+	private final JPanel repairRows = new JPanel();     // Edges tab: Barrows-repair arbitrage (buy broken → repair → sell)
 	private final JPanel moverRows = new JPanel();      // Edges tab: abnormal price+volume movers
 	private final JPanel setsRows = new JPanel();      // Sets tab (combine/split set exchange)
 	private final JPanel offersBox = new JPanel();     // "Your GE" — live open offers (You tab)
@@ -86,7 +87,7 @@ class GeflipPanel extends PluginPanel
 		calib.setFont(FontManager.getRunescapeSmallFont());
 		legend.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		legend.setFont(FontManager.getRunescapeSmallFont());
-		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · %fill · ★basket ×qty · ✓margin-verified · 🔥dip · ⚠decline · ⚡volatile · ⏳low</span></html>");
+		legend.setText("<html><span style='color:#999'>gp/h · buy→sell +margin ×qty · ~fill · ↻limit · %fill · ★basket ×qty · 🛡trust(is the margin real?) · ✓margin-verified · 🔥dip · ⚠decline · ⚡volatile · ⏳low</span></html>");
 		legend.setToolTipText("<html><div width=340><b>How to read a row</b><br>"
 			+ "<b>gp/h</b> — est. profit per hour (green=reliable fill, orange=so-so, red=thin).<br>"
 			+ "<b>buy→sell +margin ×qty</b> — list a buy at the first, a sell at the second; profit each after tax × how many.<br>"
@@ -166,6 +167,7 @@ class GeflipPanel extends PluginPanel
 		decantRows.setLayout(new BoxLayout(decantRows, BoxLayout.Y_AXIS));
 		alchRows.setLayout(new BoxLayout(alchRows, BoxLayout.Y_AXIS));
 		procRows.setLayout(new BoxLayout(procRows, BoxLayout.Y_AXIS));
+		repairRows.setLayout(new BoxLayout(repairRows, BoxLayout.Y_AXIS));
 		moverRows.setLayout(new BoxLayout(moverRows, BoxLayout.Y_AXIS));
 		setsRows.setLayout(new BoxLayout(setsRows, BoxLayout.Y_AXIS));
 		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
@@ -222,8 +224,9 @@ class GeflipPanel extends PluginPanel
 		JPanel edgesBox = new JPanel();
 		edgesBox.setLayout(new BoxLayout(edgesBox, BoxLayout.Y_AXIS));
 		alchRows.setAlignmentX(Component.LEFT_ALIGNMENT); procRows.setAlignmentX(Component.LEFT_ALIGNMENT);
+		repairRows.setAlignmentX(Component.LEFT_ALIGNMENT);
 		moverRows.setAlignmentX(Component.LEFT_ALIGNMENT);
-		edgesBox.add(alchRows); edgesBox.add(procRows); edgesBox.add(moverRows);
+		edgesBox.add(alchRows); edgesBox.add(procRows); edgesBox.add(repairRows); edgesBox.add(moverRows);
 		cardPanel.add(scrollOf(edgesBox), "alch");
 		cardPanel.add(scrollOf(youBox), "you");
 		add(cardPanel, BorderLayout.CENTER);
@@ -360,6 +363,46 @@ class GeflipPanel extends PluginPanel
 				procRows.add(p);
 			}
 			procRows.revalidate(); procRows.repaint();
+		});
+	}
+
+	void setRepairs(List<GeflipScanner.Repair> repairs)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			repairRows.removeAll();
+			JLabel hint = new JLabel("<html><span style='color:#999'>— Barrows repair: buy the broken (0) piece → repair → sell whole (set your Smithing in config) —</span></html>");
+			hint.setFont(FontManager.getRunescapeSmallFont());
+			hint.setBorder(BorderFactory.createEmptyBorder(8, 6, 4, 6));
+			hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+			repairRows.add(hint);
+			if (repairs == null || repairs.isEmpty())
+			{
+				JLabel none = new JLabel("no profitable Barrows repairs right now");
+				none.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				none.setFont(FontManager.getRunescapeSmallFont());
+				none.setBorder(BorderFactory.createEmptyBorder(4, 6, 6, 6));
+				none.setAlignmentX(Component.LEFT_ALIGNMENT);
+				repairRows.add(none);
+			}
+			else for (GeflipScanner.Repair r : repairs)
+			{
+				JPanel p = new JPanel(new BorderLayout(6, 0));
+				p.setBorder(BorderFactory.createEmptyBorder(4, 7, 4, 7));
+				p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				JLabel name = new JLabel(r.name);
+				name.setForeground(ColorScheme.TEXT_COLOR);
+				JLabel prof = new JLabel("+" + gp(r.profit) + "/ea");
+				prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+				prof.setHorizontalAlignment(JLabel.RIGHT);
+				p.add(name, BorderLayout.CENTER); p.add(prof, BorderLayout.EAST);
+				p.setToolTipText("Buy broken ~" + gp(r.brokenBuy) + " + repair ~" + gp(r.cost)
+					+ " → sell whole ~" + gp(r.repairedSell) + " (after 2% tax) → +" + gp(r.profit) + " each"
+					+ (r.limit > 0 ? ". Limit " + r.limit + "/4h" : "") + ". Repair at a POH armour stand for the discount.");
+				p.setAlignmentX(Component.LEFT_ALIGNMENT);
+				repairRows.add(p);
+			}
+			repairRows.revalidate(); repairRows.repaint();
 		});
 	}
 
@@ -989,9 +1032,10 @@ class GeflipPanel extends PluginPanel
 		String reset = f.resetMins > 0 ? "   ↻" + (f.resetMins >= 60 ? (f.resetMins / 60) + "h" : f.resetMins + "m") : "";
 		String fill = f.wontFill ? "   ⏳low" : "   " + Math.round(f.fillProb * 100) + "% fill";
 		String bask = f.basketQty > 0 ? "   ★×" + f.basketQty : "";   // suggested slot size (#3)
+		String trust = f.trust >= 0 ? "   🛡" + f.trust : "";        // "is this margin real?" 0-100
 		JLabel sub = new JLabel(gp(f.buy) + " → " + gp(f.sell)
 			+ "   +" + gp(f.margin) + "×" + f.quantity + " = +" + gp((long) f.margin * f.quantity)
-			+ (ft.isEmpty() ? "" : "   " + ft) + reset + fill + bask);
+			+ (ft.isEmpty() ? "" : "   " + ft) + reset + fill + bask + trust);
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 
@@ -1007,6 +1051,7 @@ class GeflipPanel extends PluginPanel
 		// full plain-English explanation of this row on hover (escape name/why — this is an HTML label)
 		StringBuilder tip = new StringBuilder("<html><b>").append(esc(f.name)).append("</b><br>");
 		if (f.why != null && !f.why.isEmpty()) tip.append("<i>").append(esc(f.why)).append("</i><br>");
+		if (f.trust >= 0) tip.append("🛡 <b>Trust ").append(f.trust).append("/100</b> — is this margin REAL? blends how long the margin actually held, fill probability, and price stability (").append(f.trust >= 70 ? "trustworthy" : f.trust >= 45 ? "so-so — check the fill" : "shaky — treat with caution").append(")<br>");
 		tip.append("Buy at ").append(gp(f.buy)).append(", sell at ").append(gp(f.sell))
 			.append(" → ").append(gp(f.margin)).append(" profit each after tax<br>");
 		tip.append("Buy up to ").append(f.quantity).append(" (bankroll/limit/volume capped)<br>");

@@ -927,9 +927,12 @@ public class GeflipPlugin extends Plugin
 				if (p != null) p.setAccountNeeds(buildAccountNeeds());            // cross-ref: what the Coach says your account needs
 				if (p != null) p.setDecants(scanner.scanDecants(config));   // decanting opportunities
 				if (p != null) p.setSets(scanner.scanSets(config));         // set-exchange arbitrage
-				if (p != null) p.setAlch(scanner.scanAlch(config));         // high-alch edge (tax-free)
+				java.util.List<GeflipScanner.Alch> alchs = scanner.scanAlch(config);
+				if (p != null) p.setAlch(alchs);                            // high-alch edge (tax-free)
 				if (p != null) p.setProcessing(scanner.scanProcessing(config));   // processing arbitrage edges
+				if (p != null) p.setRepairs(scanner.scanRepairs(config));         // Barrows-repair arbitrage
 				if (p != null) p.setMovers(scanner.scanAnomalies(config));        // front-run / crash anomaly detector
+				publishRoutes(flips, alchs);   // hand the Coach's unified GP/hr router our top passive GE routes
 				recompute();   // mapping is loaded now → exclude list resolves, P&L reflows
 			}
 			catch (Exception e)
@@ -943,6 +946,28 @@ public class GeflipPlugin extends Plugin
 			checkSells();  // #3: nudge when a resting sell is stale / priced above the market
 			cloudPush();   // push fills/session to the cloud store (no-op if not configured)
 		});
+	}
+
+	/** Publish our top passive GE money routes to the shared bridge so the Coach's unified GP/hr router can
+	 *  rank them alongside its boss/skilling routes. Flips already carry gp/h; high-alch gp/h = profit ×
+	 *  a sustainable cast rate (min of alch speed ~1200/hr and what the 4h buy limit allows per hour). */
+	private void publishRoutes(java.util.List<GeflipScanner.Flip> flips, java.util.List<GeflipScanner.Alch> alchs)
+	{
+		java.util.List<GeflipShared.Route> routes = new java.util.ArrayList<>();
+		if (flips != null)
+			for (int i = 0; i < flips.size() && i < 3; i++)   // top 3 flips by rank
+			{
+				GeflipScanner.Flip f = flips.get(i);
+				if (f.expGph > 0) routes.add(new GeflipShared.Route("Flip: " + f.name, (long) f.expGph, "flip"));
+			}
+		if (alchs != null && !alchs.isEmpty())
+		{
+			GeflipScanner.Alch a = alchs.get(0);   // best high-alch
+			double rate = Math.min(1200.0, a.limit > 0 ? a.limit / 4.0 : 1200.0);   // casts/hr, buy-limit bounded
+			long gpHr = (long) (a.profit * rate);
+			if (gpHr > 0) routes.add(new GeflipShared.Route("High-alch: " + a.name, gpHr, "alch"));
+		}
+		GeflipShared.setFlipRoutes(routes);
 	}
 
 	/**

@@ -78,6 +78,23 @@ class GeflipScanner
 		long capAbsorb;              // gp this item's full 4h limit can soak up (limit × buy) — for big banks
 		double volCV = -1;           // price volatility (coefficient of variation) over the last ~2h (−1 = not checked)
 		double zScore;               // how many stddevs the price is above/below its ~2h mean (− = cheap)
+		int trust = -1;              // "is this margin REAL?" 0..100 — blends persistence + fill-prob + stability
+
+		/** Trust score (0..100): how much to believe the displayed margin, from signals already measured.
+		 *  A wide spread on a thin, unstable, phantom-margin item scores low even if the headline gp looks big —
+		 *  the signal a plain high−low diff can't give. Call after grounding for the full picture (marginPersist
+		 *  / volCV set); before grounding it falls back to neutral priors. */
+		void scoreTrust()
+		{
+			double persist = tsChecked ? Math.max(0, marginPersist) : 0.6;      // did a real margin actually exist over 2h
+			double fill    = Math.max(0, Math.min(1, fillProb));                 // will the round-trip complete
+			double stab    = volCV >= 0 ? Math.max(0, 1 - volCV / 0.06) : 0.6;   // price stability (CV 0=steady, ≥6%=0)
+			double s = 0.42 * persist + 0.34 * fill + 0.24 * stab;
+			if (unstable) s *= 0.75;    // swings bigger than the margin
+			if (wontFill) s *= 0.70;    // thin counter-flow
+			if (decliner) s *= 0.85;    // real but in long-term decline
+			trust = (int) Math.round(100 * Math.max(0, Math.min(1, s)));
+		}
 	}
 
 	/** Item name from the cached mapping (null if not loaded / unknown). */
@@ -369,6 +386,66 @@ class GeflipScanner
 			p.buyCost = (int) Math.min(buyCost, Integer.MAX_VALUE); p.sellNet = (int) Math.min(sellNet, Integer.MAX_VALUE);
 			p.limit = om.limit > 0 ? om.limit : 0;
 			out.add(p);
+		}
+		out.sort((a, b) -> Integer.compare(b.profit, a.profit));
+		return out;
+	}
+
+	// --- Barrows-repair arbitrage --------------------------------------------------------------------
+	/** One repairable Barrows piece: buy the fully-broken "0" version off the GE, repair it, sell the full
+	 *  version. Base repair cost is by SLOT (helm 60k / body 90k / legs 80k / weapon 100k), uniform across
+	 *  all six brothers (verified vs the wiki's repair module). */
+	private static final class RepairItem
+	{
+		final String name; final int repairedId, brokenId, baseCost;
+		RepairItem(String name, int repairedId, int brokenId, int baseCost)
+		{ this.name = name; this.repairedId = repairedId; this.brokenId = brokenId; this.baseCost = baseCost; }
+	}
+	private static final int RC_HELM = 60_000, RC_BODY = 90_000, RC_LEGS = 80_000, RC_WEP = 100_000;
+	private static final RepairItem[] REPAIRS = {
+		new RepairItem("Dharok's helm", 4716, 4884, RC_HELM), new RepairItem("Dharok's platebody", 4720, 4896, RC_BODY),
+		new RepairItem("Dharok's platelegs", 4722, 4902, RC_LEGS), new RepairItem("Dharok's greataxe", 4718, 4890, RC_WEP),
+		new RepairItem("Ahrim's hood", 4708, 4860, RC_HELM), new RepairItem("Ahrim's robetop", 4712, 4872, RC_BODY),
+		new RepairItem("Ahrim's robeskirt", 4714, 4878, RC_LEGS), new RepairItem("Ahrim's staff", 4710, 4866, RC_WEP),
+		new RepairItem("Karil's coif", 4732, 4932, RC_HELM), new RepairItem("Karil's leathertop", 4736, 4944, RC_BODY),
+		new RepairItem("Karil's leatherskirt", 4738, 4950, RC_LEGS), new RepairItem("Karil's crossbow", 4734, 4938, RC_WEP),
+		new RepairItem("Guthan's helm", 4724, 4908, RC_HELM), new RepairItem("Guthan's platebody", 4728, 4920, RC_BODY),
+		new RepairItem("Guthan's chainskirt", 4730, 4926, RC_LEGS), new RepairItem("Guthan's warspear", 4726, 4914, RC_WEP),
+		new RepairItem("Torag's helm", 4745, 4956, RC_HELM), new RepairItem("Torag's platebody", 4749, 4968, RC_BODY),
+		new RepairItem("Torag's platelegs", 4751, 4974, RC_LEGS), new RepairItem("Torag's hammers", 4747, 4962, RC_WEP),
+		new RepairItem("Verac's helm", 4753, 4980, RC_HELM), new RepairItem("Verac's brassard", 4757, 4992, RC_BODY),
+		new RepairItem("Verac's plateskirt", 4759, 4998, RC_LEGS), new RepairItem("Verac's flail", 4755, 4986, RC_WEP),
+	};
+
+	static final class Repair { public String name; public int brokenBuy, repairedSell, cost, profit, limit; }
+
+	/** Barrows-repair arbitrage: profit = repaired_sell*0.98 − broken_buy − repair_cost. Repair cost uses the
+	 *  POH armour-stand discount ceil(base × (1 − smithing/200)); leave smithing at 1 for the NPC price.
+	 *  Fresh-quote gated on both legs so it's never built on a stale print. */
+	List<Repair> scanRepairs(GeflipConfig cfg) throws Exception
+	{
+		Map<Integer, Meta> map = loadMapping();
+		JsonObject latest = lastLatest;
+		if (latest == null) latest = new JsonParser().parse(httpGet(API + "/latest")).getAsJsonObject().getAsJsonObject("data");
+		int smith = Math.max(1, Math.min(99, cfg.repairSmithing()));
+		List<Repair> out = new ArrayList<>();
+		for (RepairItem ri : REPAIRS)
+		{
+			Integer broken = instaBuy(latest, ri.brokenId);      // buy the broken "0" version
+			Integer repaired = instaSell(latest, ri.repairedId); // sell the repaired version
+			if (broken == null || broken <= 0 || repaired == null || repaired <= 0) continue;
+			if (!quoteFresh(ri.brokenId) || !quoteFresh(ri.repairedId)) continue;   // never off a stale print
+			Meta om = map.get(ri.repairedId);
+			boolean exempt = om != null && om.exempt;   // barrows gear isn't exempt, but stay consistent
+			long cost = smith > 1 ? (long) Math.ceil(ri.baseCost * (1.0 - smith / 200.0)) : ri.baseCost;
+			long sellNet = repaired - saleTax(repaired, exempt);
+			long profit = sellNet - broken - cost;
+			if (profit < Math.max(1, cfg.minMargin())) continue;
+			Repair r = new Repair();
+			r.name = ri.name; r.brokenBuy = broken; r.repairedSell = repaired;
+			r.cost = (int) cost; r.profit = (int) Math.min(profit, Integer.MAX_VALUE);
+			r.limit = om != null && om.limit > 0 ? om.limit : 0;
+			out.add(r);
 		}
 		out.sort((a, b) -> Integer.compare(b.profit, a.profit));
 		return out;
@@ -1004,6 +1081,7 @@ class GeflipScanner
 			}
 			// SAFE MODE: only clean flips — drop won't-fill / volatile / long-term-decline rows.
 			if (cfg.safeMode() && (f.wontFill || f.unstable || f.decliner)) continue;
+			f.scoreTrust();   // baseline trust (recomputed with richer signals if this pick gets ts-grounded)
 			out.add(f);
 		}
 		// rank by expGph WEIGHTED by fill probability, so a fat margin that probably won't fill
@@ -1117,6 +1195,7 @@ class GeflipScanner
 			f.why = "Statistically cheap: ~" + String.format("%.1f", -zScore) + "σ below its 2h mean and stable — a dip to buy";
 		else if (persist >= 0.7 && !f.personalized)
 			f.why = "Reliable: the margin held ~" + (int) (persist * 100) + "% of the last 2h";
+		f.scoreTrust();   // recompute with the grounded persistence + volatility now available
 	}
 
 	/** #3 — mark a capital/slot basket: greedily fill your free GE slots from the ranked list, sizing each
