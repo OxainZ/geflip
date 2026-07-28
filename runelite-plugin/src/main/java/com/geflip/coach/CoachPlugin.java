@@ -794,6 +794,14 @@ public class CoachPlugin extends Plugin
 			o.add("  " + b.method + (b.xpHr > 0 ? "  (~" + CoachGoals.gp(b.xpHr) + "/hr" + (b.cost.isEmpty() ? "" : " · " + b.cost) + ")" : ""));
 		}
 		if (rows.isEmpty()) o.add("  every trainable skill is 99 — maxed! 🎉");
+		// money-maker advisor — gated by YOUR stats, ranked by gp/hr
+		o.add("");
+		o.add("*💰 BEST MONEY-MAKERS you qualify for (approx gp/hr)");
+		for (CoachMoney.M m : CoachMoney.eligible(st))
+		{
+			o.add("*" + m.name + "   ·   " + (m.gpHr > 0 ? "~" + CoachGoals.gp(m.gpHr) + "/hr" : "passive / varies"));
+			if (m.note != null && !m.note.isEmpty()) o.add("  " + m.note);
+		}
 		o.add("");
 		o.add("Farming → see the Farm tab for the full path-to-99 + lead-through.");
 		return o;
