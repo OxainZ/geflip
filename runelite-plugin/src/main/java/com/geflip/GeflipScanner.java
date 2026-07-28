@@ -75,6 +75,8 @@ class GeflipScanner
 		double yourHoldH = -1;       // your realised hold hours per unit (−1 = no history)
 		// --- capital/slot basket (#3) ---
 		int basketQty;               // suggested units if you put this in one of your GE slots (0 = not picked)
+		long capAbsorb;              // gp this item's full 4h limit can soak up (limit × buy) — for big banks
+		double volCV = -1;           // price volatility (coefficient of variation) over the last ~2h (−1 = not checked)
 	}
 
 	/** Item name from the cached mapping (null if not loaded / unknown). */
@@ -346,7 +348,7 @@ class GeflipScanner
 	}
 
 	/** An item moving abnormally — price AND volume both ramping vs their 24h baseline. */
-	static final class Mover { public int id; public String name; public double priceRamp, volRatio; public int price; public boolean crash; }
+	static final class Mover { public int id; public String name; public double priceRamp, volRatio; public int price; public boolean crash, thin; }
 
 	/** Anomaly / front-running detector: items whose price is &gt;8% off their 24h average WHILE 1h volume is
 	 *  &gt;2.5× the hourly baseline — the signature of a demand spike (update front-run: consider buying before
@@ -388,9 +390,12 @@ class GeflipScanner
 			}
 			boolean up = ramp > 0.08 && volRatio > 2.5;
 			boolean crash = ramp < -0.08 && volRatio > 2.5;
-			if (!up && !crash) continue;
+			// manipulation tell: a BIG price move on BELOW-baseline volume = thin/faked (real moves carry volume)
+			boolean thin = Math.abs(ramp) > 0.12 && volRatio < 0.8;
+			if (!up && !crash && !thin) continue;
 			Mover m = new Mover();
-			m.id = id; m.name = meta.name; m.priceRamp = ramp; m.volRatio = volRatio; m.price = (int) now; m.crash = crash;
+			m.id = id; m.name = meta.name; m.priceRamp = ramp; m.volRatio = volRatio; m.price = (int) now;
+			m.crash = crash; m.thin = thin && !up && !crash;
 			out.add(m);
 		}
 		out.sort((a, b) -> Double.compare(Math.abs(b.priceRamp) * b.volRatio, Math.abs(a.priceRamp) * a.volRatio));
@@ -915,6 +920,7 @@ class GeflipScanner
 			Flip f = new Flip();
 			f.id = id; f.name = meta.name; f.buy = bidComp; f.sell = askComp;
 			f.tax = saleTax(askComp, meta.exempt); f.margin = marginComp; f.quantity = qty; f.limit = limit;
+			f.capAbsorb = (long) limit * bidComp;   // how much bank a full limit of this soaks per 4h cycle
 			// SIDE-SPECIFIC fill time (shrink/sellersFc/buyersFc computed above): BUY fills against
 			// low-side volume, SELL against high-side volume; the two legs are sequential.
 			double buyFillH = sellersFc > 0 ? f.quantity / (PART * sellersFc) : 999.0;
@@ -983,8 +989,8 @@ class GeflipScanner
 		long nowMs = System.currentTimeMillis();
 		for (Flip f : pool)
 		{
-			double[] c = tsCache.get(f.id);   // {persist, dir2h, dayDir, fetchedMs}
-			if (c != null && nowMs - (long) c[3] < TS_TTL_MS) { applyTsResult(f, c[0], c[1], c[2]); continue; }
+			double[] c = tsCache.get(f.id);   // {persist, dir2h, dayDir, volCV, fetchedMs}
+			if (c != null && nowMs - (long) c[4] < TS_TTL_MS) { applyTsResult(f, c[0], c[1], c[2], c[3]); continue; }
 			try
 			{
 				Meta meta = map.get(f.id);
@@ -993,7 +999,7 @@ class GeflipScanner
 					.getAsJsonObject().getAsJsonArray("data");
 				int n = data.size();
 				int from = Math.max(0, n - 24);   // last ~2h of 5m points
-				int pos = 0, tot = 0; double firstMid = 0, lastMid = 0;
+				int pos = 0, tot = 0; double firstMid = 0, lastMid = 0, sumMid = 0, sumMidSq = 0;
 				for (int i = from; i < n; i++)
 				{
 					JsonObject p = data.get(i).getAsJsonObject();
@@ -1004,11 +1010,15 @@ class GeflipScanner
 					if (netMargin(lo, hi, exempt) >= Math.max(1, f.margin * 0.5)) pos++;
 					double mid = (lo + hi) / 2.0;
 					if (firstMid == 0) firstMid = mid;
-					lastMid = mid;
+					lastMid = mid; sumMid += mid; sumMidSq += mid * mid;
 				}
 				if (tot < 6) continue;   // too little history to judge — leave the pick as-is
 				double persist = pos / (double) tot;
 				double dir = firstMid > 0 ? (lastMid - firstMid) / firstMid : 0;
+				// VOL-NORMALISATION: price volatility (coefficient of variation) over the window — a steady
+				// margin beats a swingy one of the same size (a proper risk-adjusted rank, not just the ⚡ flag).
+				double meanMid = sumMid / tot;
+				double volCV = meanMid > 0 ? Math.sqrt(Math.max(0, sumMidSq / tot - meanMid * meanMid)) / meanMid : 0;
 				// #4 mid-horizon: the 5m series spans ~30h, but we only used its last 2h above. Scan from the
 				// START for the oldest valid mid → a ~day-long slope, catching a slow bleed a 2h check misses.
 				double dayFirstMid = 0;
@@ -1021,8 +1031,8 @@ class GeflipScanner
 					dayFirstMid = (lo + hi) / 2.0; break;
 				}
 				double dayDir = (dayFirstMid > 0 && lastMid > 0) ? (lastMid - dayFirstMid) / dayFirstMid : 0;
-				tsCache.put(f.id, new double[]{ persist, dir, dayDir, nowMs });
-				applyTsResult(f, persist, dir, dayDir);
+				tsCache.put(f.id, new double[]{ persist, dir, dayDir, volCV, nowMs });
+				applyTsResult(f, persist, dir, dayDir, volCV);
 			}
 			catch (Exception ignored) { /* timeseries optional — keep the snapshot-based verdict */ }
 		}
@@ -1031,12 +1041,13 @@ class GeflipScanner
 	/** Fold a timeseries measurement (persistence + direction) into a pick's confidence/expGph + why.
 	 *  Shared by the fresh-fetch and cache-hit paths. Applied once per scan to a fresh Flip, so there's
 	 *  no double-application across scans (only the raw measurement is cached, not the applied state). */
-	private void applyTsResult(Flip f, double persist, double dir, double dayDir)
+	private void applyTsResult(Flip f, double persist, double dir, double dayDir, double volCV)
 	{
-		f.marginPersist = persist; f.tsDir = dir; f.tsDayDir = dayDir; f.tsChecked = true;
+		f.marginPersist = persist; f.tsDir = dir; f.tsDayDir = dayDir; f.volCV = volCV; f.tsChecked = true;
 		double tsConf = 0.4 + 0.6 * persist;          // 0.4 (never present) .. 1.0 (always present)
 		if (dir < -0.03) tsConf *= 0.7;               // falling over the last 2h
 		if (dayDir < -0.05) tsConf *= 0.9;            // #4 slow multi-hour bleed (mild demotion, not a reject)
+		tsConf *= Math.max(0.7, 1.0 / (1.0 + Math.max(0, volCV) * 4.0));   // vol-normalise: steadier ranks higher
 		f.confidence *= tsConf; f.expGph *= tsConf;
 		// don't clobber a personalised "your winner/loser" note with a merely-informational ts note
 		if (persist < 0.3)

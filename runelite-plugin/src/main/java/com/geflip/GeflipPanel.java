@@ -297,16 +297,21 @@ class GeflipPanel extends PluginPanel
 				JPanel p = new JPanel(new BorderLayout(6, 0));
 				p.setBorder(BorderFactory.createEmptyBorder(4, 7, 4, 7));
 				p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				JLabel name = new JLabel((m.crash ? "⤵ " : "⤴ ") + m.name);
-				name.setForeground(m.crash ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.GRAND_EXCHANGE_PRICE);
-				JLabel r = new JLabel((m.priceRamp >= 0 ? "+" : "") + Math.round(m.priceRamp * 100) + "%  ·  " + Math.round(m.volRatio) + "× vol");
+				JLabel name = new JLabel((m.thin ? "⚠ " : m.crash ? "⤵ " : "⤴ ") + m.name);
+				name.setForeground(m.thin ? ColorScheme.PROGRESS_INPROGRESS_COLOR
+					: m.crash ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.GRAND_EXCHANGE_PRICE);
+				JLabel r = new JLabel((m.priceRamp >= 0 ? "+" : "") + Math.round(m.priceRamp * 100) + "%  ·  "
+					+ (m.thin ? "thin vol" : Math.round(m.volRatio) + "× vol"));
 				r.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 				r.setFont(FontManager.getRunescapeSmallFont());
 				r.setHorizontalAlignment(JLabel.RIGHT);
 				p.add(name, BorderLayout.CENTER); p.add(r, BorderLayout.EAST);
-				p.setToolTipText(m.name + " is " + (m.crash ? "crashing" : "spiking") + " ~" + Math.round(Math.abs(m.priceRamp) * 100)
-					+ "% vs its 24h average on ~" + Math.round(m.volRatio) + "× normal volume (~" + gp(m.price) + "). "
-					+ (m.crash ? "A dump — sell/avoid, or a dip to buy if it's a known-good item." : "A demand ramp — possible update front-run; buy before the crowd if you have a thesis."));
+				p.setToolTipText(m.thin
+					? m.name + " moved ~" + Math.round(Math.abs(m.priceRamp) * 100) + "% vs its 24h average on BELOW-normal volume — "
+						+ "a thin/possibly-manipulated move (~" + gp(m.price) + "). Don't be the exit liquidity: avoid unless you know why."
+					: m.name + " is " + (m.crash ? "crashing" : "spiking") + " ~" + Math.round(Math.abs(m.priceRamp) * 100)
+						+ "% vs its 24h average on ~" + Math.round(m.volRatio) + "× normal volume (~" + gp(m.price) + "). "
+						+ (m.crash ? "A dump — sell/avoid, or a dip to buy if it's a known-good item." : "A demand ramp — possible update front-run; buy before the crowd if you have a thesis."));
 				p.setAlignmentX(Component.LEFT_ALIGNMENT);
 				moverRows.add(p);
 			}
@@ -941,6 +946,8 @@ class GeflipPanel extends PluginPanel
 		tip.append("Buy at ").append(gp(f.buy)).append(", sell at ").append(gp(f.sell))
 			.append(" → ").append(gp(f.margin)).append(" profit each after tax<br>");
 		tip.append("Buy up to ").append(f.quantity).append(" (bankroll/limit/volume capped)<br>");
+		if (f.capAbsorb > 0) tip.append("Soaks up to ").append(gp(f.capAbsorb)).append(" of bank per 4h (limit × buy) — big-bank capital fit<br>");
+		if (f.volCV >= 0) tip.append("Price volatility ~").append(String.format("%.1f", f.volCV * 100)).append("% (steadier = ranked higher)<br>");
 		tip.append("Est. ").append(gp((long) f.expGph)).append("/hr — profit ÷ how long both offers take to fill<br>");
 		if (f.fillHours < 900) tip.append("Fills in ~").append(fillTxt(f.fillHours).replace("~", "")).append("<br>");
 		tip.append(f.wontFill ? "⏳ Low counter-flow — expect slow/failed fills<br>"
