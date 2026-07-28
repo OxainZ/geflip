@@ -128,6 +128,12 @@ final class CoachFarm
 		return best;
 	}
 
+	// exact GE item names for the account shopping list (null if nothing plantable at this level yet)
+	static String herbSeedFor(int lvl)    { String s = bare(HERBS, lvl); return "—".equals(s) ? null : s + " seed"; }
+	static String treeSaplingFor(int lvl) { String s = bare(TREES, lvl); return "—".equals(s) ? null : s + " sapling"; }
+	static String fruitSaplingFor(int lvl){ String s = bare(FRUIT, lvl); return "—".equals(s) ? null : s + " sapling"; }
+	static String bushSeedFor(int lvl)    { String s = bare(BUSH, lvl);  return "—".equals(s) ? null : s + " seed"; }
+
 	private static String eta(int elapsedMin, int cycle, String label)
 	{
 		if (elapsedMin < 0) return "  " + label + ": —";

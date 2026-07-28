@@ -39,6 +39,7 @@ class GeflipPanel extends PluginPanel
 	private final JPanel holdBox = new JPanel();       // "To sell" — items you hold + sell price (You tab)
 	private final JPanel perfBox = new JPanel();       // "Best items" — realized per-item profit (You tab)
 	private final JPanel suppressedBox = new JPanel(); // "Winners not showing" — proven items + why (You tab)
+	private final JPanel accountBox = new JPanel();     // "For your account" — Coach shopping list priced (You tab)
 	private final java.awt.CardLayout cards = new java.awt.CardLayout();
 	private final JPanel cardPanel = new JPanel(cards);
 	private final JButton tabFlips = new JButton("Flips");
@@ -162,6 +163,8 @@ class GeflipPanel extends PluginPanel
 		holdBox.setLayout(new BoxLayout(holdBox, BoxLayout.Y_AXIS));
 		perfBox.setLayout(new BoxLayout(perfBox, BoxLayout.Y_AXIS));
 		suppressedBox.setLayout(new BoxLayout(suppressedBox, BoxLayout.Y_AXIS));
+		accountBox.setLayout(new BoxLayout(accountBox, BoxLayout.Y_AXIS));
+		accountBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		suppressedBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		watchBox.setLayout(new BoxLayout(watchBox, BoxLayout.Y_AXIS));
 
@@ -176,6 +179,7 @@ class GeflipPanel extends PluginPanel
 		watchBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 		youBox.add(session);
 		youBox.add(calib);
+		youBox.add(accountBox);
 		youBox.add(holdBox);
 		youBox.add(watchBox);
 		youBox.add(perfBox);
@@ -365,6 +369,37 @@ class GeflipPanel extends PluginPanel
 			}
 			perfBox.revalidate();
 			perfBox.repaint();
+		});
+	}
+
+	/** Render "For your account" — the shopping list the Coach published (farm seeds/supplies), priced
+	 *  live so buying your progression is one glance. The cross-reference between the two plugins. */
+	void setAccountNeeds(List<String> lines)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			accountBox.removeAll();
+			if (lines != null && !lines.isEmpty())
+			{
+				JLabel hdr = new JLabel("🎯 For your account (from Coach)");
+				hdr.setForeground(ColorScheme.BRAND_ORANGE);
+				hdr.setBorder(BorderFactory.createEmptyBorder(6, 1, 2, 1));
+				hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
+				hdr.setToolTipText("What your Coach says your account needs right now (farm-run seeds/supplies), "
+					+ "priced live here so you can buy your progression efficiently. 🔥 = cheap vs its norm.");
+				accountBox.add(hdr);
+				for (String s : lines)
+				{
+					JLabel l = new JLabel(s);
+					l.setFont(FontManager.getRunescapeSmallFont());
+					l.setForeground(s.contains("🔥") ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+					l.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
+					l.setAlignmentX(Component.LEFT_ALIGNMENT);
+					accountBox.add(l);
+				}
+			}
+			accountBox.revalidate();
+			accountBox.repaint();
 		});
 	}
 

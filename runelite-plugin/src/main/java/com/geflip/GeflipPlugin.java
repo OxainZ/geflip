@@ -565,6 +565,26 @@ public class GeflipPlugin extends Plugin
 		return out;
 	}
 
+	/** Cross-reference: price the account shopping list the COACH published (farm seeds/supplies) against
+	 *  live GE quotes, so buying your progression is one glance in the flipper. Empty if the Coach isn't
+	 *  running / farming helper is off. */
+	private java.util.List<String> buildAccountNeeds()
+	{
+		java.util.List<GeflipShared.Need> needs = GeflipShared.needs();
+		if (needs.isEmpty()) return java.util.Collections.emptyList();
+		java.util.List<String> out = new java.util.ArrayList<>();
+		for (GeflipShared.Need n : needs)
+		{
+			java.util.Set<Integer> ids = scanner.idsForNames(java.util.Collections.singleton(n.item.toLowerCase()));
+			Integer id = ids.isEmpty() ? null : ids.iterator().next();
+			if (id == null) { out.add(n.item + " ×" + n.qty + "  — price n/a  · " + n.reason); continue; }
+			int buy = scanner.buyHint(id);
+			boolean cheap = scanner.isCheap(id);
+			out.add(n.item + " ×" + n.qty + "  — buy ~" + gpn(buy) + " ea" + (cheap ? "  🔥cheap" : "") + "  · " + n.reason);
+		}
+		return out;
+	}
+
 	/** Your items ranked by realized profit — the journal analytics ("what actually pays me"). */
 	private java.util.List<String> topItems()
 	{
@@ -864,6 +884,7 @@ public class GeflipPlugin extends Plugin
 				lastFlips = flips;                       // share with the bridge/cloud
 				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " finds · " + timeNow()); }
 				if (p != null) p.setSuppressedWinners(suppressedWinners(flips));   // #1: proven winners not showing + why
+				if (p != null) p.setAccountNeeds(buildAccountNeeds());            // cross-ref: what the Coach says your account needs
 				if (p != null) p.setDecants(scanner.scanDecants(config));   // decanting opportunities
 				if (p != null) p.setSets(scanner.scanSets(config));         // set-exchange arbitrage
 				recompute();   // mapping is loaded now → exclude list resolves, P&L reflows

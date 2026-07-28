@@ -178,6 +178,7 @@ public class CoachPlugin extends Plugin
 			}
 			p.setFarmSteps(config.farmingHelper() ? farmSteps(st) : java.util.Collections.emptyList());
 			p.setSkills(skillLines(st));   // the all-skills 1→99 trainer
+			publishAccountNeeds(st);       // cross-reference: hand the flipper your account shopping list
 			p.setSummary(summary);
 			p.setSessionStats(sess);
 			refreshHiscore();
@@ -736,6 +737,28 @@ public class CoachPlugin extends Plugin
 		o.add("MUST: " + CoachFarmPlan.efficiencyChecklist(lvl));
 		o.add("");
 		return o;
+	}
+
+	/** Cross-reference: publish what your account needs right now (the current farm run's seeds/saplings
+	 *  + ultracompost) to the shared bridge, so the FLIPPER can price them live and help you buy your
+	 *  progression. Cleared when the farming helper is off. */
+	private void publishAccountNeeds(CoachState st)
+	{
+		if (!config.farmingHelper()) { com.geflip.GeflipShared.setNeeds(null); return; }
+		int lvl = st.level(Skill.FARMING);
+		String t = farmRunType == null ? "Herb" : farmRunType;
+		List<com.geflip.GeflipShared.Need> needs = new ArrayList<>();
+		boolean all = "All".equals(t);
+		if (all || "Tree".equals(t))  { String s = CoachFarm.treeSaplingFor(lvl);  if (s != null) needs.add(new com.geflip.GeflipShared.Need(s, 6, "tree run")); }
+		if (all || "Fruit".equals(t)) { String s = CoachFarm.fruitSaplingFor(lvl); if (s != null) needs.add(new com.geflip.GeflipShared.Need(s, 5, "fruit-tree run")); }
+		if (all || "Herb".equals(t))
+		{
+			String s = CoachFarm.herbSeedFor(lvl);
+			if (s != null) { needs.add(new com.geflip.GeflipShared.Need(s, 6, "herb run")); needs.add(new com.geflip.GeflipShared.Need("Ultracompost", 6, "herb run")); }
+		}
+		if ("Bush".equals(t)) { String s = CoachFarm.bushSeedFor(lvl); if (s != null) needs.add(new com.geflip.GeflipShared.Need(s, 5, "bush run")); }
+		if ("Flower".equals(t)) needs.add(new com.geflip.GeflipShared.Need("Limpwurt seed", 5, "flower run"));
+		com.geflip.GeflipShared.setNeeds(needs);
 	}
 
 	private static String skName(Skill sk) { String n = sk.name(); return n.charAt(0) + n.substring(1).toLowerCase(); }
