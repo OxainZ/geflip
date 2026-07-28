@@ -889,6 +889,7 @@ public class GeflipPlugin extends Plugin
 				if (p != null) p.setSets(scanner.scanSets(config));         // set-exchange arbitrage
 				if (p != null) p.setAlch(scanner.scanAlch(config));         // high-alch edge (tax-free)
 				if (p != null) p.setProcessing(scanner.scanProcessing(config));   // processing arbitrage edges
+				if (p != null) p.setMovers(scanner.scanAnomalies(config));        // front-run / crash anomaly detector
 				recompute();   // mapping is loaded now → exclude list resolves, P&L reflows
 			}
 			catch (Exception e)

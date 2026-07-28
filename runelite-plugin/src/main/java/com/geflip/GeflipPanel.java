@@ -36,6 +36,7 @@ class GeflipPanel extends PluginPanel
 	private final JPanel decantRows = new JPanel();    // Decant tab (buy low-dose → sell (4))
 	private final JPanel alchRows = new JPanel();       // Edges tab: high-alch (buy < alch value, tax-free)
 	private final JPanel procRows = new JPanel();       // Edges tab: processing arbitrage (make → sell)
+	private final JPanel moverRows = new JPanel();      // Edges tab: abnormal price+volume movers
 	private final JPanel setsRows = new JPanel();      // Sets tab (combine/split set exchange)
 	private final JPanel offersBox = new JPanel();     // "Your GE" — live open offers (You tab)
 	private final JPanel holdBox = new JPanel();       // "To sell" — items you hold + sell price (You tab)
@@ -164,6 +165,7 @@ class GeflipPanel extends PluginPanel
 		decantRows.setLayout(new BoxLayout(decantRows, BoxLayout.Y_AXIS));
 		alchRows.setLayout(new BoxLayout(alchRows, BoxLayout.Y_AXIS));
 		procRows.setLayout(new BoxLayout(procRows, BoxLayout.Y_AXIS));
+		moverRows.setLayout(new BoxLayout(moverRows, BoxLayout.Y_AXIS));
 		setsRows.setLayout(new BoxLayout(setsRows, BoxLayout.Y_AXIS));
 		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
 		holdBox.setLayout(new BoxLayout(holdBox, BoxLayout.Y_AXIS));
@@ -216,7 +218,8 @@ class GeflipPanel extends PluginPanel
 		JPanel edgesBox = new JPanel();
 		edgesBox.setLayout(new BoxLayout(edgesBox, BoxLayout.Y_AXIS));
 		alchRows.setAlignmentX(Component.LEFT_ALIGNMENT); procRows.setAlignmentX(Component.LEFT_ALIGNMENT);
-		edgesBox.add(alchRows); edgesBox.add(procRows);
+		moverRows.setAlignmentX(Component.LEFT_ALIGNMENT);
+		edgesBox.add(alchRows); edgesBox.add(procRows); edgesBox.add(moverRows);
 		cardPanel.add(scrollOf(edgesBox), "alch");
 		cardPanel.add(scrollOf(youBox), "you");
 		add(cardPanel, BorderLayout.CENTER);
@@ -266,6 +269,48 @@ class GeflipPanel extends PluginPanel
 			else for (GeflipScanner.Alch a : alchs) alchRows.add(alchRow(a));
 			tabAlch.setText(alchs != null && !alchs.isEmpty() ? "Alch (" + alchs.size() + ")" : "Alch");
 			alchRows.revalidate(); alchRows.repaint();
+		});
+	}
+
+	/** Render abnormal movers: items whose price + volume are ramping vs their 24h norm (front-run / crash). */
+	void setMovers(List<GeflipScanner.Mover> movers)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			moverRows.removeAll();
+			JLabel hint = new JLabel("<html><span style='color:#999'>— movers: abnormal price + volume vs 24h (front-run ⤴ / crash ⤵) —</span></html>");
+			hint.setFont(FontManager.getRunescapeSmallFont());
+			hint.setBorder(BorderFactory.createEmptyBorder(8, 6, 4, 6));
+			hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+			moverRows.add(hint);
+			if (movers == null || movers.isEmpty())
+			{
+				JLabel none = new JLabel("nothing unusual right now");
+				none.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				none.setFont(FontManager.getRunescapeSmallFont());
+				none.setBorder(BorderFactory.createEmptyBorder(4, 6, 6, 6));
+				none.setAlignmentX(Component.LEFT_ALIGNMENT);
+				moverRows.add(none);
+			}
+			else for (GeflipScanner.Mover m : movers)
+			{
+				JPanel p = new JPanel(new BorderLayout(6, 0));
+				p.setBorder(BorderFactory.createEmptyBorder(4, 7, 4, 7));
+				p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				JLabel name = new JLabel((m.crash ? "⤵ " : "⤴ ") + m.name);
+				name.setForeground(m.crash ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.GRAND_EXCHANGE_PRICE);
+				JLabel r = new JLabel((m.priceRamp >= 0 ? "+" : "") + Math.round(m.priceRamp * 100) + "%  ·  " + Math.round(m.volRatio) + "× vol");
+				r.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				r.setFont(FontManager.getRunescapeSmallFont());
+				r.setHorizontalAlignment(JLabel.RIGHT);
+				p.add(name, BorderLayout.CENTER); p.add(r, BorderLayout.EAST);
+				p.setToolTipText(m.name + " is " + (m.crash ? "crashing" : "spiking") + " ~" + Math.round(Math.abs(m.priceRamp) * 100)
+					+ "% vs its 24h average on ~" + Math.round(m.volRatio) + "× normal volume (~" + gp(m.price) + "). "
+					+ (m.crash ? "A dump — sell/avoid, or a dip to buy if it's a known-good item." : "A demand ramp — possible update front-run; buy before the crowd if you have a thesis."));
+				p.setAlignmentX(Component.LEFT_ALIGNMENT);
+				moverRows.add(p);
+			}
+			moverRows.revalidate(); moverRows.repaint();
 		});
 	}
 

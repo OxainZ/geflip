@@ -345,6 +345,59 @@ class GeflipScanner
 		return out;
 	}
 
+	/** An item moving abnormally — price AND volume both ramping vs their 24h baseline. */
+	static final class Mover { public int id; public String name; public double priceRamp, volRatio; public int price; public boolean crash; }
+
+	/** Anomaly / front-running detector: items whose price is &gt;8% off their 24h average WHILE 1h volume is
+	 *  &gt;2.5× the hourly baseline — the signature of a demand spike (update front-run: consider buying before
+	 *  the crowd) or a dump (crashing: sell/avoid). The occasionally-huge, mostly-idle edge. Liquidity-gated. */
+	List<Mover> scanAnomalies(GeflipConfig cfg) throws Exception
+	{
+		Map<Integer, Meta> map = loadMapping();
+		JsonObject latest = lastLatest, h1 = lastH1, d24 = lastD24;
+		if (latest == null || d24 == null) return new ArrayList<>();   // need the 24h baseline
+		List<Mover> out = new ArrayList<>();
+		for (Map.Entry<String, JsonElement> e : d24.entrySet())
+		{
+			int id;
+			try { id = Integer.parseInt(e.getKey()); } catch (Exception ex) { continue; }
+			Meta meta = map.get(id);
+			if (meta == null || meta.limit <= 0) continue;
+			if (meta.members && !cfg.members()) continue;
+			JsonObject w24 = e.getValue().getAsJsonObject();
+			if (w24.get("avgHighPrice").isJsonNull() || w24.get("avgLowPrice").isJsonNull()
+				|| w24.get("highPriceVolume").isJsonNull() || w24.get("lowPriceVolume").isJsonNull()) continue;
+			double avg24 = (w24.get("avgHighPrice").getAsInt() + w24.get("avgLowPrice").getAsInt()) / 2.0;
+			long vol24 = (long) w24.get("highPriceVolume").getAsInt() + w24.get("lowPriceVolume").getAsInt();
+			if (avg24 <= 0 || vol24 < 1000) continue;   // need a real, liquid market for the signal to mean anything
+			if (!latest.has(e.getKey())) continue;
+			JsonObject q = latest.getAsJsonObject(e.getKey());
+			if (q.get("high").isJsonNull() || q.get("low").isJsonNull()) continue;
+			double now = (q.get("high").getAsInt() + q.get("low").getAsInt()) / 2.0;
+			double ramp = (now - avg24) / avg24;
+			double volRatio = 1;
+			if (h1 != null && h1.has(e.getKey()))
+			{
+				JsonObject w1 = h1.getAsJsonObject(e.getKey());
+				if (!w1.get("highPriceVolume").isJsonNull() && !w1.get("lowPriceVolume").isJsonNull())
+				{
+					long vol1 = (long) w1.get("highPriceVolume").getAsInt() + w1.get("lowPriceVolume").getAsInt();
+					double base = vol24 / 24.0;
+					volRatio = base > 0 ? vol1 / base : 1;
+				}
+			}
+			boolean up = ramp > 0.08 && volRatio > 2.5;
+			boolean crash = ramp < -0.08 && volRatio > 2.5;
+			if (!up && !crash) continue;
+			Mover m = new Mover();
+			m.id = id; m.name = meta.name; m.priceRamp = ramp; m.volRatio = volRatio; m.price = (int) now; m.crash = crash;
+			out.add(m);
+		}
+		out.sort((a, b) -> Double.compare(Math.abs(b.priceRamp) * b.volRatio, Math.abs(a.priceRamp) * a.volRatio));
+		int rows = Math.max(5, cfg.rows());
+		return out.size() > rows ? new ArrayList<>(out.subList(0, rows)) : out;
+	}
+
 	private static Map<Integer, Double> loadT90(boolean useTrends)
 	{
 		Map<Integer, Double> out = new HashMap<>();
