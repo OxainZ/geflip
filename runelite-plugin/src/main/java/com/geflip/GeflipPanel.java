@@ -34,7 +34,8 @@ class GeflipPanel extends PluginPanel
 	private final JPanel rows = new JPanel();          // Flips tab
 	private final JPanel dipsRows = new JPanel();      // Dips tab (🔥 items cheap vs their norm)
 	private final JPanel decantRows = new JPanel();    // Decant tab (buy low-dose → sell (4))
-	private final JPanel alchRows = new JPanel();       // Alch tab (buy < alch value, tax-free)
+	private final JPanel alchRows = new JPanel();       // Edges tab: high-alch (buy < alch value, tax-free)
+	private final JPanel procRows = new JPanel();       // Edges tab: processing arbitrage (make → sell)
 	private final JPanel setsRows = new JPanel();      // Sets tab (combine/split set exchange)
 	private final JPanel offersBox = new JPanel();     // "Your GE" — live open offers (You tab)
 	private final JPanel holdBox = new JPanel();       // "To sell" — items you hold + sell price (You tab)
@@ -47,7 +48,7 @@ class GeflipPanel extends PluginPanel
 	private final JButton tabDips = new JButton("Dips");
 	private final JButton tabDecant = new JButton("Decant");
 	private final JButton tabSets = new JButton("Sets");
-	private final JButton tabAlch = new JButton("Alch");
+	private final JButton tabAlch = new JButton("Edges");
 	private final JButton tabYou = new JButton("You");
 	private final javax.swing.JTextField priceInput = new javax.swing.JTextField();
 	private final JLabel priceResult = new JLabel(" ");
@@ -162,6 +163,7 @@ class GeflipPanel extends PluginPanel
 		dipsRows.setLayout(new BoxLayout(dipsRows, BoxLayout.Y_AXIS));
 		decantRows.setLayout(new BoxLayout(decantRows, BoxLayout.Y_AXIS));
 		alchRows.setLayout(new BoxLayout(alchRows, BoxLayout.Y_AXIS));
+		procRows.setLayout(new BoxLayout(procRows, BoxLayout.Y_AXIS));
 		setsRows.setLayout(new BoxLayout(setsRows, BoxLayout.Y_AXIS));
 		offersBox.setLayout(new BoxLayout(offersBox, BoxLayout.Y_AXIS));
 		holdBox.setLayout(new BoxLayout(holdBox, BoxLayout.Y_AXIS));
@@ -211,7 +213,11 @@ class GeflipPanel extends PluginPanel
 		cardPanel.add(scrollOf(dipsRows), "dips");
 		cardPanel.add(scrollOf(decantRows), "decant");
 		cardPanel.add(scrollOf(setsRows), "sets");
-		cardPanel.add(scrollOf(alchRows), "alch");
+		JPanel edgesBox = new JPanel();
+		edgesBox.setLayout(new BoxLayout(edgesBox, BoxLayout.Y_AXIS));
+		alchRows.setAlignmentX(Component.LEFT_ALIGNMENT); procRows.setAlignmentX(Component.LEFT_ALIGNMENT);
+		edgesBox.add(alchRows); edgesBox.add(procRows);
+		cardPanel.add(scrollOf(edgesBox), "alch");
 		cardPanel.add(scrollOf(youBox), "you");
 		add(cardPanel, BorderLayout.CENTER);
 		showCard("flips");
@@ -260,6 +266,46 @@ class GeflipPanel extends PluginPanel
 			else for (GeflipScanner.Alch a : alchs) alchRows.add(alchRow(a));
 			tabAlch.setText(alchs != null && !alchs.isEmpty() ? "Alch (" + alchs.size() + ")" : "Alch");
 			alchRows.revalidate(); alchRows.repaint();
+		});
+	}
+
+	/** Render processing arbitrage: make → sell edges (cannonballs, planks, tanning, gems, cleaning…). */
+	void setProcessing(List<GeflipScanner.Proc> procs)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			procRows.removeAll();
+			JLabel hint = new JLabel("<html><span style='color:#999'>— processing: buy inputs → make → sell (tax on the sale only) —</span></html>");
+			hint.setFont(FontManager.getRunescapeSmallFont());
+			hint.setBorder(BorderFactory.createEmptyBorder(8, 6, 4, 6));
+			hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+			procRows.add(hint);
+			if (procs == null || procs.isEmpty())
+			{
+				JLabel none = new JLabel("no profitable processing right now");
+				none.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				none.setFont(FontManager.getRunescapeSmallFont());
+				none.setBorder(BorderFactory.createEmptyBorder(4, 6, 6, 6));
+				none.setAlignmentX(Component.LEFT_ALIGNMENT);
+				procRows.add(none);
+			}
+			else for (GeflipScanner.Proc pr : procs)
+			{
+				JPanel p = new JPanel(new BorderLayout(6, 0));
+				p.setBorder(BorderFactory.createEmptyBorder(4, 7, 4, 7));
+				p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				JLabel name = new JLabel(pr.name);
+				name.setForeground(ColorScheme.TEXT_COLOR);
+				JLabel prof = new JLabel("+" + gp(pr.profit) + "/ea");
+				prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+				prof.setHorizontalAlignment(JLabel.RIGHT);
+				p.add(name, BorderLayout.CENTER); p.add(prof, BorderLayout.EAST);
+				p.setToolTipText("Buy inputs ~" + gp(pr.buyCost) + " → sell output ~" + gp(pr.sellNet) + " (after tax) → +"
+					+ gp(pr.profit) + " each" + (pr.limit > 0 ? ". Limit " + pr.limit + "/4h" : "") + ". Needs: " + pr.req);
+				p.setAlignmentX(Component.LEFT_ALIGNMENT);
+				procRows.add(p);
+			}
+			procRows.revalidate(); procRows.repaint();
 		});
 	}
 

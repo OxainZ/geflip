@@ -270,6 +270,81 @@ class GeflipScanner
 		return out.size() > rows ? new ArrayList<>(out.subList(0, rows)) : out;
 	}
 
+	/** A processing recipe: buy the inputs, make the output, sell it. Profit = net_sell(output) − Σ buy(inputs) − fee.
+	 *  Tax hits only the output SALE (buys are untaxed). ids verified vs ItemID 1.12.33. */
+	static final class Recipe
+	{
+		final String name, req; final int outId, outQty, fee; final int[] inIds, inQtys;
+		Recipe(String name, int outId, int outQty, int[] inIds, int[] inQtys, int fee, String req)
+		{ this.name = name; this.outId = outId; this.outQty = outQty; this.inIds = inIds; this.inQtys = inQtys; this.fee = fee; this.req = req; }
+	}
+	static final class Proc { public String name, req; public int profit, buyCost, sellNet, limit; }
+
+	private static final Recipe[] RECIPES = {
+		new Recipe("Steel bar → cannonballs (×4)", 2, 4, new int[]{2353}, new int[]{1}, 0, "35 Smithing + Dwarf Cannon"),
+		new Recipe("Logs → planks", 960, 1, new int[]{1511}, new int[]{1}, 100, "sawmill"),
+		new Recipe("Oak logs → oak planks", 8778, 1, new int[]{1521}, new int[]{1}, 250, "sawmill"),
+		new Recipe("Teak logs → teak planks", 8780, 1, new int[]{6333}, new int[]{1}, 500, "sawmill"),
+		new Recipe("Mahogany → mahogany planks", 8782, 1, new int[]{6332}, new int[]{1}, 1500, "sawmill"),
+		new Recipe("Tan green d'hide", 1745, 1, new int[]{1753}, new int[]{1}, 20, "tanner"),
+		new Recipe("Tan blue d'hide", 2505, 1, new int[]{1751}, new int[]{1}, 20, "tanner"),
+		new Recipe("Tan red d'hide", 2507, 1, new int[]{1749}, new int[]{1}, 20, "tanner"),
+		new Recipe("Tan black d'hide", 2509, 1, new int[]{1747}, new int[]{1}, 20, "tanner"),
+		new Recipe("Cut ruby", 1603, 1, new int[]{1619}, new int[]{1}, 0, "34 Crafting + chisel"),
+		new Recipe("Cut diamond", 1601, 1, new int[]{1617}, new int[]{1}, 0, "43 Crafting + chisel"),
+		new Recipe("Cut dragonstone", 1615, 1, new int[]{1631}, new int[]{1}, 0, "55 Crafting + chisel"),
+		new Recipe("Flax → bowstring", 1777, 1, new int[]{1779}, new int[]{1}, 0, "spinning wheel"),
+		new Recipe("Clean ranarr", 257, 1, new int[]{207}, new int[]{1}, 0, "25 Herblore"),
+		new Recipe("Clean snapdragon", 3000, 1, new int[]{3051}, new int[]{1}, 0, "40 Herblore"),
+		new Recipe("Clean cadantine", 265, 1, new int[]{215}, new int[]{1}, 0, "40 Herblore"),
+		new Recipe("Clean lantadyme", 2481, 1, new int[]{2485}, new int[]{1}, 0, "67 Herblore"),
+		new Recipe("Clean dwarf weed", 267, 1, new int[]{217}, new int[]{1}, 0, "70 Herblore"),
+		new Recipe("Clean torstol", 269, 1, new int[]{219}, new int[]{1}, 0, "55 Herblore"),
+	};
+
+	private static Integer instaBuy(JsonObject latest, int id)   // what you pay to buy now (high)
+	{ String k = String.valueOf(id); if (!latest.has(k)) return null; JsonObject q = latest.getAsJsonObject(k); return q.get("high").isJsonNull() ? null : q.get("high").getAsInt(); }
+	private static Integer instaSell(JsonObject latest, int id)  // what you get selling now (low)
+	{ String k = String.valueOf(id); if (!latest.has(k)) return null; JsonObject q = latest.getAsJsonObject(k); return q.get("low").isJsonNull() ? null : q.get("low").getAsInt(); }
+
+	/** Processing arbitrage scanner: for each recipe, net_sell(output) − Σ buy(inputs) − fee, conservative
+	 *  (buy at insta-buy, sell at insta-sell). Tax only on the output sale. The "make it, sell it" edges
+	 *  (cannonballs, planks, tanning, gem cutting, herb cleaning, bowstring) most players don't watch live. */
+	List<Proc> scanProcessing(GeflipConfig cfg) throws Exception
+	{
+		Map<Integer, Meta> map = loadMapping();
+		JsonObject latest = lastLatest;
+		if (latest == null) latest = new JsonParser().parse(httpGet(API + "/latest")).getAsJsonObject().getAsJsonObject("data");
+		List<Proc> out = new ArrayList<>();
+		for (Recipe r : RECIPES)
+		{
+			Meta om = map.get(r.outId);
+			if (om == null) continue;
+			Integer outLow = instaSell(latest, r.outId);
+			if (outLow == null || outLow <= 0) continue;
+			int taxPer = om.exempt ? 0 : (int) Math.min(Math.floor(outLow * 0.02), TAX_CAP);
+			long sellNet = (long) (outLow - taxPer) * r.outQty;
+			long buyCost = r.fee;
+			boolean ok = true;
+			for (int i = 0; i < r.inIds.length; i++)
+			{
+				Integer bp = instaBuy(latest, r.inIds[i]);
+				if (bp == null || bp <= 0) { ok = false; break; }
+				buyCost += (long) bp * r.inQtys[i];
+			}
+			if (!ok) continue;
+			long profit = sellNet - buyCost;
+			if (profit < Math.max(1, cfg.minMargin())) continue;
+			Proc p = new Proc();
+			p.name = r.name; p.req = r.req; p.profit = (int) Math.min(profit, Integer.MAX_VALUE);
+			p.buyCost = (int) Math.min(buyCost, Integer.MAX_VALUE); p.sellNet = (int) Math.min(sellNet, Integer.MAX_VALUE);
+			p.limit = om.limit > 0 ? om.limit : 0;
+			out.add(p);
+		}
+		out.sort((a, b) -> Integer.compare(b.profit, a.profit));
+		return out;
+	}
+
 	private static Map<Integer, Double> loadT90(boolean useTrends)
 	{
 		Map<Integer, Double> out = new HashMap<>();
