@@ -1,0 +1,17 @@
+{
+  "//": "JDK 21 runs the Red Hat Java language server; the project itself targets Java 11.",
+  "java.jdt.ls.java.home": "C:/Users/Oxain/tools/jdk/jdk-21.0.11+10",
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-11",
+      "path": "C:/Users/Oxain/tools/jdk/jdk-11.0.31+11",
+      "default": true
+    },
+    {
+      "name": "JavaSE-21",
+      "path": "C:/Users/Oxain/tools/jdk/jdk-21.0.11+10"
+    }
+  ],
+  "java.import.gradle.java.home": "C:/Users/Oxain/tools/jdk/jdk-11.0.31+11",
+  "java.import.gradle.home": "C:/Users/Oxain/tools/gradle/gradle-7.6.4"
+}

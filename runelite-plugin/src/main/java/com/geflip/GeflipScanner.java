@@ -77,6 +77,7 @@ class GeflipScanner
 		int basketQty;               // suggested units if you put this in one of your GE slots (0 = not picked)
 		long capAbsorb;              // gp this item's full 4h limit can soak up (limit × buy) — for big banks
 		double volCV = -1;           // price volatility (coefficient of variation) over the last ~2h (−1 = not checked)
+		double zScore;               // how many stddevs the price is above/below its ~2h mean (− = cheap)
 	}
 
 	/** Item name from the cached mapping (null if not loaded / unknown). */
@@ -324,8 +325,7 @@ class GeflipScanner
 			if (om == null) continue;
 			Integer outLow = instaSell(latest, r.outId);
 			if (outLow == null || outLow <= 0) continue;
-			int taxPer = om.exempt ? 0 : (int) Math.min(Math.floor(outLow * 0.02), TAX_CAP);
-			long sellNet = (long) (outLow - taxPer) * r.outQty;
+			long sellNet = (long) (outLow - saleTax(outLow, om.exempt)) * r.outQty;   // reuse the canonical tax (floor/cap/<50/exempt)
 			long buyCost = r.fee;
 			boolean ok = true;
 			for (int i = 0; i < r.inIds.length; i++)
@@ -989,8 +989,8 @@ class GeflipScanner
 		long nowMs = System.currentTimeMillis();
 		for (Flip f : pool)
 		{
-			double[] c = tsCache.get(f.id);   // {persist, dir2h, dayDir, volCV, fetchedMs}
-			if (c != null && nowMs - (long) c[4] < TS_TTL_MS) { applyTsResult(f, c[0], c[1], c[2], c[3]); continue; }
+			double[] c = tsCache.get(f.id);   // {persist, dir2h, dayDir, volCV, zScore, fetchedMs}
+			if (c != null && nowMs - (long) c[5] < TS_TTL_MS) { applyTsResult(f, c[0], c[1], c[2], c[3], c[4]); continue; }
 			try
 			{
 				Meta meta = map.get(f.id);
@@ -999,7 +999,7 @@ class GeflipScanner
 					.getAsJsonObject().getAsJsonArray("data");
 				int n = data.size();
 				int from = Math.max(0, n - 24);   // last ~2h of 5m points
-				int pos = 0, tot = 0; double firstMid = 0, lastMid = 0, sumMid = 0, sumMidSq = 0;
+				int pos = 0, tot = 0; double firstMid = 0, lastMid = 0, sumDev = 0, sumDevSq = 0;
 				for (int i = from; i < n; i++)
 				{
 					JsonObject p = data.get(i).getAsJsonObject();
@@ -1010,15 +1010,22 @@ class GeflipScanner
 					if (netMargin(lo, hi, exempt) >= Math.max(1, f.margin * 0.5)) pos++;
 					double mid = (lo + hi) / 2.0;
 					if (firstMid == 0) firstMid = mid;
-					lastMid = mid; sumMid += mid; sumMidSq += mid * mid;
+					lastMid = mid;
+					double dev = mid - firstMid;   // accumulate DEVIATIONS (small) not raw mid² — avoids
+					sumDev += dev; sumDevSq += dev * dev;   // catastrophic cancellation on ultra-priced items
 				}
 				if (tot < 6) continue;   // too little history to judge — leave the pick as-is
 				double persist = pos / (double) tot;
 				double dir = firstMid > 0 ? (lastMid - firstMid) / firstMid : 0;
 				// VOL-NORMALISATION: price volatility (coefficient of variation) over the window — a steady
 				// margin beats a swingy one of the same size (a proper risk-adjusted rank, not just the ⚡ flag).
-				double meanMid = sumMid / tot;
-				double volCV = meanMid > 0 ? Math.sqrt(Math.max(0, sumMidSq / tot - meanMid * meanMid)) / meanMid : 0;
+				double meanDev = sumDev / tot;
+				double meanMid = firstMid + meanDev;
+				double std = Math.sqrt(Math.max(0, sumDevSq / tot - meanDev * meanDev));
+				double volCV = meanMid > 0 ? std / meanMid : 0;
+				// REGIME-GATED Z-SCORE: how cheap/expensive vs its own ~2h band. z<−1 = statistically cheap
+				// (a dip to buy) — but only trust it if the item is mean-reverting, not crashing (dir gate below).
+				double zScore = std > 0 ? (lastMid - meanMid) / std : 0;
 				// #4 mid-horizon: the 5m series spans ~30h, but we only used its last 2h above. Scan from the
 				// START for the oldest valid mid → a ~day-long slope, catching a slow bleed a 2h check misses.
 				double dayFirstMid = 0;
@@ -1031,8 +1038,8 @@ class GeflipScanner
 					dayFirstMid = (lo + hi) / 2.0; break;
 				}
 				double dayDir = (dayFirstMid > 0 && lastMid > 0) ? (lastMid - dayFirstMid) / dayFirstMid : 0;
-				tsCache.put(f.id, new double[]{ persist, dir, dayDir, volCV, nowMs });
-				applyTsResult(f, persist, dir, dayDir, volCV);
+				tsCache.put(f.id, new double[]{ persist, dir, dayDir, volCV, zScore, nowMs });
+				applyTsResult(f, persist, dir, dayDir, volCV, zScore);
 			}
 			catch (Exception ignored) { /* timeseries optional — keep the snapshot-based verdict */ }
 		}
@@ -1041,13 +1048,18 @@ class GeflipScanner
 	/** Fold a timeseries measurement (persistence + direction) into a pick's confidence/expGph + why.
 	 *  Shared by the fresh-fetch and cache-hit paths. Applied once per scan to a fresh Flip, so there's
 	 *  no double-application across scans (only the raw measurement is cached, not the applied state). */
-	private void applyTsResult(Flip f, double persist, double dir, double dayDir, double volCV)
+	private void applyTsResult(Flip f, double persist, double dir, double dayDir, double volCV, double zScore)
 	{
-		f.marginPersist = persist; f.tsDir = dir; f.tsDayDir = dayDir; f.volCV = volCV; f.tsChecked = true;
+		f.marginPersist = persist; f.tsDir = dir; f.tsDayDir = dayDir; f.volCV = volCV; f.zScore = zScore; f.tsChecked = true;
 		double tsConf = 0.4 + 0.6 * persist;          // 0.4 (never present) .. 1.0 (always present)
 		if (dir < -0.03) tsConf *= 0.7;               // falling over the last 2h
 		if (dayDir < -0.05) tsConf *= 0.9;            // #4 slow multi-hour bleed (mild demotion, not a reject)
 		tsConf *= Math.max(0.7, 1.0 / (1.0 + Math.max(0, volCV) * 4.0));   // vol-normalise: steadier ranks higher
+		// REGIME-GATED z-score: statistically cheap (z<−1) AND not crashing (dir≥−0.03) = a real dip → mild
+		// boost; statistically extended (z>1.5) = near the top of its band → mild demote (don't chase).
+		boolean statCheap = zScore < -1.0 && dir >= -0.03;
+		if (statCheap) tsConf *= 1.06;
+		else if (zScore > 1.5) tsConf *= 0.9;
 		f.confidence *= tsConf; f.expGph *= tsConf;
 		// don't clobber a personalised "your winner/loser" note with a merely-informational ts note
 		if (persist < 0.3)
@@ -1056,6 +1068,8 @@ class GeflipScanner
 			f.why = "Price fell ~" + (int) Math.round(-dir * 100) + "% over 2h — the margin may not survive";
 		else if (dayDir < -0.05 && !f.personalized)
 			f.why = "Slow slide: down ~" + (int) Math.round(-dayDir * 100) + "% over ~a day — watch it bleeding";
+		else if (statCheap && !f.personalized)
+			f.why = "Statistically cheap: ~" + String.format("%.1f", -zScore) + "σ below its 2h mean and stable — a dip to buy";
 		else if (persist >= 0.7 && !f.personalized)
 			f.why = "Reliable: the margin held ~" + (int) (persist * 100) + "% of the last 2h";
 	}
