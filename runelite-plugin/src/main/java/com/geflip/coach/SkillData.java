@@ -63,8 +63,8 @@ final class SkillData
 			b(70, "Chinning (fastest) or Venator bow NMZ (AFK)", 500_000, "expensive", "black chins scale toward ~1M/hr; NMZ venator ~160k is far cheaper"));
 		CoachSkillPlan.register(Skill.MAGIC,
 			b(1,  "Splashing (AFK) or low/high alch", 40_000, "cheap", "splash = click every ~20 min, near-zero attention"),
-			b(55, "High/tele-alch (profit) or ice-burst monkeys (fast)", 150_000, "profit/expensive", "alching profits; bursting is fast but pricey"),
-			b(62, "Ice Burst maniacal monkeys (fastest) / barrage Slayer", 280_000, "expensive", "fastest magic; stun-alch ~200k if you want profit"));
+			b(55, "High/tele-alch (profit); bursting monkeys unlocks at 62", 150_000, "profit/expensive", "alching profits now; Smoke Burst at 62, Ice Burst at 70"),
+			b(62, "Smoke Burst maniacal monkeys (fastest xp)", 280_000, "expensive", "Ice Burst at 70, Ice Barrage at 94; stun-alch ~200k if you want profit"));
 		CoachSkillPlan.register(Skill.PRAYER,
 			b(1,  "Quests → then altar with bones", 30_000, "free", "quests get you to ~30 free"),
 			b(30, "Chaos altar (dragon bones) = best value, or Gilded altar = fastest", 700_000, "big sink", "Chaos halves cost (PvP risk); Gilded needs 75 Con. Ensouled heads = profit but slow"),

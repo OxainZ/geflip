@@ -49,7 +49,12 @@ class GeflipServer
 	GeflipServer(int port, String token) throws IOException
 	{
 		this.token = token == null ? "" : token;
-		http = HttpServer.create(new InetSocketAddress(port), 0);
+		// Security baseline: with NO token, never bind beyond loopback (an unauth'd LAN read of your book).
+		// A token set => allow all interfaces so a phone on the same wifi can reach it, but auth is required.
+		InetSocketAddress addr = this.token.isEmpty()
+			? new InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), port)
+			: new InetSocketAddress(port);
+		http = HttpServer.create(addr, 0);
 		http.createContext("/api/ping", this::ping);
 		http.createContext("/api/state", this::state);
 		http.createContext("/", this::root);

@@ -36,7 +36,7 @@ final class CoachMoney
 		new M("Blood-rune Runecrafting (Arceuus)", 1_000_000, "AFK-ish; needs 77 RC + Sins of the Father", st -> st.level(Skill.RUNECRAFT) >= 77),
 		new M("Black chinchompa hunting (Wilderness)", 2_000_000, "high profit; PvP risk; needs 73 Hunter", st -> st.level(Skill.HUNTER) >= 73),
 		new M("Rogues' Castle thieving (Wilderness)", 2_200_000, "fast; PvP risk; needs 84 Thieving", st -> st.level(Skill.THIEVING) >= 84),
-		new M("Zulrah", 3_000_000, "learn the rotations; needs RFD + mid gear; ~90+ combat", st -> st.combatLevel >= 90),
+		new M("Zulrah", 3_000_000, "learn the rotations; needs mid gear + fairy-ring/teleport access; ~90+ combat", st -> st.combatLevel >= 90),
 		new M("Vorkath", 4_000_000, "needs Dragon Slayer II + strong gear; ~110+ combat", st -> st.combatLevel >= 110),
 	};
 

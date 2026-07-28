@@ -5,7 +5,7 @@ package com.geflip.coach;
  * composes it with your LIVE level/XP into a "Path to 99" trainer. Philosophy: daily TREE + FRUIT-TREE
  * runs are the XP backbone (huge XP per single check), herbs supplement for profit, hardwood + specials
  * (Hespori/Calquat/Celastrus/Redwood) bolt on, and Tithe Farm is the active grind for early-mid levels +
- * the farmer's-outfit unlock (+10.2% XP). Total XP 1→99 = 13,034,431.
+ * the farmer's-outfit unlock (+2.5% XP). Total XP 1→99 = 13,034,431.
  */
 final class CoachFarmPlan
 {
@@ -23,13 +23,13 @@ final class CoachFarmPlan
 	// sorted ascending by min level. tree/fruit = the sapling to plant in those patches at this band.
 	static final Band[] BANDS = {
 		new Band(1,  "—", "—", "Allotments (potato→sweetcorn)", "—", "~1–3k/day", 3_000, "start",
-			"Rush the Farming quests — Fairytale I (Magic secateurs!), Forgettable Tale, Garden of Death, Garden of Tranquillity, My Arm's Big Adventure, Enlightened Journey ≈ 32.5k XP → ~level 33 instantly."),
+			"Rush the Farming quests — Fairytale I (Magic secateurs!), Forgettable Tale, Garden of Death, Garden of Tranquillity, My Arm's Big Adventure ≈ 32.5k XP → ~level 38 instantly."),
 		new Band(15, "Oak", "—", "Allotments", "—", "~3–8k/day", 6_000, "Oak trees (first trees)",
 			"15 = your first tree patches. Plant an oak in every tree patch each day."),
 		new Band(27, "Oak", "Apple", "Allotments", "—", "~8–15k/day", 12_000, "Apple fruit trees",
 			"First fruit trees — the biggest early jump in XP per run. Always pay the farmer to protect."),
 		new Band(33, "Willow", "Banana → Orange (39) → Curry (42)", "Ranarr (32)", "Teak (35, Fossil Island)", "~25–50k/day", 38_000, "Willow + Teak + Tithe",
-			"First 'real' run. Grind Tithe Farm (34+) for the farmer's outfit (+10.2% XP) and Gricoller's can."),
+			"First 'real' run. Grind Tithe Farm (34+) for the farmer's outfit (+2.5% XP) and Gricoller's can."),
 		new Band(45, "Maple", "Pineapple (51)", "Toadflax (38) → Kwuarm (56)", "Teak", "~60–110k/day", 85_000, "Maple + Farming Guild",
 			"Farming Guild beginner tier opens (45) — start using its patches. Ultracompost every herb/allotment."),
 		new Band(57, "Maple", "Papaya (57)", "Kwuarm", "Mahogany (55, Fossil Island)", "~90–130k/day", 110_000, "Papaya + Mahogany",
@@ -92,7 +92,7 @@ final class CoachFarmPlan
 	/** Must-have efficiency items (the plugin adds live quest/level checks around these). */
 	static String efficiencyChecklist(int level)
 	{
-		String s = "Magic secateurs (Fairytale I) +10% herb · Farmer's outfit (Tithe) +10.2% XP · "
+		String s = "Magic secateurs (Fairytale I) +10% herb · Farmer's outfit (Tithe) +2.5% XP · "
 			+ "ultracompost every herb/allotment · PAY every tree farmer to protect";
 		return level >= 90 ? s + " · Bottomless compost bucket (Hespori drop)" : s;
 	}

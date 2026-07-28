@@ -241,7 +241,7 @@ class GeflipScanner
 			boolean members = o.has("members") && o.get("members").getAsBoolean();
 			int limit = o.has("limit") && !o.get("limit").isJsonNull() ? o.get("limit").getAsInt() : -1;
 			int highalch = o.has("highalch") && !o.get("highalch").isJsonNull() ? o.get("highalch").getAsInt() : 0;
-			boolean exempt = GeflipExempt.EXEMPT.contains(name.trim().toLowerCase());
+			boolean exempt = GeflipExempt.isExempt(name);
 			m.put(id, new Meta(id, name, members, limit, exempt, highalch));
 		}
 		mapping = m; mappingAt = System.currentTimeMillis();
@@ -260,8 +260,12 @@ class GeflipScanner
 		Map<Integer, Meta> map = loadMapping();
 		JsonObject latest = lastLatest;
 		if (latest == null) latest = new JsonParser().parse(httpGet(API + "/latest")).getAsJsonObject().getAsJsonObject("data");
-		int nat = 100;   // nature rune (id 561) live price, the break-even hinge
+		// nature rune (id 561) live price is the break-even hinge. If it's genuinely missing we must NOT
+		// assume a cheap fallback — that understates cost and overstates alch profit (wrong direction).
+		// Bail instead so we never show a too-good alch margin off a guessed rune price.
+		int nat = -1;
 		if (latest.has("561")) { JsonObject nq = latest.getAsJsonObject("561"); if (!nq.get("high").isJsonNull()) nat = nq.get("high").getAsInt(); }
+		if (nat <= 0) return new ArrayList<>();
 		List<Alch> out = new ArrayList<>();
 		for (Meta meta : map.values())
 		{
@@ -314,11 +318,11 @@ class GeflipScanner
 		new Recipe("Cut dragonstone", 1615, 1, new int[]{1631}, new int[]{1}, 0, "55 Crafting + chisel"),
 		new Recipe("Flax → bowstring", 1777, 1, new int[]{1779}, new int[]{1}, 0, "spinning wheel"),
 		new Recipe("Clean ranarr", 257, 1, new int[]{207}, new int[]{1}, 0, "25 Herblore"),
-		new Recipe("Clean snapdragon", 3000, 1, new int[]{3051}, new int[]{1}, 0, "40 Herblore"),
-		new Recipe("Clean cadantine", 265, 1, new int[]{215}, new int[]{1}, 0, "40 Herblore"),
+		new Recipe("Clean snapdragon", 3000, 1, new int[]{3051}, new int[]{1}, 0, "59 Herblore"),
+		new Recipe("Clean cadantine", 265, 1, new int[]{215}, new int[]{1}, 0, "65 Herblore"),
 		new Recipe("Clean lantadyme", 2481, 1, new int[]{2485}, new int[]{1}, 0, "67 Herblore"),
 		new Recipe("Clean dwarf weed", 267, 1, new int[]{217}, new int[]{1}, 0, "70 Herblore"),
-		new Recipe("Clean torstol", 269, 1, new int[]{219}, new int[]{1}, 0, "55 Herblore"),
+		new Recipe("Clean torstol", 269, 1, new int[]{219}, new int[]{1}, 0, "75 Herblore"),
 	};
 
 	private static Integer instaBuy(JsonObject latest, int id)   // what you pay to buy now (high)
@@ -341,11 +345,18 @@ class GeflipScanner
 			if (om == null) continue;
 			Integer outLow = instaSell(latest, r.outId);
 			if (outLow == null || outLow <= 0) continue;
+			// freshness + liquidity: never build a processing row on a stale or thin output quote (the same
+			// "bought green, sold red" trap the main scan is hardened against). Gate the output on a fresh
+			// quote and real 24h flow before trusting its price.
+			if (!quoteFresh(r.outId)) continue;
+			int ov = vol24(r.outId);
+			if (ov >= 0 && ov < MIN_VOL24) continue;   // known-thin output → skip; unknown (−1) → allow
 			long sellNet = (long) (outLow - saleTax(outLow, om.exempt)) * r.outQty;   // reuse the canonical tax (floor/cap/<50/exempt)
 			long buyCost = r.fee;
 			boolean ok = true;
 			for (int i = 0; i < r.inIds.length; i++)
 			{
+				if (!quoteFresh(r.inIds[i])) { ok = false; break; }   // stale input print → not realisable now
 				Integer bp = instaBuy(latest, r.inIds[i]);
 				if (bp == null || bp <= 0) { ok = false; break; }
 				buyCost += (long) bp * r.inQtys[i];
@@ -467,6 +478,18 @@ class GeflipScanner
 		if (q.has("highTime") && !q.get("highTime").isJsonNull()) newest = Math.max(newest, q.get("highTime").getAsLong());
 		if (q.has("lowTime") && !q.get("lowTime").isJsonNull()) newest = Math.max(newest, q.get("lowTime").getAsLong());
 		return newest > 0 && (now - newest) <= 3600;
+	}
+
+	/** Min of an item's 24h high/low trade volume (−1 if unknown) — a conservative liquidity proxy,
+	 *  the same signal the main scan's MIN_VOL24 gate uses. */
+	private int vol24(int id)
+	{
+		if (lastD24 == null) return -1;
+		String k = String.valueOf(id);
+		if (!lastD24.has(k)) return -1;
+		JsonObject w = lastD24.getAsJsonObject(k);
+		if (w.get("highPriceVolume").isJsonNull() || w.get("lowPriceVolume").isJsonNull()) return -1;
+		return Math.min(w.get("highPriceVolume").getAsInt(), w.get("lowPriceVolume").getAsInt());
 	}
 
 	/** Scan for profitable decants using the cached quotes from the last flip scan. */
@@ -791,7 +814,10 @@ class GeflipScanner
 			if (w1 != null && !w1.get("avgHighPrice").isJsonNull() && !w1.get("avgLowPrice").isJsonNull())
 			{
 				hourly = netMargin(w1.get("avgLowPrice").getAsInt(), w1.get("avgHighPrice").getAsInt(), meta.exempt);
-				vh = w1.get("highPriceVolume").getAsInt(); vl = w1.get("lowPriceVolume").getAsInt();
+				// guard the volume fields too (mirror scanAnomalies): a null volume with a non-null avg would
+				// throw JsonNull.getAsInt() and abort the whole scan → blank panel.
+				vh = !w1.get("highPriceVolume").isJsonNull() ? w1.get("highPriceVolume").getAsInt() : 0;
+				vl = !w1.get("lowPriceVolume").isJsonNull() ? w1.get("lowPriceVolume").getAsInt() : 0;
 			}
 			int vol1 = Math.min(vh, vl);
 			if (vol1 < cfg.minVol1h()) continue;
@@ -865,7 +891,7 @@ class GeflipScanner
 			double zf = (expUnits - qty) / Math.sqrt(Math.max(1, expUnits));
 			double fillProb = 1.0 / (1.0 + Math.exp(-1.702 * zf));   // logistic approx of the normal CDF
 			// STALENESS DISCOUNT (quant): a quote that hasn't traded in a while is less likely to actually
-			// fill at that price — cut fill-prob by the age of the newest quote (≈30-min half-life).
+			// fill at that price — cut fill-prob by the age of the newest quote (τ=1800s → ~21-min half-life).
 			fillProb *= 0.4 + 0.6 * Math.exp(-age / 1800.0);
 			boolean wontFill = Math.min(vh, vl) < 50 || fillProb < 0.15;   // too little counter-flow
 

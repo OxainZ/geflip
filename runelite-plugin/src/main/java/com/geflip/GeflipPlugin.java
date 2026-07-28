@@ -728,8 +728,20 @@ public class GeflipPlugin extends Plugin
 			p.buyWindows = windows;
 			p.costOverride = new java.util.HashMap<>(costOverride);
 			p.watchlist = new java.util.ArrayList<>(watchlist);
-			java.nio.file.Files.write(fillsFile.toPath(),
-				new com.google.gson.Gson().toJson(p).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			// atomic write: a crash mid-write (this PC shuts down nightly) must never truncate the P&L journal.
+			byte[] data = new com.google.gson.Gson().toJson(p).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			java.nio.file.Path dest = fillsFile.toPath();
+			java.nio.file.Path tmp = dest.resolveSibling(fillsFile.getName() + ".tmp");
+			java.nio.file.Files.write(tmp, data);
+			try
+			{
+				java.nio.file.Files.move(tmp, dest,
+					java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			}
+			catch (java.nio.file.AtomicMoveNotSupportedException amnse)   // some filesystems don't support atomic move
+			{
+				java.nio.file.Files.move(tmp, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			}
 		}
 		catch (Exception e) { log.debug("geflip: could not save fills history", e); }
 	}

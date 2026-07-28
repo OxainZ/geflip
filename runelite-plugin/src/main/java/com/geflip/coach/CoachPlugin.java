@@ -439,6 +439,7 @@ public class CoachPlugin extends Plugin
 			if (c == null) continue;
 			for (Item it : c.getItems())
 			{
+				if (it == null) continue;   // bank/equipment array slots can be null — guard like every other container loop
 				int id = it.getId(), qty = it.getQuantity();
 				if (id < 0 || qty <= 0) continue;
 				net.runelite.api.ItemComposition comp = itemManager.getItemComposition(id);

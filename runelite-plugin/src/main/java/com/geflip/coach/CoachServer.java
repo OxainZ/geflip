@@ -49,7 +49,12 @@ class CoachServer
 	CoachServer(int port, String token) throws IOException
 	{
 		this.token = token == null ? "" : token;
-		http = HttpServer.create(new InetSocketAddress(port), 0);
+		// Security baseline: with NO token, bind loopback only (no unauth'd LAN read of your account).
+		// A token set => allow all interfaces so the phone can reach it over wifi, but auth is required.
+		InetSocketAddress addr = this.token.isEmpty()
+			? new InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), port)
+			: new InetSocketAddress(port);
+		http = HttpServer.create(addr, 0);
 		http.createContext("/api/ping", this::ping);
 		http.createContext("/api/coach", this::coach);
 		http.createContext("/", this::root);
