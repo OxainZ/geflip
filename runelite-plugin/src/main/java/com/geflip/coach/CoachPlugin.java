@@ -628,9 +628,10 @@ public class CoachPlugin extends Plugin
 	private List<String> criticalPath(CoachState st, List<CoachEngine.Scored> all)
 	{
 		CoachGoals.Goal target = null;
+		boolean userSet = false;
 		String want = config.focusGoal().trim().toLowerCase();
 		if (!want.isEmpty())
-			for (CoachEngine.Scored sc : all) if (sc.goal.name.toLowerCase().contains(want)) { target = sc.goal; break; }
+			for (CoachEngine.Scored sc : all) if (sc.goal.name.toLowerCase().contains(want)) { target = sc.goal; userSet = true; break; }
 		if (target == null) { List<CoachEngine.Scored> b = CoachEngine.blocked(all); if (!b.isEmpty()) target = b.get(0).goal; }
 		if (target == null) return java.util.Collections.emptyList();
 
@@ -640,8 +641,10 @@ public class CoachPlugin extends Plugin
 		collectPath(target.reqs, st, skills, quests, misc, 0);
 
 		List<String> out = new ArrayList<>();
-		out.add("PATH TO " + target.name);
-		if (skills.isEmpty() && quests.isEmpty() && misc.isEmpty()) { out.add("✓ ready now — go do it!"); return out; }
+		int steps = skills.size() + quests.size() + misc.size();
+		out.add(userSet ? "🎯 PLANNING: " + target.name + "  (" + steps + " step" + (steps == 1 ? "" : "s") + " left)"
+			: "PATH TO " + target.name + "   (auto-picked — set 'Focus goal' in config to plan your own target)");
+		if (steps == 0) { out.add("✓ ready now — go do it!"); return out; }
 		for (Map.Entry<String, Integer> e : skills.entrySet())
 		{
 			Skill sk = SKILL_BY_CAP.get(e.getKey());
