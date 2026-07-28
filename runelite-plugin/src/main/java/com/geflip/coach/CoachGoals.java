@@ -116,32 +116,32 @@ final class CoachGoals
 		// --- prayers (DPS multipliers) -----------------------------------------
 		GOALS.add(new Goal("Piety (melee prayer)", 4, "medium", "70 Prayer + 70 Defence + King's Ransom. Big melee boost for fang/slayer tasks.",
 			skill(Skill.PRAYER, 70), skill(Skill.DEFENCE, 70), quest(Quest.KINGS_RANSOM)));
-		GOALS.add(new Goal("Rigour (ranged prayer)", 5, "long", "74 Prayer + a Dexterous prayer scroll (CoX drop, or buy for ~24M). THE ranged DPS prayer — your top upgrade as a ranger.",
-			skill(Skill.PRAYER, 74), coins(24_000_000)));
-		GOALS.add(new Goal("Augury (magic prayer)", 3, "long", "77 Prayer + an Arcane prayer scroll (~15M). Magic version of Rigour.",
-			skill(Skill.PRAYER, 77), coins(15_000_000)));
+		GOALS.add(new Goal("Rigour (ranged prayer)", 5, "long", "74 Prayer + 70 Defence + a Dexterous prayer scroll (CoX drop, or buy for ~24M). THE ranged DPS prayer — your top upgrade as a ranger.",
+			skill(Skill.PRAYER, 74), skill(Skill.DEFENCE, 70), coins(24_000_000)));
+		GOALS.add(new Goal("Augury (magic prayer)", 3, "long", "77 Prayer + 70 Defence + an Arcane prayer scroll (~15M). Magic version of Rigour.",
+			skill(Skill.PRAYER, 77), skill(Skill.DEFENCE, 70), coins(15_000_000)));
 
 		// --- money bosses ------------------------------------------------------
-		GOALS.add(new Goal("Zulrah (money boss)", 5, "medium", "~2-3.5M/hr. Needs a blowpipe + partial Regicide to reach Zul-Andra. Drops serp helm, blowpipe parts, onyx.",
-			item("Toxic blowpipe", BLOWPIPE_CHARGED, BLOWPIPE_EMPTY), questStarted(Quest.REGICIDE), skill(Skill.RANGED, 75)));
-		GOALS.add(new Goal("Trident of the swamp", 3, "quick", "75 Magic to wield — your Zulrah mage weapon AND it clears Dragon Slayer 2's magic gate. Two birds.",
-			skill(Skill.MAGIC, 75)));
+		GOALS.add(new Goal("Zulrah (money boss)", 5, "medium", "~2-3.5M/hr. Needs a blowpipe + Regicide done (reaches Zul-Andra via Port Tyras). Drops serp helm, blowpipe parts, onyx.",
+			item("Toxic blowpipe", BLOWPIPE_CHARGED, BLOWPIPE_EMPTY), quest(Quest.REGICIDE), skill(Skill.RANGED, 75)));
+		GOALS.add(new Goal("Trident of the swamp", 3, "quick", "78 Magic to wield (seas trident is 75) — your Zulrah mage weapon; also clears DS2's 75-Magic gate. Two birds.",
+			skill(Skill.MAGIC, 78)));
 		GOALS.add(new Goal("Occult necklace", 3, "medium", "Best magic-damage neck — your Zulrah mage switch. From Smoke devils or buy.",
 			item("Occult necklace", OCCULT)));
 		GOALS.add(new Goal("Ava's accumulator (ranged QoL)", 4, "quick", "Animal Magnetism — returns your ammo + range bonus. Upgrade to the Assembler after DS2.",
 			quest(Quest.ANIMAL_MAGNETISM), skill(Skill.RANGED, 50)));
 		GOALS.add(new Goal("Dragon Slayer 2 (-> Vorkath)", 5, "long", "Completing DS2 unlocks Vorkath (~2.5-3.5M/hr). Needs 200 QP + a long quest chain and these skills.",
 			qp(200), skill(Skill.MAGIC, 75), skill(Skill.SMITHING, 70), skill(Skill.MINING, 68), skill(Skill.CRAFTING, 62),
-			skill(Skill.AGILITY, 60), skill(Skill.THIEVING, 60), skill(Skill.CONSTRUCTION, 50),
+			skill(Skill.AGILITY, 60), skill(Skill.THIEVING, 60), skill(Skill.CONSTRUCTION, 50), skill(Skill.HITPOINTS, 50),
 			quest(Quest.DRAGON_SLAYER_I), quest(Quest.LEGENDS_QUEST), quest(Quest.DREAM_MENTOR),
 			quest(Quest.A_TAIL_OF_TWO_CATS), quest(Quest.ANIMAL_MAGNETISM), quest(Quest.GHOSTS_AHOY),
 			quest(Quest.BONE_VOYAGE), quest(Quest.CLIENT_OF_KOUREND)));
-		GOALS.add(new Goal("Salve amulet (ei) — Vorkath BiS", 3, "medium", "Haunted Mine + Lair of Tarn Razorlor. +20% dmg/acc vs undead — huge at Vorkath.",
+		GOALS.add(new Goal("Salve amulet (ei) — Vorkath BiS", 3, "medium", "Haunted Mine + Lair of Tarn Razorlor make salve (e); then IMBUE it (800k NMZ pts / 320 Soul Wars zeal / Scroll of Imbuing) for the (ei) ranged+magic version. +20% dmg/acc vs undead.",
 			quest(Quest.HAUNTED_MINE), quest(Quest.LAIR_OF_TARN_RAZORLOR)));
 
 		// --- slayer engine -----------------------------------------------------
-		GOALS.add(new Goal("Slayer helmet (imbued)", 5, "medium", "55 Slayer + 55 Crafting + unlock via Slayer points. Works for ranged too — with your blowpipe it shreds tasks.",
-			skill(Skill.SLAYER, 55), skill(Skill.CRAFTING, 55)));
+		GOALS.add(new Goal("Slayer helmet (imbued)", 5, "medium", "55 Crafting + the 'Malevolent masquerade' unlock (400 Slayer pts) to assemble; no Slayer LEVEL needed. Works for ranged too — with your blowpipe it shreds tasks.",
+			skill(Skill.CRAFTING, 55)));
 		GOALS.add(new Goal("Kraken (slayer boss)", 3, "medium", "87 Slayer — easy AFK-ish money + trident/tentacle.", skill(Skill.SLAYER, 87)));
 		GOALS.add(new Goal("Cerberus (primordial etc.)", 4, "long", "91 Slayer — drops the crystals for BiS boots.", skill(Skill.SLAYER, 91)));
 		GOALS.add(new Goal("Alchemical Hydra", 4, "long", "95 Slayer — great money + hydra leather (ferocious gloves).", skill(Skill.SLAYER, 95)));
@@ -158,25 +158,25 @@ final class CoachGoals
 		// --- QoL unlocks + raids -----------------------------------------------
 		GOALS.add(new Goal("Fairy rings (travel QoL)", 4, "medium", "Fairytale II (partial) — the game's best teleport network. Huge time-saver for slayer/farming/bossing.",
 			quest(Quest.FAIRYTALE_II__CURE_A_QUEEN)));
-		GOALS.add(new Goal("Rune pouch", 4, "medium", "Enter the Abyss miniquest (or 750 Slayer points). Carry 3-4 rune types — needed to barrage/alch on the go.",
-			quest(Quest.ENTER_THE_ABYSS)));
+		GOALS.add(new Goal("Rune pouch", 4, "medium", "Buy for 750 Slayer reward points (or Mage Training Arena points / LMS). NOT from Enter the Abyss. Carry 3-4 rune types — needed to barrage/alch on the go."));
 		GOALS.add(new Goal("Book of the Dead (thralls)", 4, "long", "A Kingdom Divided — undead thralls are a big FREE DPS boost across almost all PvM.",
 			quest(Quest.A_KINGDOM_DIVIDED)));
 		GOALS.add(new Goal("Barrows (ranged gear + money)", 3, "quick", "Priest in Peril for Morytania access — Karil's ranged gear + steady GP, no combat gate.",
 			quest(Quest.PRIEST_IN_PERIL)));
 		GOALS.add(new Goal("Tombs of Amascut (ToA)", 4, "grind", "Beneath Cursed Sands — a SCALABLE raid, ranged-friendly; you pick the difficulty. Great loot.",
 			quest(Quest.BENEATH_CURSED_SANDS), skill(Skill.RANGED, 80), skill(Skill.PRAYER, 74)));
-		GOALS.add(new Goal("Armadyl (Kree'arra, GWD)", 3, "long", "70 Ranged — armadyl armour + crossbow for a ranger. Team, or solo with good gear.",
-			skill(Skill.RANGED, 70), skill(Skill.PRAYER, 70)));
+		GOALS.add(new Goal("Armadyl (Kree'arra, GWD)", 3, "long", "70 Ranged (+ crossbow & mithril grapple for the shortcut) — armadyl armour + crossbow for a ranger. Team, or solo with good gear.",
+			skill(Skill.RANGED, 70)));
 
 		// --- long-term gateways -------------------------------------------------
 		GOALS.add(new Goal("Monkey Madness 2", 3, "medium", "Unlocks demonic gorillas (zenyte drops) + is a prereq for later content.",
-			quest(Quest.MONKEY_MADNESS_I), skill(Skill.SLAYER, 69), skill(Skill.CRAFTING, 70),
+			quest(Quest.MONKEY_MADNESS_I), quest(Quest.ENLIGHTENED_JOURNEY), quest(Quest.THE_EYES_OF_GLOUPHRIE),
+			quest(Quest.WATCHTOWER), quest(Quest.TROLL_STRONGHOLD), skill(Skill.SLAYER, 69), skill(Skill.CRAFTING, 70),
 			skill(Skill.HUNTER, 60), skill(Skill.AGILITY, 55), skill(Skill.THIEVING, 55), skill(Skill.FIREMAKING, 60)));
-		GOALS.add(new Goal("Song of the Elves -> Gauntlet", 5, "grind", "Unlocks Prifddinas + The Gauntlet (crystal armour/bow — excellent for a ranger) + Zalcano. Needs 70 in 10 skills.",
+		GOALS.add(new Goal("Song of the Elves -> Gauntlet", 5, "grind", "Unlocks Prifddinas + The Gauntlet (crystal armour/bow — excellent for a ranger) + Zalcano. Needs 70 in 8 skills + Mourning's End Part II chain.",
 			skill(Skill.AGILITY, 70), skill(Skill.CONSTRUCTION, 70), skill(Skill.FARMING, 70), skill(Skill.HERBLORE, 70),
-			skill(Skill.HUNTER, 70), skill(Skill.MINING, 70), skill(Skill.SMITHING, 70), skill(Skill.THIEVING, 70),
-			skill(Skill.WOODCUTTING, 70), skill(Skill.CRAFTING, 70)));
+			skill(Skill.HUNTER, 70), skill(Skill.MINING, 70), skill(Skill.SMITHING, 70), skill(Skill.WOODCUTTING, 70),
+			quest(Quest.MOURNINGS_END_PART_II), quest(Quest.MAKING_HISTORY), quest(Quest.DRUIDIC_RITUAL)));
 	}
 
 	// --- curated high-value quests (with their BINDING requirements) ----------
@@ -192,20 +192,30 @@ final class CoachGoals
 			skill(Skill.THIEVING, 53), skill(Skill.FIREMAKING, 50), skill(Skill.MAGIC, 50), skill(Skill.SLAYER, 10),
 			quest(Quest.THE_DIG_SITE), quest(Quest.TEMPLE_OF_IKOV), quest(Quest.THE_TOURIST_TRAP),
 			quest(Quest.TROLL_STRONGHOLD), quest(Quest.PRIEST_IN_PERIL), quest(Quest.WATERFALL_QUEST)));
-		QUESTS.add(new QuestRec(Quest.MONKEY_MADNESS_I, "Dragon scimitar + opens MM2 and the RFD monkey subquest."));
-		QUESTS.add(new QuestRec(Quest.REGICIDE, "Access to Zul-Andra (Zulrah) + elf lands.", quest(Quest.UNDERGROUND_PASS)));
-		QUESTS.add(new QuestRec(Quest.RECIPE_FOR_DISASTER, "Barrows gloves. Last subquest needs 48 Agility + Monkey Madness I.",
-			skill(Skill.COOKING, 70), skill(Skill.AGILITY, 48), quest(Quest.MONKEY_MADNESS_I)));
+		QUESTS.add(new QuestRec(Quest.MONKEY_MADNESS_I, "Dragon scimitar + opens MM2 and the RFD monkey subquest.",
+			quest(Quest.THE_GRAND_TREE), quest(Quest.TREE_GNOME_VILLAGE)));
+		QUESTS.add(new QuestRec(Quest.REGICIDE, "Access to Zul-Andra (Zulrah) + elf lands.",
+			skill(Skill.CRAFTING, 10), skill(Skill.AGILITY, 56), quest(Quest.UNDERGROUND_PASS)));
+		QUESTS.add(new QuestRec(Quest.RECIPE_FOR_DISASTER, "Barrows gloves (best cheap gloves). Long chain: broad skills + 175 QP.",
+			qp(175), skill(Skill.COOKING, 70), skill(Skill.MAGIC, 59), skill(Skill.FISHING, 53), skill(Skill.THIEVING, 53),
+			skill(Skill.MINING, 50), skill(Skill.FIREMAKING, 50), skill(Skill.AGILITY, 48), skill(Skill.RANGED, 40),
+			skill(Skill.SMITHING, 40), skill(Skill.CRAFTING, 40), skill(Skill.WOODCUTTING, 36), skill(Skill.HERBLORE, 25), skill(Skill.FLETCHING, 10),
+			quest(Quest.COOKS_ASSISTANT), quest(Quest.FISHING_CONTEST), quest(Quest.GOBLIN_DIPLOMACY), quest(Quest.BIG_CHOMPY_BIRD_HUNTING),
+			quest(Quest.MURDER_MYSTERY), quest(Quest.NATURE_SPIRIT), quest(Quest.WITCHS_HOUSE), quest(Quest.GERTRUDES_CAT),
+			quest(Quest.SHADOW_OF_THE_STORM), quest(Quest.LEGENDS_QUEST), quest(Quest.MONKEY_MADNESS_I),
+			quest(Quest.DESERT_TREASURE_I), quest(Quest.HORROR_FROM_THE_DEEP)));
 		QUESTS.add(new QuestRec(Quest.CHILDREN_OF_THE_SUN, "Short — unlocks Fortis Colosseum (Dizana's quiver comes from beating wave 12, a hard fight)."));
 		QUESTS.add(new QuestRec(Quest.LUNAR_DIPLOMACY, "Lunar spellbook (NPC Contact, Humidify, Vengeance later).",
-			skill(Skill.MAGIC, 65), skill(Skill.HERBLORE, 60), skill(Skill.CRAFTING, 55)));
+			skill(Skill.MAGIC, 65), skill(Skill.CRAFTING, 61), skill(Skill.MINING, 60), skill(Skill.WOODCUTTING, 55),
+			skill(Skill.FIREMAKING, 49), skill(Skill.DEFENCE, 40), skill(Skill.HERBLORE, 5),
+			quest(Quest.THE_FREMENNIK_TRIALS), quest(Quest.LOST_CITY), quest(Quest.RUNE_MYSTERIES), quest(Quest.SHILO_VILLAGE)));
 		QUESTS.add(new QuestRec(Quest.MONKEY_MADNESS_II, "Demonic gorillas (zenyte drops).",
 			quest(Quest.MONKEY_MADNESS_I), quest(Quest.ENLIGHTENED_JOURNEY), quest(Quest.THE_EYES_OF_GLOUPHRIE),
 			quest(Quest.WATCHTOWER), quest(Quest.TROLL_STRONGHOLD), skill(Skill.SLAYER, 69), skill(Skill.CRAFTING, 70),
 			skill(Skill.HUNTER, 60), skill(Skill.AGILITY, 55), skill(Skill.THIEVING, 55), skill(Skill.FIREMAKING, 60)));
 		QUESTS.add(new QuestRec(Quest.DRAGON_SLAYER_II, "Vorkath (~2.5-3.5M/hr). Long quest chain + these skills.",
 			qp(200), skill(Skill.MAGIC, 75), skill(Skill.SMITHING, 70), skill(Skill.MINING, 68), skill(Skill.CRAFTING, 62),
-			skill(Skill.AGILITY, 60), skill(Skill.THIEVING, 60), skill(Skill.CONSTRUCTION, 50),
+			skill(Skill.AGILITY, 60), skill(Skill.THIEVING, 60), skill(Skill.CONSTRUCTION, 50), skill(Skill.HITPOINTS, 50),
 			quest(Quest.LEGENDS_QUEST), quest(Quest.DREAM_MENTOR), quest(Quest.A_TAIL_OF_TWO_CATS),
 			quest(Quest.ANIMAL_MAGNETISM), quest(Quest.GHOSTS_AHOY), quest(Quest.BONE_VOYAGE), quest(Quest.CLIENT_OF_KOUREND)));
 		QUESTS.add(new QuestRec(Quest.DESERT_TREASURE_II__THE_FALLEN_EMPIRE, "Ancient rings + BiS unlocks.",
@@ -217,14 +227,23 @@ final class CoachGoals
 		QUESTS.add(new QuestRec(Quest.SONG_OF_THE_ELVES, "Prifddinas + The Gauntlet (crystal gear) + Zalcano.",
 			skill(Skill.AGILITY, 70), skill(Skill.CONSTRUCTION, 70), skill(Skill.FARMING, 70), skill(Skill.HERBLORE, 70),
 			skill(Skill.HUNTER, 70), skill(Skill.MINING, 70), skill(Skill.SMITHING, 70), skill(Skill.THIEVING, 70),
-			skill(Skill.WOODCUTTING, 70), skill(Skill.CRAFTING, 70)));
+			skill(Skill.WOODCUTTING, 70),
+			quest(Quest.MOURNINGS_END_PART_II), quest(Quest.MAKING_HISTORY), quest(Quest.DRUIDIC_RITUAL)));
 		// QoL / prerequisite quests worth surfacing
-		QUESTS.add(new QuestRec(Quest.NATURE_SPIRIT, "Morytania access (→ Barrows, Ectophial herb patch).", quest(Quest.PRIEST_IN_PERIL)));
-		QUESTS.add(new QuestRec(Quest.FAIRYTALE_I__GROWING_PAINS, "Step 1 toward fairy rings (the best teleport network)."));
+		QUESTS.add(new QuestRec(Quest.NATURE_SPIRIT, "Morytania access (→ Barrows, Ectophial herb patch).",
+			quest(Quest.PRIEST_IN_PERIL), quest(Quest.THE_RESTLESS_GHOST)));
+		QUESTS.add(new QuestRec(Quest.FAIRYTALE_I__GROWING_PAINS, "Step 1 toward fairy rings (the best teleport network).",
+			quest(Quest.LOST_CITY), quest(Quest.NATURE_SPIRIT)));
 		QUESTS.add(new QuestRec(Quest.FAIRYTALE_II__CURE_A_QUEEN, "Unlocks FAIRY RINGS (partial completion). Top-tier travel QoL.",
-			quest(Quest.FAIRYTALE_I__GROWING_PAINS)));
-		QUESTS.add(new QuestRec(Quest.A_KINGDOM_DIVIDED, "Book of the Dead — undead thralls (free DPS everywhere).", quest(Quest.CLIENT_OF_KOUREND)));
-		QUESTS.add(new QuestRec(Quest.BENEATH_CURSED_SANDS, "Unlocks Tombs of Amascut (scalable ranged-friendly raid)."));
+			skill(Skill.HERBLORE, 57), skill(Skill.FARMING, 49), skill(Skill.THIEVING, 40), quest(Quest.FAIRYTALE_I__GROWING_PAINS)));
+		QUESTS.add(new QuestRec(Quest.A_KINGDOM_DIVIDED, "Book of the Dead — undead thralls (free DPS everywhere).",
+			skill(Skill.AGILITY, 54), skill(Skill.THIEVING, 52), skill(Skill.WOODCUTTING, 52), skill(Skill.HERBLORE, 50),
+			skill(Skill.MINING, 42), skill(Skill.CRAFTING, 38), skill(Skill.MAGIC, 35),
+			quest(Quest.THE_DEPTHS_OF_DESPAIR), quest(Quest.THE_QUEEN_OF_THIEVES), quest(Quest.THE_ASCENT_OF_ARCEUUS),
+			quest(Quest.THE_FORSAKEN_TOWER), quest(Quest.TALE_OF_THE_RIGHTEOUS), quest(Quest.CLIENT_OF_KOUREND), quest(Quest.X_MARKS_THE_SPOT)));
+		QUESTS.add(new QuestRec(Quest.BENEATH_CURSED_SANDS, "Unlocks Tombs of Amascut (scalable ranged-friendly raid).",
+			skill(Skill.AGILITY, 62), skill(Skill.CRAFTING, 55), skill(Skill.FIREMAKING, 55),
+			quest(Quest.CONTACT), quest(Quest.PRINCE_ALI_RESCUE), quest(Quest.ICTHLARINS_LITTLE_HELPER), quest(Quest.GERTRUDES_CAT)));
 	}
 
 	// --- "HOW TO" data: concrete training methods + goal setups (the walkthrough layer) ------
