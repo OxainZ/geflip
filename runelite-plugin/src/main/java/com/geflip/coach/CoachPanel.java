@@ -287,12 +287,14 @@ class CoachPanel extends PluginPanel
 
 	private static JScrollPane scroll(Component c)
 	{
-		JPanel wrap = new JPanel(new BorderLayout());
-		wrap.add(c, BorderLayout.NORTH);
-		JScrollPane sp = new JScrollPane(wrap, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-			ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		// Match the flipper panel's WORKING scroll: content directly in the scrollpane (no BorderLayout.NORTH
+		// wrap, which mis-sized the height so you couldn't reach the bottom) and BOTH scrollbars as-needed
+		// (the old HORIZONTAL_NEVER killed sideways scroll). Content still wraps, so horizontal rarely shows.
+		JScrollPane sp = new JScrollPane(c,
+			ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 		sp.setBorder(BorderFactory.createEmptyBorder());
 		sp.getVerticalScrollBar().setUnitIncrement(16);
+		sp.getHorizontalScrollBar().setUnitIncrement(16);
 		return sp;
 	}
 
@@ -463,5 +465,5 @@ class CoachPanel extends PluginPanel
 
 	/** Wrap text to the RuneLite sidebar width so long lines WRAP instead of clipping off the right edge
 	 *  (the "I can't see the sides" bug — plain JLabels don't wrap). ~198px fits the ~225px panel minus padding. */
-	static String wrap(String t) { return "<html><div style='width:198px'>" + esc(t) + "</div></html>"; }
+	static String wrap(String t) { return "<html><div style='width:188px'>" + esc(t) + "</div></html>"; }
 }
