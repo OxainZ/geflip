@@ -273,7 +273,7 @@ class CoachPanel extends PluginPanel
 			if (lines != null) for (String s : lines)
 			{
 				boolean head = s.startsWith("*");
-				JLabel l = new JLabel(head ? s.substring(1) : s);
+				JLabel l = new JLabel(wrap(head ? s.substring(1) : s));
 				l.setFont(FontManager.getRunescapeSmallFont());
 				l.setForeground(head ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 				l.setBorder(BorderFactory.createEmptyBorder(head ? 6 : 1, 6, 1, 6));
@@ -298,8 +298,8 @@ class CoachPanel extends PluginPanel
 
 	// --- setters (all EDT-safe) ----------------------------------------------
 	void setStatus(String s) { SwingUtilities.invokeLater(() -> status.setText(s)); }
-	void setSummary(String s) { SwingUtilities.invokeLater(() -> summary.setText(s)); }
-	void setSessionStats(String s) { SwingUtilities.invokeLater(() -> sessionStats.setText(s)); }
+	void setSummary(String s) { SwingUtilities.invokeLater(() -> summary.setText(wrap(s))); }
+	void setSessionStats(String s) { SwingUtilities.invokeLater(() -> sessionStats.setText(wrap(s))); }
 	void setAskResult(String s) { SwingUtilities.invokeLater(() -> askResult.setText(s)); }
 
 	void setNext(List<CoachEngine.Scored> rows)
@@ -385,11 +385,11 @@ class CoachPanel extends PluginPanel
 		boolean done = sc.status == CoachEngine.Status.DONE;
 		String tag = done ? "✓ " : sc.status == CoachEngine.Status.READY ? "✓ " :
 			sc.status == CoachEngine.Status.ALMOST ? "○ " : "✕ ";
-		JLabel name = new JLabel(tag + sc.goal.name);
+		JLabel name = new JLabel(wrap(tag + sc.goal.name));
 		name.setForeground(done ? ColorScheme.LIGHT_GRAY_COLOR
 			: sc.status == CoachEngine.Status.READY ? ColorScheme.PROGRESS_COMPLETE_COLOR
 			: sc.status == CoachEngine.Status.ALMOST ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
-		JLabel sub = new JLabel(done ? "done — you already have this" : sc.gaps.isEmpty() ? "ready now" : String.join(" · ", sc.gaps));
+		JLabel sub = new JLabel(wrap(done ? "done — you already have this" : sc.gaps.isEmpty() ? "ready now" : String.join(" · ", sc.gaps)));
 		sub.setFont(FontManager.getRunescapeSmallFont());
 		sub.setForeground(done || sc.gaps.isEmpty() ? ColorScheme.PROGRESS_COMPLETE_COLOR : ColorScheme.LIGHT_GRAY_COLOR);
 		JPanel col = new JPanel(); col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS)); col.setOpaque(false);
@@ -441,7 +441,7 @@ class CoachPanel extends PluginPanel
 
 	private JLabel header(String t)
 	{
-		JLabel l = new JLabel(t);
+		JLabel l = new JLabel(wrap(t));
 		l.setForeground(ColorScheme.BRAND_ORANGE);
 		l.setBorder(BorderFactory.createEmptyBorder(8, 1, 2, 1));
 		l.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -449,7 +449,7 @@ class CoachPanel extends PluginPanel
 	}
 	private JLabel hint(String t)
 	{
-		JLabel l = new JLabel(t);
+		JLabel l = new JLabel(wrap(t));
 		l.setFont(FontManager.getRunescapeSmallFont());
 		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		l.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
@@ -460,4 +460,8 @@ class CoachPanel extends PluginPanel
 	{
 		return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 	}
+
+	/** Wrap text to the RuneLite sidebar width so long lines WRAP instead of clipping off the right edge
+	 *  (the "I can't see the sides" bug — plain JLabels don't wrap). ~198px fits the ~225px panel minus padding. */
+	static String wrap(String t) { return "<html><div style='width:198px'>" + esc(t) + "</div></html>"; }
 }
