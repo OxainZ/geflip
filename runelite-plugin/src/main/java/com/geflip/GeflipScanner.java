@@ -163,6 +163,9 @@ class GeflipScanner
 		if (now - newest > 3600) return "no trade in the last hour (stale quote)";
 		int margin = netMargin(lo, hi, m.exempt);
 		if (margin < Math.max(1, cfg.minMargin())) return "margin ~" + margin + "gp is below your " + cfg.minMargin() + "gp min";
+		// penny-flip trap: if the buy/sell price step (1 tick each side) is >= the spread, there's no real
+		// flip — you'd buy above and sell below the market (a cheap-rune loss dressed up as a margin).
+		if (hi - tickSize(hi) <= lo + tickSize(lo)) return "spread too thin — the ~" + (tickSize(lo) + tickSize(hi)) + "gp price step each round-trip eats it (penny-flip trap; cheap runes lose here)";
 		if (lastH1 != null && lastH1.has(k))
 		{
 			JsonObject w1 = lastH1.getAsJsonObject(k);
@@ -368,7 +371,10 @@ class GeflipScanner
 			if (!quoteFresh(r.outId)) continue;
 			int ov = vol24(r.outId);
 			if (ov >= 0 && ov < MIN_VOL24) continue;   // known-thin output → skip; unknown (−1) → allow
-			long sellNet = (long) (outLow - saleTax(outLow, om.exempt)) * r.outQty;   // reuse the canonical tax (floor/cap/<50/exempt)
+			// FILL-REALISM: you sell the output UNDER the market (undercut a tick) and buy inputs ABOVE it
+			// (overcut a tick) to actually fill — same tick cost the main flip scanner models. Without this
+			// the raw insta-price margin is optimistic (the penny-flip trap in disguise on thin recipes).
+			long sellNet = (long) (outLow - saleTax(outLow, om.exempt) - tickSize(outLow)) * r.outQty;
 			long buyCost = r.fee;
 			boolean ok = true;
 			for (int i = 0; i < r.inIds.length; i++)
@@ -376,7 +382,7 @@ class GeflipScanner
 				if (!quoteFresh(r.inIds[i])) { ok = false; break; }   // stale input print → not realisable now
 				Integer bp = instaBuy(latest, r.inIds[i]);
 				if (bp == null || bp <= 0) { ok = false; break; }
-				buyCost += (long) bp * r.inQtys[i];
+				buyCost += (long) (bp + tickSize(bp)) * r.inQtys[i];   // overcut each input to fill the buy
 			}
 			if (!ok) continue;
 			long profit = sellNet - buyCost;
@@ -438,8 +444,10 @@ class GeflipScanner
 			Meta om = map.get(ri.repairedId);
 			boolean exempt = om != null && om.exempt;   // barrows gear isn't exempt, but stay consistent
 			long cost = smith > 1 ? (long) Math.ceil(ri.baseCost * (1.0 - smith / 200.0)) : ri.baseCost;
-			long sellNet = repaired - saleTax(repaired, exempt);
-			long profit = sellNet - broken - cost;
+			// fill-realism: undercut the repaired sell + overcut the broken buy by a tick each (barrows spreads
+			// are wide so it's small, but keep the margin honest like every other scanner).
+			long sellNet = repaired - saleTax(repaired, exempt) - tickSize(repaired);
+			long profit = sellNet - (broken + tickSize(broken)) - cost;
 			if (profit < Math.max(1, cfg.minMargin())) continue;
 			Repair r = new Repair();
 			r.name = ri.name; r.brokenBuy = broken; r.repairedSell = repaired;
@@ -917,6 +925,11 @@ class GeflipScanner
 			// of the queue and often never fills — the "it won't sell for the listed price" bug.
 			// Undercut one tick each side and rank on THAT margin, what a flip actually earns.
 			int tkB = tickSize(lo), tkS = tickSize(hi);
+			// PENNY-FLIP TRAP: to actually FILL you must overcut the buy (+tkB) AND undercut the sell (−tkS).
+			// If after that the sell price is at/below the buy price, the round-trip tick cost has eaten the
+			// whole spread — there is NO genuine flip (a 6→7 rune becomes buy-7 / sell-6 = a guaranteed loss).
+			// Reject it instead of manufacturing a phantom 1gp margin by forcing the ask above the market.
+			if (hi - tkS <= lo + tkB) continue;
 			int bidComp = lo + tkB;
 			int askComp = Math.max(bidComp + 1, hi - tkS);
 			// ORDER-FLOW IMBALANCE: if instant-buys outnumber instant-sells (rho>0) the item is

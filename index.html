@@ -917,6 +917,10 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     // Patient rests at the observed bid/ask. Competitive pays one tick on each
     // side to sit in front of the existing queue.
     const tkB = tickSize(buy), tkS = tickSize(sell);
+    // PENNY-FLIP TRAP: to fill you must overcut the buy (+tkB) AND undercut the sell (−tkS). If after that
+    // the sell is at/below the buy, the round-trip tick cost has eaten the whole spread — no real flip (a
+    // 6→7 rune becomes buy-7 / sell-6, a guaranteed loss). Reject, don't force the ask above the market.
+    if (sell - tkS <= buy + tkB){ R('spread too thin — the price step eats it (penny-flip trap)'); continue; }
     let bidComp = buy + tkB;
     let askComp = Math.max(bidComp+1, sell - tkS);
     // order-flow imbalance: buy pressure (rho>0) makes your buy fill higher; sell pressure lower
