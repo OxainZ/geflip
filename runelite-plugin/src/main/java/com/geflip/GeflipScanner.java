@@ -30,7 +30,9 @@ class GeflipScanner
 	private static final String UA = "geflip-runelite (github.com/OxainZ/geflip)";
 	private static final int TAX_CAP = 5_000_000;
 	// scoring constants — kept identical to the web app's DEF_CFG so the panel and site agree
-	private static final int MIN_VOL24 = 500;    // 24h liquidity gate
+	private static final int MIN_VOL24 = 150;    // 24h liquidity floor — kept modest because qty is ALSO capped
+	                                             // by realized volume downstream, so a high flat floor just
+	                                             // starves legit moderate-volume flips (co-caused the 0-flips).
 	private static final double PART = 0.20;      // share of a side's flow we realistically capture
 	private static final double TAU_S = 1200.0;   // staleness decay
 	private static final double VOL_SAT = 200.0;  // volume-quality saturation
@@ -916,7 +918,10 @@ class GeflipScanner
 				vl = !w1.get("lowPriceVolume").isJsonNull() ? w1.get("lowPriceVolume").getAsInt() : 0;
 			}
 			int vol1 = Math.min(vh, vl);
-			if (vol1 < cfg.minVol1h()) continue;
+			// Only HARD-drop on 1h volume when we actually HAVE a 1h print. An item with no trade in the last
+			// few minutes but a real 24h market shouldn't vanish — the vol24 gate + fill-probability rank its
+			// liquidity instead (it'll show flagged thin-fill, not be deleted). Hard 1h-floor was starving the list.
+			if (w1 != null && vol1 < cfg.minVol1h()) continue;
 
 			// margin blend + stability — mirrors the web's stability()/margin logic exactly
 			// (stability returns the haircut 0.5 when there's no hourly to corroborate).
@@ -1004,6 +1009,12 @@ class GeflipScanner
 			double trendPen = (mid1h != null && (midNow - mid1h) / mid1h < -0.03) ? 0.8 : 1.0;
 
 			double roi = (double) marginComp / bidComp;
+
+			// QUALITY GATE (replaces the blunt flat minMargin floor that emptied the list): drop a flip ONLY
+			// when BOTH its after-tick ROI is trivial (<1%) AND its absolute margin is small (<300gp). That
+			// surgically kills penny-flips (ruby necklace ~0.6%/6gp, cheap gems/runes) while KEEPING the high-
+			// volume moderate-ROI tier AND fat low-ROI flips (Dragonfire shield: 0.6% ROI but ~23k gp/ea).
+			if (roi < 0.01 && marginComp < 300) continue;
 
 			// FALLING-KNIFE REJECT: if the price is actively dropping this hour, the margin you see now
 			// won't survive the round-trip — you buy green and sell red (the Larran's-key / dragon-metal

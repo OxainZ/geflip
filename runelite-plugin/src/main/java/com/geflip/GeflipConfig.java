@@ -41,17 +41,17 @@ public interface GeflipConfig extends Config
 		description = "Skip items thinner than this in the last hour (both legs).",
 		position = 3
 	)
-	default int minVol1h() { return 20; }
+	default int minVol1h() { return 10; }
 
 	@ConfigItem(
 		keyName = "minMargin",
 		name = "Min margin (gp)",
-		description = "Skip any flip whose net-of-tax, tick-adjusted margin per item is below this. Default 50 "
-			+ "kills penny-flips (ruby necklace 8gp, cheap runes/gems) whose margin is inside the noise and "
-			+ "whose 1gp price step makes them lose. Lower it if you want thin high-volume plays back.",
+		description = "Skip any flip whose net-of-tax margin per item is below this. Kept low (1) so the "
+			+ "high-volume/moderate-margin tier still shows — penny-flip junk (ruby necklace, cheap gems/runes) "
+			+ "is removed by the tick-crossing + ROI quality gates instead, which don't nuke real flips.",
 		position = 4
 	)
-	default int minMargin() { return 50; }
+	default int minMargin() { return 1; }
 
 	@Range(min = 5, max = 50)
 	@ConfigItem(
