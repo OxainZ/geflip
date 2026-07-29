@@ -814,10 +814,14 @@ class GeflipPanel extends PluginPanel
 			else
 			{
 				int tick = GeflipScanner.tickSize(o.sellHint);
-				// EXACT prices here (not the 0.1k-rounded gp()): a real ~50gp reprice must never read as
-				// "4.2k → 4.2k". Only warn when the actual numbers differ meaningfully.
-				if (o.price > o.sellHint + tick)
+				// EXACT prices (not the 0.1k-rounded gp()). And DON'T scream "reprice down" the instant you
+				// list — a fresh sell above the current bid may still fill as buyers come in. Only HARD-warn
+				// once it's actually sat unfilled (stale); until then just calmly inform. This kills the
+				// "as soon as I list, it says price down" nag.
+				if (o.price > o.sellHint + tick && o.stale)
 				{ guide = "⚠ reprice ↓ to " + exact(o.sellHint) + " (you're at " + exact(o.price) + ", −" + exact(o.price - o.sellHint) + ")"; gcol = ColorScheme.PROGRESS_ERROR_COLOR; }
+				else if (o.price > o.sellHint + tick)
+					guide = "buyers ~" + exact(o.sellHint) + " · yours " + exact(o.price) + " — may fill if you wait, or undercut to sell now";
 				else
 					guide = "sell target ~" + exact(o.sellHint) + " — your price is fine";
 			}
@@ -1031,7 +1035,13 @@ class GeflipPanel extends PluginPanel
 		// --- line 2: buy -> sell, margin, qty, and the ESTIMATED FILL TIME so the
 		// gp/h rate isn't a mystery (a "~2d" item won't earn its hourly rate soon) ---
 		String ft = fillTxt(f.fillHours);
-		String reset = f.resetMins > 0 ? "   ↻" + (f.resetMins >= 60 ? (f.resetMins / 60) + "h" : f.resetMins + "m") : "";
+		// show the buy limit is TRACKED: if you've already bought some this 4h window, show what's left
+		// (+ the reset timer). If it's fully spent the scanner drops the item entirely, so a shown row with
+		// limitLeft means you can still buy that many.
+		String reset = f.resetMins > 0
+			? "   ↻" + (f.resetMins >= 60 ? (f.resetMins / 60) + "h" : f.resetMins + "m")
+				+ (f.limitLeft >= 0 ? " (" + gp(f.limitLeft) + " left)" : "")
+			: "";
 		String fill = f.wontFill ? "   ⏳low" : "   " + Math.round(f.fillProb * 100) + "% fill";
 		String bask = f.basketQty > 0 ? "   ★×" + f.basketQty : "";   // suggested slot size (#3)
 		String trust = f.trust >= 0 ? "   🛡" + f.trust : "";        // "is this margin real?" 0-100

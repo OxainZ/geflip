@@ -58,6 +58,7 @@ class GeflipScanner
 		int id; String name; int buy, sell, tax, margin, quantity, limit;
 		double roi, gph, expGph, confidence, fillHours; Double t90, t180; boolean decliner;
 		int resetMins = -1;   // minutes until this item's 4h buy window resets (−1 = none active)
+		int limitLeft = -1;   // units still buyable in the active 4h window (−1 = full limit, none bought yet)
 		boolean dumping;      // cheap right now vs its recent norm — a dip/buy signal
 		boolean unstable;     // price swings exceed the margin — it may flip red before you sell
 		double fillProb;      // P(the round-trip actually completes in a 4h cycle), 0..1
@@ -295,17 +296,26 @@ class GeflipScanner
 			if (!latest.has(k)) continue;
 			JsonObject q = latest.getAsJsonObject(k);
 			if (q.get("high").isJsonNull()) continue;
+			if (!quoteFresh(meta.id)) continue;   // FRESHNESS: illiquid collectibles (3rd age!) have stale/garbage
+			                                       // quotes — without this the scanner "recommends" alching a 2m
+			                                       // item off a month-old print. Same gate the flip scanner uses.
 			int buy = q.get("high").getAsInt();
 			if (buy <= 0) continue;
 			buy += tickSize(buy);   // fill-realism: overcut a tick to actually win the item off the buy queue
+			if (buy >= meta.highalch) continue;   // bulletproof: you can NEVER profit alching something that costs
+			                                       // more than its alch value (kills any 3rd-age-style loss on sight)
 			int profit = meta.highalch - buy - nat;   // TAX-FREE: no GE sale, so no 2% — only the buy costs
 			if (profit < Math.max(1, cfg.minMargin())) continue;
-			// liquidity: a margin on an item that barely trades is fake — need real 24h flow to buy the limit
+			// liquidity: a margin on an item that barely trades is fake — need real 24h flow on BOTH sides to buy
+			// the limit AND actually be a live market (3rd age items trade a handful of times a day).
 			if (lastD24 != null && lastD24.has(k))
 			{
 				JsonObject w24 = lastD24.getAsJsonObject(k);
-				if (!w24.get("lowPriceVolume").isJsonNull() && w24.get("lowPriceVolume").getAsInt() < 50) continue;
+				int lv = w24.get("lowPriceVolume").isJsonNull() ? 0 : w24.get("lowPriceVolume").getAsInt();
+				int hv = w24.get("highPriceVolume").isJsonNull() ? 0 : w24.get("highPriceVolume").getAsInt();
+				if (Math.min(lv, hv) < 50) continue;
 			}
+			else continue;   // no 24h data at all → can't confirm it's liquid → skip (don't guess on thin items)
 			Alch a = new Alch(); a.id = meta.id; a.name = meta.name; a.buy = buy; a.profit = profit; a.limit = meta.limit; a.alch = meta.highalch;
 			out.add(a);
 		}
@@ -1056,6 +1066,7 @@ class GeflipScanner
 			Flip f = new Flip();
 			f.id = id; f.name = meta.name; f.buy = bidComp; f.sell = askComp;
 			f.tax = saleTax(askComp, meta.exempt); f.margin = marginComp; f.quantity = qty; f.limit = limit;
+			f.limitLeft = rem != null ? rem : -1;   // units still buyable this 4h window (−1 = full, none bought)
 			f.capAbsorb = (long) limit * bidComp;   // how much bank a full limit of this soaks per 4h cycle
 			// SIDE-SPECIFIC fill time (shrink/sellersFc/buyersFc computed above): BUY fills against
 			// low-side volume, SELL against high-side volume; the two legs are sequential.
