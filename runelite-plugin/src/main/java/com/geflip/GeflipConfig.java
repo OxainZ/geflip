@@ -46,10 +46,12 @@ public interface GeflipConfig extends Config
 	@ConfigItem(
 		keyName = "minMargin",
 		name = "Min margin (gp)",
-		description = "Skip anything with a net-of-tax margin below this.",
+		description = "Skip any flip whose net-of-tax, tick-adjusted margin per item is below this. Default 50 "
+			+ "kills penny-flips (ruby necklace 8gp, cheap runes/gems) whose margin is inside the noise and "
+			+ "whose 1gp price step makes them lose. Lower it if you want thin high-volume plays back.",
 		position = 4
 	)
-	default int minMargin() { return 1; }
+	default int minMargin() { return 50; }
 
 	@Range(min = 5, max = 50)
 	@ConfigItem(
