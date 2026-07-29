@@ -297,6 +297,7 @@ class GeflipScanner
 			if (q.get("high").isJsonNull()) continue;
 			int buy = q.get("high").getAsInt();
 			if (buy <= 0) continue;
+			buy += tickSize(buy);   // fill-realism: overcut a tick to actually win the item off the buy queue
 			int profit = meta.highalch - buy - nat;   // TAX-FREE: no GE sale, so no 2% — only the buy costs
 			if (profit < Math.max(1, cfg.minMargin())) continue;
 			// liquidity: a margin on an item that barely trades is fake — need real 24h flow to buy the limit
