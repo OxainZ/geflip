@@ -893,10 +893,10 @@ public class CoachPlugin extends Plugin
 
 	private List<String> skillLines(CoachState st)
 	{
-		List<String> o = new ArrayList<>(CoachDailies.lines(st));   // the compounding dailies most players skip
-		o.addAll(CoachUnlocks.lines(st));                           // permanent unlocks you don't have yet
-		o.addAll(almostRadar(st));                                  // "so close" — one small step from an unlock
-		// SKILLS road-to-99 is now rendered as native progress bars via setSkillProgress() (below).
+		// Skills tab is now FOCUSED: road-to-99 bars (setSkillProgress) + quickest-99 + money-makers only.
+		// The dailies / permanent-unlocks / "so close" walls moved OFF this tab (they belong with goals) so
+		// the skills view is actually scannable instead of a 5-section text dump.
+		List<String> o = new ArrayList<>();
 			// WOM-optimal "quickest route": rank sub-99 skills by hours-to-99 at COMMUNITY-OPTIMAL xp/hr
 			// (the authoritative WOM rate tables) - a sharper "knock these out first" than the local bands.
 			java.util.Map<String, double[][]> wr = womRates;
