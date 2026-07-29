@@ -187,7 +187,8 @@ public class CoachPlugin extends Plugin
 				farmLines.addAll(CoachFarm.run(farmRunType, st, farmElapsedMin()));
 			}
 			p.setFarmSteps(config.farmingHelper() ? farmSteps(st) : java.util.Collections.emptyList());
-			p.setSkills(skillLines(st));   // the all-skills 1→99 trainer
+			p.setSkills(skillLines(st));   // the text sections (dailies/unlocks/so-close/quickest/money)
+			p.setSkillProgress(skillProgress(st));   // road-to-99 as native progress-bar rows
 			publishAccountNeeds(st);       // cross-reference: hand the flipper your account shopping list
 			p.setSummary(summary);
 			p.setSessionStats(sess);
@@ -857,35 +858,45 @@ public class CoachPlugin extends Plugin
 		return out;
 	}
 
+	/** Road-to-99 as structured rows (skill, level, XP%, ETA, method) for the progress-bar redesign. */
+	private List<CoachPanel.SkillProg> skillProgress(CoachState st)
+	{
+		java.util.List<Object[]> rows = new ArrayList<>();   // {sk, level, band, hours, pct}
+		long xp99 = CoachFarmPlan.xpForLevel(99);
+		for (Skill sk : Skill.values())
+		{
+			if (sk == Skill.OVERALL || sk == Skill.FARMING) continue;   // farming = its own Farm tab
+			int lvl = st.level(sk);
+			if (lvl >= 99) continue;
+			CoachSkillPlan.Band b = CoachSkillPlan.bestBand(sk, lvl);
+			if (b == null) continue;
+			long cur = client.getSkillExperience(sk);
+			int pct = (int) Math.round(100.0 * cur / xp99);
+			rows.add(new Object[]{ sk, lvl, b, CoachSkillPlan.hoursTo99(sk, cur), pct });
+		}
+		rows.sort((a, c) ->
+		{
+			double ha = (double) a[3], hc = (double) c[3];
+			return Double.compare(ha <= 0 ? Double.MAX_VALUE : ha, hc <= 0 ? Double.MAX_VALUE : hc);
+		});
+		List<CoachPanel.SkillProg> out = new ArrayList<>();
+		for (Object[] r : rows)
+		{
+			Skill sk = (Skill) r[0]; CoachSkillPlan.Band b = (CoachSkillPlan.Band) r[2];
+			CoachPanel.SkillProg sp = new CoachPanel.SkillProg();
+			sp.name = skName(sk); sp.level = (int) r[1]; sp.pct = (int) r[4];
+			sp.hours = b.xpHr > 0 ? (double) r[3] : 0; sp.method = b.method; sp.xpHr = b.xpHr;
+			out.add(sp);
+		}
+		return out;
+	}
+
 	private List<String> skillLines(CoachState st)
 	{
 		List<String> o = new ArrayList<>(CoachDailies.lines(st));   // the compounding dailies most players skip
 		o.addAll(CoachUnlocks.lines(st));                           // permanent unlocks you don't have yet
 		o.addAll(almostRadar(st));                                  // "so close" — one small step from an unlock
-		o.add("*SKILLS — your road to 99 (nearest first)");
-		java.util.List<Object[]> rows = new ArrayList<>();   // {skill, level, band, hours}
-		for (Skill sk : Skill.values())
-		{
-			if (sk == Skill.OVERALL || sk == Skill.FARMING) continue;   // farming = its own Farm-tab trainer
-			int lvl = st.level(sk);
-			if (lvl >= 99) continue;
-			CoachSkillPlan.Band b = CoachSkillPlan.bestBand(sk, lvl);
-			if (b == null) continue;
-			rows.add(new Object[]{ sk, lvl, b, CoachSkillPlan.hoursTo99(sk, client.getSkillExperience(sk)) });
-		}
-		rows.sort((a, c) ->
-		{
-			double ha = (double) a[3], hc = (double) c[3];   // passive/unknown (≤0) sink to the bottom
-			return Double.compare(ha <= 0 ? Double.MAX_VALUE : ha, hc <= 0 ? Double.MAX_VALUE : hc);
-		});
-		for (Object[] r : rows)
-		{
-			Skill sk = (Skill) r[0]; int lvl = (int) r[1]; CoachSkillPlan.Band b = (CoachSkillPlan.Band) r[2]; double hrs = (double) r[3];
-			String eta = b.xpHr <= 0 ? "passive (from combat)" : hrs > 0 ? "~" + fmtHrs(hrs) + " of training to 99" : "";
-			o.add("*" + skName(sk) + " " + lvl + "   ·   " + eta);
-			o.add("  " + b.method + (b.xpHr > 0 ? "  (~" + CoachGoals.gp(b.xpHr) + "/hr" + (b.cost.isEmpty() ? "" : " · " + b.cost) + ")" : ""));
-		}
-		if (rows.isEmpty()) o.add("  every trainable skill is 99 — maxed! 🎉");
+		// SKILLS road-to-99 is now rendered as native progress bars via setSkillProgress() (below).
 			// WOM-optimal "quickest route": rank sub-99 skills by hours-to-99 at COMMUNITY-OPTIMAL xp/hr
 			// (the authoritative WOM rate tables) - a sharper "knock these out first" than the local bands.
 			java.util.Map<String, double[][]> wr = womRates;

@@ -22,6 +22,7 @@ import javax.swing.SwingUtilities;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
+import net.runelite.client.ui.components.ProgressBar;
 
 /**
  * The coach side panel: Next (ranked actions), Goals (every tracked unlock + progress), Blocked
@@ -39,7 +40,14 @@ class CoachPanel extends PluginPanel
 	private final JPanel pathBox = new JPanel();
 	private final JPanel farmBox = new JPanel();
 	private final JPanel farmStepsBox = new JPanel();   // clickable "lead me there" steps (arrows)
-	private final JPanel skillsBox = new JPanel();       // 1→99 trainer for every skill
+	private final JPanel skillsBox = new JPanel();       // 1→99 trainer for every skill (text sections)
+	private final JPanel skillProgBox = new JPanel();    // per-skill progress-bar rows (the road-to-99 headline)
+
+	/** One skill's road-to-99 as structured data → rendered as a native ProgressBar row (not text). */
+	static final class SkillProg
+	{
+		public String name, method; public int level, pct, xpHr; public double hours;
+	}
 
 	/** One tappable farm stop the panel shows: tap → the plugin drops a hint arrow on (x,y,plane).
 	 *  occupied: −1 unknown · 0 empty (go plant) · 1 occupied. locked = can't reach yet (shows reqLabel). */
@@ -106,7 +114,7 @@ class CoachPanel extends PluginPanel
 		tabSkills.addActionListener(e -> show("skills"));
 		tabAsk.addActionListener(e -> show("ask"));
 
-		for (JPanel p : new JPanel[]{ nextBox, goalsBox, blockedBox, pathBox, farmBox, riskBox, skillsBox })
+		for (JPanel p : new JPanel[]{ nextBox, goalsBox, blockedBox, pathBox, farmBox, riskBox, skillsBox, skillProgBox })
 			p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 
 		cards.add(scroll(nextBox), "next");
@@ -115,7 +123,13 @@ class CoachPanel extends PluginPanel
 		cards.add(scroll(blockedBox), "blocked");
 		cards.add(farmCard(), "farm");
 		cards.add(scroll(riskBox), "risk");
-		cards.add(scroll(skillsBox), "skills");
+		JPanel skillsCard = new JPanel();   // progress-bar rows (headline) ABOVE the text sections
+		skillsCard.setLayout(new BoxLayout(skillsCard, BoxLayout.Y_AXIS));
+		skillProgBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+		skillsBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+		skillsCard.add(skillProgBox);
+		skillsCard.add(skillsBox);
+		cards.add(scroll(skillsCard), "skills");
 		cards.add(askCard(), "ask");
 
 		JPanel north = new JPanel(new BorderLayout());
@@ -282,6 +296,62 @@ class CoachPanel extends PluginPanel
 			}
 			skillsBox.revalidate();
 			skillsBox.repaint();
+		});
+	}
+
+	/** The redesigned "road to 99": one native ProgressBar row per skill (XP% + ETA), like the XP Tracker —
+	 *  replaces the old wall of text. Icon-free (skills have no item sprite); the bar IS the visual. */
+	void setSkillProgress(List<SkillProg> rows)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			skillProgBox.removeAll();
+			JLabel hdr = new JLabel(wrap("⚔ ROAD TO 99 — nearest first"));
+			hdr.setForeground(ColorScheme.BRAND_ORANGE);
+			hdr.setBorder(BorderFactory.createEmptyBorder(6, 6, 4, 6));
+			hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
+			skillProgBox.add(hdr);
+			if (rows == null || rows.isEmpty())
+			{
+				skillProgBox.add(hint("every trainable skill is 99 — maxed!"));
+			}
+			else for (SkillProg sp : rows)
+			{
+				JPanel row = new JPanel();
+				row.setLayout(new BoxLayout(row, BoxLayout.Y_AXIS));
+				row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				row.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+				row.setAlignmentX(Component.LEFT_ALIGNMENT);
+				row.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, 64));
+
+				JLabel name = new JLabel(sp.name + "  " + sp.level);
+				name.setForeground(ColorScheme.TEXT_COLOR);
+				name.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+				ProgressBar bar = new ProgressBar();
+				bar.setMaximumValue(100);
+				bar.setValue(Math.max(0, Math.min(100, sp.pct)));   // XP-based % to 99 (level is non-linear)
+				bar.setCenterLabel(sp.pct + "%  ·  " + (sp.hours > 0 ? "~" + Math.round(sp.hours) + "h to 99" : "passive"));
+				bar.setForeground(ColorScheme.PROGRESS_INPROGRESS_COLOR);
+				bar.setBackground(ColorScheme.DARK_GRAY_COLOR);
+				bar.setPreferredSize(new Dimension(PluginPanel.PANEL_WIDTH - 24, 16));
+				bar.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, 16));
+				bar.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+				JLabel method = new JLabel(wrap(sp.method + (sp.xpHr > 0 ? "  (~" + CoachGoals.gp(sp.xpHr) + "/hr)" : "")));
+				method.setFont(FontManager.getRunescapeSmallFont());
+				method.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				method.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+				row.add(name);
+				row.add(javax.swing.Box.createRigidArea(new Dimension(0, 2)));
+				row.add(bar);
+				row.add(method);
+				skillProgBox.add(row);
+				skillProgBox.add(javax.swing.Box.createRigidArea(new Dimension(0, 4)));
+			}
+			skillProgBox.revalidate();
+			skillProgBox.repaint();
 		});
 	}
 
