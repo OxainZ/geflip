@@ -45,6 +45,9 @@ class GeflipScanner
 	/** #1 timeseries measurements cached per item: id -> {marginPersist, priceDir, fetchedMs}. Spares
 	 *  the API from re-fetching the same top picks every scan. */
 	private final Map<Integer, double[]> tsCache = new java.util.concurrent.ConcurrentHashMap<>();
+	/** #6 the raw ~2h mid-price series per grounded item, for the panel sparkline. Cached alongside
+	 *  tsCache so a cache-hit pick still carries its series (same TTL, evicted implicitly on refetch). */
+	private final Map<Integer, int[]> seriesCache = new java.util.concurrent.ConcurrentHashMap<>();
 	private static final long TS_TTL_MS = 300_000L;   // 5 minutes
 
 	static final class Meta
@@ -82,6 +85,7 @@ class GeflipScanner
 		double volCV = -1;           // price volatility (coefficient of variation) over the last ~2h (−1 = not checked)
 		double zScore;               // how many stddevs the price is above/below its ~2h mean (− = cheap)
 		int trust = -1;              // "is this margin REAL?" 0..100 — blends persistence + fill-prob + stability
+		int[] series;                // recent ~2h mid-price points (for the panel sparkline; null = not grounded)
 
 		/** Trust score (0..100): how much to believe the displayed margin, from signals already measured.
 		 *  A wide spread on a thin, unstable, phantom-margin item scores low even if the headline gp looks big —
@@ -334,7 +338,7 @@ class GeflipScanner
 		Recipe(String name, int outId, int outQty, int[] inIds, int[] inQtys, int fee, String req)
 		{ this.name = name; this.outId = outId; this.outQty = outQty; this.inIds = inIds; this.inQtys = inQtys; this.fee = fee; this.req = req; }
 	}
-	static final class Proc { public String name, req; public int profit, buyCost, sellNet, limit; }
+	static final class Proc { public int id; public String name, req; public int profit, buyCost, sellNet, limit; }
 
 	private static final Recipe[] RECIPES = {
 		new Recipe("Steel bar → cannonballs (×4)", 2, 4, new int[]{2353}, new int[]{1}, 0, "35 Smithing + Dwarf Cannon"),
@@ -401,7 +405,7 @@ class GeflipScanner
 			long profit = sellNet - buyCost;
 			if (profit < Math.max(1, cfg.minMargin())) continue;
 			Proc p = new Proc();
-			p.name = r.name; p.req = r.req; p.profit = (int) Math.min(profit, Integer.MAX_VALUE);
+			p.id = r.outId; p.name = r.name; p.req = r.req; p.profit = (int) Math.min(profit, Integer.MAX_VALUE);
 			p.buyCost = (int) Math.min(buyCost, Integer.MAX_VALUE); p.sellNet = (int) Math.min(sellNet, Integer.MAX_VALUE);
 			p.limit = om.limit > 0 ? om.limit : 0;
 			out.add(p);
@@ -436,7 +440,7 @@ class GeflipScanner
 		new RepairItem("Verac's plateskirt", 4759, 4998, RC_LEGS), new RepairItem("Verac's flail", 4755, 4986, RC_WEP),
 	};
 
-	static final class Repair { public String name; public int brokenBuy, repairedSell, cost, profit, limit; }
+	static final class Repair { public int id; public String name; public int brokenBuy, repairedSell, cost, profit, limit; }
 
 	/** Barrows-repair arbitrage: profit = repaired_sell*0.98 − broken_buy − repair_cost. Repair cost uses the
 	 *  POH armour-stand discount ceil(base × (1 − smithing/200)); leave smithing at 1 for the NPC price.
@@ -463,7 +467,7 @@ class GeflipScanner
 			long profit = sellNet - (broken + tickSize(broken)) - cost;
 			if (profit < Math.max(1, cfg.minMargin())) continue;
 			Repair r = new Repair();
-			r.name = ri.name; r.brokenBuy = broken; r.repairedSell = repaired;
+			r.id = ri.repairedId; r.name = ri.name; r.brokenBuy = broken; r.repairedSell = repaired;
 			r.cost = (int) cost; r.profit = (int) Math.min(profit, Integer.MAX_VALUE);
 			r.limit = om != null && om.limit > 0 ? om.limit : 0;
 			out.add(r);
@@ -642,6 +646,7 @@ class GeflipScanner
 	/** A set-exchange arbitrage: combine pieces->set or split set->pieces (free at the GE clerk). */
 	static final class SetFlip
 	{
+		int id;                 // the boxed-set item id (for the panel row icon)
 		String name, dir;       // e.g. "Bandos armour set", "buy pieces → sell set"
 		long buyTotal, sellNet; // cost of the buy side, net-of-tax proceeds of the sell side
 		long profit;
@@ -704,7 +709,7 @@ class GeflipScanner
 			long split = ps ? piecesSellNet - setBuy : Long.MIN_VALUE;
 
 			SetFlip f = new SetFlip();
-			f.name = s[0];
+			f.id = setId; f.name = s[0];
 			if (combine >= split && combine >= Math.max(1, cfg.minMargin()))
 			{ f.dir = "buy pieces → sell set"; f.buyTotal = piecesBuy; f.sellNet = setSell - saleTax(setSell, setMeta != null && setMeta.exempt); f.profit = combine; }
 			else if (split >= Math.max(1, cfg.minMargin()))
@@ -1149,7 +1154,7 @@ class GeflipScanner
 		for (Flip f : pool)
 		{
 			double[] c = tsCache.get(f.id);   // {persist, dir2h, dayDir, volCV, zScore, fetchedMs}
-			if (c != null && nowMs - (long) c[5] < TS_TTL_MS) { applyTsResult(f, c[0], c[1], c[2], c[3], c[4]); continue; }
+			if (c != null && nowMs - (long) c[5] < TS_TTL_MS) { f.series = seriesCache.get(f.id); applyTsResult(f, c[0], c[1], c[2], c[3], c[4]); continue; }
 			try
 			{
 				Meta meta = map.get(f.id);
@@ -1159,6 +1164,7 @@ class GeflipScanner
 				int n = data.size();
 				int from = Math.max(0, n - 24);   // last ~2h of 5m points
 				int pos = 0, tot = 0; double firstMid = 0, lastMid = 0, sumDev = 0, sumDevSq = 0;
+				int[] ser = new int[Math.max(0, n - from)]; int sn = 0;   // #6 collect the mids for the sparkline
 				for (int i = from; i < n; i++)
 				{
 					JsonObject p = data.get(i).getAsJsonObject();
@@ -1170,10 +1176,13 @@ class GeflipScanner
 					double mid = (lo + hi) / 2.0;
 					if (firstMid == 0) firstMid = mid;
 					lastMid = mid;
+					ser[sn++] = (int) Math.round(mid);   // #6 sparkline point
 					double dev = mid - firstMid;   // accumulate DEVIATIONS (small) not raw mid² — avoids
 					sumDev += dev; sumDevSq += dev * dev;   // catastrophic cancellation on ultra-priced items
 				}
 				if (tot < 6) continue;   // too little history to judge — leave the pick as-is
+				int[] series = java.util.Arrays.copyOf(ser, sn);   // #6 trim to the valid points
+				seriesCache.put(f.id, series); f.series = series;
 				double persist = pos / (double) tot;
 				double dir = firstMid > 0 ? (lastMid - firstMid) / firstMid : 0;
 				// VOL-NORMALISATION: price volatility (coefficient of variation) over the window — a steady

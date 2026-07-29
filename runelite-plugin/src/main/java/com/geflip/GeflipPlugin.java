@@ -38,6 +38,7 @@ import net.runelite.client.util.ImageUtil;
 public class GeflipPlugin extends Plugin
 {
 	@Inject private Client client;
+	@Inject private net.runelite.client.game.ItemManager itemManager;
 	@Inject private ClientToolbar clientToolbar;
 	@Inject private GeflipConfig config;
 	@Inject private ScheduledExecutorService executor;
@@ -867,7 +868,7 @@ public class GeflipPlugin extends Plugin
 	protected void startUp()
 	{
 		marketClock.loadCsv(configManager.getConfiguration("geflip", "hourlyVol"));   // resume the activity log
-		panel = new GeflipPanel(this::triggerScan, this::clearHolding, this::priceCheck,
+		panel = new GeflipPanel(itemManager, this::triggerScan, this::clearHolding, this::priceCheck,
 			(id, cost) -> setCost(id, cost), this::markPersonalUse, this::toggleWatchLast, this::unwatch,
 			this::resetJournal);
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/geflip_icon.png");

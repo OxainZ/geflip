@@ -1,21 +1,35 @@
 package com.geflip;
 
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
+import java.awt.RenderingHints;
+import java.util.ArrayList;
 import java.util.List;
 import javax.swing.BorderFactory;
+import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.ScrollPaneConstants;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
+import net.runelite.client.ui.components.ProgressBar;
+import net.runelite.client.util.AsyncBufferedImage;
 
 /**
  * The side panel: a ranked flip list + your live session P&L. Display only — tapping
@@ -24,6 +38,7 @@ import net.runelite.client.ui.PluginPanel;
  */
 class GeflipPanel extends PluginPanel
 {
+	private final ItemManager itemManager;   // draws item sprites on every row (getImage().addTo(label))
 	private final JLabel status = new JLabel("idle");
 	private final JLabel combined = new JLabel(" ");   // real earn rate = top slots summed
 	private final JLabel bankLabel = new JLabel(" ");  // the bankroll being used (your coins)
@@ -64,13 +79,14 @@ class GeflipPanel extends PluginPanel
 	private final Runnable onResetJournal;
 	private final JPanel watchBox = new JPanel();      // "Watch" — pinned items + live prices (You tab)
 
-	GeflipPanel(Runnable onRefresh, java.util.function.IntConsumer onClearHold,
+	GeflipPanel(ItemManager itemManager, Runnable onRefresh, java.util.function.IntConsumer onClearHold,
 		java.util.function.Function<String, String> onPriceCheck,
 		java.util.function.ObjLongConsumer<Integer> onEditCost,
 		java.util.function.IntConsumer onPersonalUse,
 		Runnable onWatchLast, java.util.function.IntConsumer onUnwatch,
 		Runnable onResetJournal)
 	{
+		this.itemManager = itemManager;
 		this.onClearHold = onClearHold;
 		this.onPriceCheck = onPriceCheck;
 		this.onEditCost = onEditCost;
@@ -235,7 +251,10 @@ class GeflipPanel extends PluginPanel
 
 	private static JScrollPane scrollOf(JPanel content)
 	{
-		JScrollPane s = new JScrollPane(content);
+		// vertical scroll only — rows are width-capped and text wraps, so you can never get stuck
+		// scrolled off the left edge (matches the Coach panel's scroll behaviour)
+		JScrollPane s = new JScrollPane(content,
+			ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 		s.setBorder(null);
 		s.getVerticalScrollBar().setUnitIncrement(16);
 		return s;
@@ -273,7 +292,12 @@ class GeflipPanel extends PluginPanel
 				none.setAlignmentX(Component.LEFT_ALIGNMENT);
 				alchRows.add(none);
 			}
-			else for (GeflipScanner.Alch a : alchs) alchRows.add(alchRow(a));
+			else
+			{
+				List<JComponent> comps = new ArrayList<>();
+				for (GeflipScanner.Alch a : alchs) comps.add(alchRow(a));
+				addTopN(alchRows, comps, 8, true);
+			}
 			tabAlch.setText(alchs != null && !alchs.isEmpty() ? "Alch (" + alchs.size() + ")" : "Alch");
 			alchRows.revalidate(); alchRows.repaint();
 		});
@@ -299,28 +323,11 @@ class GeflipPanel extends PluginPanel
 				none.setAlignmentX(Component.LEFT_ALIGNMENT);
 				moverRows.add(none);
 			}
-			else for (GeflipScanner.Mover m : movers)
+			else
 			{
-				JPanel p = new JPanel(new BorderLayout(6, 0));
-				p.setBorder(BorderFactory.createEmptyBorder(4, 7, 4, 7));
-				p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				JLabel name = new JLabel((m.thin ? "⚠ " : m.crash ? "⤵ " : "⤴ ") + m.name);
-				name.setForeground(m.thin ? ColorScheme.PROGRESS_INPROGRESS_COLOR
-					: m.crash ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.GRAND_EXCHANGE_PRICE);
-				JLabel r = new JLabel((m.priceRamp >= 0 ? "+" : "") + Math.round(m.priceRamp * 100) + "%  ·  "
-					+ (m.thin ? "thin vol" : Math.round(m.volRatio) + "× vol"));
-				r.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-				r.setFont(FontManager.getRunescapeSmallFont());
-				r.setHorizontalAlignment(JLabel.RIGHT);
-				p.add(name, BorderLayout.CENTER); p.add(r, BorderLayout.EAST);
-				p.setToolTipText(m.thin
-					? m.name + " moved ~" + Math.round(Math.abs(m.priceRamp) * 100) + "% vs its 24h average on BELOW-normal volume — "
-						+ "a thin/possibly-manipulated move (~" + gp(m.price) + "). Don't be the exit liquidity: avoid unless you know why."
-					: m.name + " is " + (m.crash ? "crashing" : "spiking") + " ~" + Math.round(Math.abs(m.priceRamp) * 100)
-						+ "% vs its 24h average on ~" + Math.round(m.volRatio) + "× normal volume (~" + gp(m.price) + "). "
-						+ (m.crash ? "A dump — sell/avoid, or a dip to buy if it's a known-good item." : "A demand ramp — possible update front-run; buy before the crowd if you have a thesis."));
-				p.setAlignmentX(Component.LEFT_ALIGNMENT);
-				moverRows.add(p);
+				List<JComponent> comps = new ArrayList<>();
+				for (GeflipScanner.Mover m : movers) comps.add(moverRow(m));
+				addTopN(moverRows, comps, 8, true);
 			}
 			moverRows.revalidate(); moverRows.repaint();
 		});
@@ -346,21 +353,11 @@ class GeflipPanel extends PluginPanel
 				none.setAlignmentX(Component.LEFT_ALIGNMENT);
 				procRows.add(none);
 			}
-			else for (GeflipScanner.Proc pr : procs)
+			else
 			{
-				JPanel p = new JPanel(new BorderLayout(6, 0));
-				p.setBorder(BorderFactory.createEmptyBorder(4, 7, 4, 7));
-				p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				JLabel name = new JLabel(pr.name);
-				name.setForeground(ColorScheme.TEXT_COLOR);
-				JLabel prof = new JLabel("+" + gp(pr.profit) + "/ea");
-				prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
-				prof.setHorizontalAlignment(JLabel.RIGHT);
-				p.add(name, BorderLayout.CENTER); p.add(prof, BorderLayout.EAST);
-				p.setToolTipText("Buy inputs ~" + gp(pr.buyCost) + " → sell output ~" + gp(pr.sellNet) + " (after tax) → +"
-					+ gp(pr.profit) + " each" + (pr.limit > 0 ? ". Limit " + pr.limit + "/4h" : "") + ". Needs: " + pr.req);
-				p.setAlignmentX(Component.LEFT_ALIGNMENT);
-				procRows.add(p);
+				List<JComponent> comps = new ArrayList<>();
+				for (GeflipScanner.Proc pr : procs) comps.add(procRow(pr));
+				addTopN(procRows, comps, 8, true);
 			}
 			procRows.revalidate(); procRows.repaint();
 		});
@@ -385,42 +382,127 @@ class GeflipPanel extends PluginPanel
 				none.setAlignmentX(Component.LEFT_ALIGNMENT);
 				repairRows.add(none);
 			}
-			else for (GeflipScanner.Repair r : repairs)
+			else
 			{
-				JPanel p = new JPanel(new BorderLayout(6, 0));
-				p.setBorder(BorderFactory.createEmptyBorder(4, 7, 4, 7));
-				p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				JLabel name = new JLabel(r.name);
-				name.setForeground(ColorScheme.TEXT_COLOR);
-				JLabel prof = new JLabel("+" + gp(r.profit) + "/ea");
-				prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
-				prof.setHorizontalAlignment(JLabel.RIGHT);
-				p.add(name, BorderLayout.CENTER); p.add(prof, BorderLayout.EAST);
-				p.setToolTipText("Buy broken ~" + gp(r.brokenBuy) + " + repair ~" + gp(r.cost)
-					+ " → sell whole ~" + gp(r.repairedSell) + " (after 2% tax) → +" + gp(r.profit) + " each"
-					+ (r.limit > 0 ? ". Limit " + r.limit + "/4h" : "") + ". Repair at a POH armour stand for the discount.");
-				p.setAlignmentX(Component.LEFT_ALIGNMENT);
-				repairRows.add(p);
+				List<JComponent> comps = new ArrayList<>();
+				for (GeflipScanner.Repair r : repairs) comps.add(repairRow(r));
+				addTopN(repairRows, comps, 8, true);
 			}
 			repairRows.revalidate(); repairRows.repaint();
 		});
 	}
 
-	private JPanel alchRow(GeflipScanner.Alch a)
+	private JPanel moverRow(GeflipScanner.Mover m)
 	{
-		JPanel p = new JPanel(new BorderLayout(0, 2));
-		p.setBorder(BorderFactory.createEmptyBorder(5, 7, 5, 7));
+		JPanel p = new JPanel(new BorderLayout(6, 0));
+		p.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.add(iconLabel(m.id, 36), BorderLayout.WEST);
+		JLabel name = new JLabel((m.thin ? "⚠ " : m.crash ? "⤵ " : "⤴ ") + trunc(m.name, 16));
+		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		name.setForeground(m.thin ? ColorScheme.PROGRESS_INPROGRESS_COLOR
+			: m.crash ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.GRAND_EXCHANGE_PRICE);
+		JLabel r = new JLabel((m.priceRamp >= 0 ? "+" : "") + Math.round(m.priceRamp * 100) + "%  ·  "
+			+ (m.thin ? "thin vol" : Math.round(m.volRatio) + "× vol"));
+		r.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		r.setFont(FontManager.getRunescapeSmallFont());
+		r.setHorizontalAlignment(JLabel.RIGHT);
+		p.add(name, BorderLayout.CENTER); p.add(r, BorderLayout.EAST);
+		p.setToolTipText(m.thin
+			? m.name + " moved ~" + Math.round(Math.abs(m.priceRamp) * 100) + "% vs its 24h average on BELOW-normal volume — "
+				+ "a thin/possibly-manipulated move (~" + gp(m.price) + "). Don't be the exit liquidity: avoid unless you know why."
+			: m.name + " is " + (m.crash ? "crashing" : "spiking") + " ~" + Math.round(Math.abs(m.priceRamp) * 100)
+				+ "% vs its 24h average on ~" + Math.round(m.volRatio) + "× normal volume (~" + gp(m.price) + "). "
+				+ (m.crash ? "A dump — sell/avoid, or a dip to buy if it's a known-good item." : "A demand ramp — possible update front-run; buy before the crowd if you have a thesis."));
+		p.addMouseListener(copyOnClick(m.name));
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return p;
+	}
+
+	private JPanel procRow(GeflipScanner.Proc pr)
+	{
+		JPanel p = new JPanel(new BorderLayout(6, 0));
+		p.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.add(iconLabel(pr.id, 36), BorderLayout.WEST);
 		JPanel top = new JPanel(new BorderLayout(6, 0));
 		top.setOpaque(false);
-		JLabel name = new JLabel(a.name);
+		JLabel name = new JLabel(trunc(pr.name, 22));
+		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		name.setForeground(ColorScheme.TEXT_COLOR);
+		JLabel prof = new JLabel("+" + gp(pr.profit) + "/ea");
+		prof.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		prof.setHorizontalAlignment(JLabel.RIGHT);
+		top.add(name, BorderLayout.CENTER); top.add(prof, BorderLayout.EAST);
+		JLabel sub = new JLabel(gp(pr.buyCost) + " → " + gp(pr.sellNet) + (pr.limit > 0 ? "  ·  " + pr.limit + "/4h" : ""));
+		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		sub.setFont(FontManager.getRunescapeSmallFont());
+		JPanel col = new JPanel();
+		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+		col.setOpaque(false);
+		top.setAlignmentX(Component.LEFT_ALIGNMENT); sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+		col.add(top); col.add(sub);
+		p.add(col, BorderLayout.CENTER);
+		p.setToolTipText("Buy inputs ~" + gp(pr.buyCost) + " → sell output ~" + gp(pr.sellNet) + " (after tax) → +"
+			+ gp(pr.profit) + " each" + (pr.limit > 0 ? ". Limit " + pr.limit + "/4h" : "") + ". Needs: " + pr.req);
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return p;
+	}
+
+	private JPanel repairRow(GeflipScanner.Repair r)
+	{
+		JPanel p = new JPanel(new BorderLayout(6, 0));
+		p.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.add(iconLabel(r.id, 36), BorderLayout.WEST);
+		JPanel top = new JPanel(new BorderLayout(6, 0));
+		top.setOpaque(false);
+		JLabel name = new JLabel(trunc(r.name, 20));
+		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		name.setForeground(ColorScheme.TEXT_COLOR);
+		JLabel prof = new JLabel("+" + gp(r.profit) + "/ea");
+		prof.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		prof.setHorizontalAlignment(JLabel.RIGHT);
+		top.add(name, BorderLayout.CENTER); top.add(prof, BorderLayout.EAST);
+		JLabel sub = new JLabel("buy " + gp(r.brokenBuy) + " + fix " + gp(r.cost) + " → " + gp(r.repairedSell));
+		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		sub.setFont(FontManager.getRunescapeSmallFont());
+		JPanel col = new JPanel();
+		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+		col.setOpaque(false);
+		top.setAlignmentX(Component.LEFT_ALIGNMENT); sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+		col.add(top); col.add(sub);
+		p.add(col, BorderLayout.CENTER);
+		p.setToolTipText("Buy broken ~" + gp(r.brokenBuy) + " + repair ~" + gp(r.cost)
+			+ " → sell whole ~" + gp(r.repairedSell) + " (after 2% tax) → +" + gp(r.profit) + " each"
+			+ (r.limit > 0 ? ". Limit " + r.limit + "/4h" : "") + ". Repair at a POH armour stand for the discount.");
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return p;
+	}
+
+	private JPanel alchRow(GeflipScanner.Alch a)
+	{
+		JPanel p = new JPanel(new BorderLayout(6, 0));
+		p.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.add(iconLabel(a.id, 36), BorderLayout.WEST);
+		JPanel top = new JPanel(new BorderLayout(6, 0));
+		top.setOpaque(false);
+		JLabel name = new JLabel(trunc(a.name, 18));
+		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		name.setForeground(ColorScheme.TEXT_COLOR);
 		JLabel prof = new JLabel("+" + gp(a.profit) + "/ea");
+		prof.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
 		prof.setHorizontalAlignment(JLabel.RIGHT);
 		top.add(name, BorderLayout.CENTER);
 		top.add(prof, BorderLayout.EAST);
-		JLabel sub = new JLabel("buy @" + gp(a.buy) + "  →  alch " + gp(a.alch) + "   ·   limit " + a.limit + "/4h  (~" + gp((long) a.profit * a.limit) + "/limit)");
+		JLabel sub = new JLabel("buy @" + gp(a.buy) + " → alch " + gp(a.alch) + "  ·  " + a.limit + "/4h");
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 		JPanel col = new JPanel();
@@ -430,17 +512,10 @@ class GeflipPanel extends PluginPanel
 		col.add(top); col.add(sub);
 		p.add(col, BorderLayout.CENTER);
 		name.setToolTipText("Buy at ~" + gp(a.buy) + ", High Alch for " + gp(a.alch) + " → +" + gp(a.profit)
-			+ " each (after the nature rune, no GE tax). Buy limit " + a.limit + "/4h. Click to copy the name.");
-		final String copyName = a.name;
-		p.addMouseListener(new java.awt.event.MouseAdapter()
-		{
-			@Override public void mouseClicked(java.awt.event.MouseEvent e)
-			{
-				java.awt.datatransfer.StringSelection sel = new java.awt.datatransfer.StringSelection(copyName);
-				java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, sel);
-				status.setText("copied \"" + copyName + "\"");
-			}
-		});
+			+ " each (after the nature rune, no GE tax). Buy limit " + a.limit + "/4h (~" + gp((long) a.profit * a.limit) + "/limit). Click to copy the name.");
+		p.addMouseListener(copyOnClick(a.name));
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
 	}
 
@@ -538,7 +613,9 @@ class GeflipPanel extends PluginPanel
 		JPanel p = new JPanel(new BorderLayout(6, 0));
 		p.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		JLabel name = new JLabel((w.cheap ? "🔥 " : "") + w.name);
+		p.add(iconLabel(w.id, 36), BorderLayout.WEST);
+		JLabel name = new JLabel((w.cheap ? "🔥 " : "") + trunc(w.name, 18));
+		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		name.setForeground(w.cheap ? ColorScheme.BRAND_ORANGE : ColorScheme.TEXT_COLOR);
 		JLabel px = new JLabel((w.buy > 0 ? "buy " + gp(w.buy) : "") + (w.sell > 0 ? "  sell " + gp(w.sell) : ""));
 		px.setFont(FontManager.getRunescapeSmallFont());
@@ -552,7 +629,7 @@ class GeflipPanel extends PluginPanel
 		col.add(name); col.add(px);
 		p.add(col, BorderLayout.CENTER);
 		p.add(rm, BorderLayout.EAST);
-		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
 	}
@@ -570,15 +647,17 @@ class GeflipPanel extends PluginPanel
 				hdr.setBorder(BorderFactory.createEmptyBorder(6, 1, 2, 1));
 				hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
 				perfBox.add(hdr);
+				List<JComponent> comps = new ArrayList<>();
 				for (String s : lines)
 				{
-					JLabel l = new JLabel(s);
+					JLabel l = new JLabel(wrap(s));
 					l.setFont(FontManager.getRunescapeSmallFont());
 					l.setForeground(s.contains(": +") ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.PROGRESS_ERROR_COLOR);
 					l.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
 					l.setAlignmentX(Component.LEFT_ALIGNMENT);
-					perfBox.add(l);
+					comps.add(l);
 				}
+				addTopN(perfBox, comps, 12, false);
 			}
 			perfBox.revalidate();
 			perfBox.repaint();
@@ -698,19 +777,24 @@ class GeflipPanel extends PluginPanel
 
 	private JPanel holdRow(GeflipPlugin.Hold h)
 	{
-		JPanel p = new JPanel(new BorderLayout(0, 1));
+		JPanel p = new JPanel(new BorderLayout(6, 0));
 		p.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		JLabel name = new JLabel(h.name + "  ×" + h.qty + (h.listed > 0 ? "  (" + h.listed + " already listed)" : ""));
+		p.add(iconLabel(h.id, 36), BorderLayout.WEST);
+		JPanel col = new JPanel();
+		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+		col.setOpaque(false);
+		JLabel name = new JLabel(trunc(h.name, 16) + "  ×" + h.qty + (h.listed > 0 ? "  (" + h.listed + " listed)" : ""));
+		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		name.setForeground(ColorScheme.TEXT_COLOR);
+		name.setAlignmentX(Component.LEFT_ALIGNMENT);
 		String line2;
+		JLabel sub;
 		if (h.sellHint > 0 && h.avgCost < 0)
 		{
 			// untracked item (in your bag, no flip cost basis) — just tell you where to list it
-			JLabel sub = new JLabel("sell @ " + gp(h.sellHint) + "   (no cost tracked)");
-			sub.setFont(FontManager.getRunescapeSmallFont());
+			sub = new JLabel("sell @ " + gp(h.sellHint) + "   (no cost tracked)");
 			sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			p.add(sub, BorderLayout.SOUTH);
 			p.setToolTipText("You're holding " + h.qty + " — not from a tracked flip buy, so there's no cost basis. "
 				+ "List a sell at ~" + gp(h.sellHint) + ". Use ✎ to set your real cost, or ⊘ to hide if it's personal.");
 		}
@@ -722,10 +806,8 @@ class GeflipPanel extends PluginPanel
 			boolean taxTrap = !profit && (h.sellHint - h.avgCost) >= 0;   // raw spread ok, tax eats it
 			line2 = "cost " + gp(h.avgCost) + "  →  sell @ " + gp(h.sellHint)
 				+ "  (" + (profit ? "+" : "") + gp(net - h.avgCost) + "/ea)" + (taxTrap ? "  ⚠tax" : "");
-			JLabel sub = new JLabel(line2);
-			sub.setFont(FontManager.getRunescapeSmallFont());
+			sub = new JLabel(line2);
 			sub.setForeground(profit ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.PROGRESS_ERROR_COLOR);
-			p.add(sub, BorderLayout.SOUTH);
 			p.setToolTipText("You hold " + h.qty + " at ~" + gp(h.avgCost) + " each. List a sell at ~"
 				+ gp(h.sellHint) + " to fill; "
 				+ (taxTrap ? "raw spread is positive but the 2% tax (" + gp(tax) + ") eats it — this can only lose. Hold for a wider gap or cut."
@@ -733,12 +815,13 @@ class GeflipPanel extends PluginPanel
 		}
 		else
 		{
-			JLabel sub = new JLabel("cost " + gp(h.avgCost) + "  ·  no live price");
-			sub.setFont(FontManager.getRunescapeSmallFont());
+			sub = new JLabel("cost " + gp(h.avgCost) + "  ·  no live price");
 			sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			p.add(sub, BorderLayout.SOUTH);
 		}
-		p.add(name, BorderLayout.CENTER);
+		sub.setFont(FontManager.getRunescapeSmallFont());
+		sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+		col.add(name); col.add(sub);
+		p.add(col, BorderLayout.CENTER);
 		// row actions: ✓ sold · ✎ fix cost · ⊘ personal use
 		JPanel actions = new JPanel(new GridLayout(1, 3, 2, 0));
 		actions.setOpaque(false);
@@ -791,7 +874,8 @@ class GeflipPanel extends PluginPanel
 		boolean done = o.state.equals("BOUGHT") || o.state.equals("SOLD");
 		boolean cancelled = o.state.startsWith("CANCELLED");
 		String nm = o.name != null ? o.name : ("#" + o.id);
-		JLabel l = new JLabel((o.stale ? "⚠ " : buy ? "▼ " : "▲ ") + nm + "  @" + gp(o.price));
+		p.add(iconLabel(o.id, 36), BorderLayout.WEST);
+		JLabel l = new JLabel((o.stale ? "⚠ " : buy ? "▼ " : "▲ ") + trunc(nm, 13) + " @" + gp(o.price));
 		l.setForeground(o.stale ? ColorScheme.PROGRESS_ERROR_COLOR
 			: buy ? ColorScheme.PROGRESS_INPROGRESS_COLOR : ColorScheme.GRAND_EXCHANGE_PRICE);
 		String tail = o.qtySold + "/" + o.qtyTotal
@@ -855,31 +939,40 @@ class GeflipPanel extends PluginPanel
 			rows.removeAll();
 			dipsRows.removeAll();
 			int dips = 0;
+			// ⭐ HERO — the ★-basket: the max-profit slate you can fund + fill this cycle, pinned at the top.
+			java.util.List<GeflipScanner.Flip> basket = new ArrayList<>();
+			long heroTotal = 0;
 			// Headline = the realistic slate you can actually FUND and that will fill: fill the 8 slots
 			// top-down, skip won't-fill rows, and stop once the committed capital (qty*buy) reaches your
 			// bankroll — so the number isn't 8 flips each sized to 25% of your coins (a 200% fantasy).
 			double top = 0; int slots = 0; long spent = 0; long bank = bankrollGp;
+			List<JComponent> flipRows = new ArrayList<>();
+			List<JComponent> dipRows = new ArrayList<>();
 			for (GeflipScanner.Flip f : flips)
 			{
-				rows.add(rowFor(f));
-				if (f.dumping) { dipsRows.add(rowFor(f)); dips++; }   // 🔥 cheap vs its recent norm
+				flipRows.add(flipRow(f));
+				if (f.basketQty > 0) { basket.add(f); heroTotal += (long) f.margin * f.basketQty; }
+				if (f.dumping) { dipRows.add(flipRow(f)); dips++; }   // 🔥 cheap vs its recent norm
 				if (slots >= 8 || f.wontFill) continue;
 				long cost = (long) f.buy * f.quantity;
 				if (bank > 0 && spent + cost > bank && slots > 0) continue;   // can't fund this one — skip it
 				top += f.expGph; spent += cost; slots++;
 			}
+			if (!basket.isEmpty())
+			{
+				rows.add(heroCard(basket, heroTotal));
+				rows.add(gap());
+				rows.add(header("RANKED FLIPS"));
+				rows.add(gap());
+			}
+			if (flipRows.isEmpty()) rows.add(hint("no flips right now — hit Rescan (or widen your filters in config)."));
+			else addTopN(rows, flipRows, 10, true);
 			combined.setText(slots > 0 ? "≈ " + gp((long) top) + "/hr across " + slots + " slots" : " ");
 			combined.setToolTipText("Your realistic earn rate = the flips you can actually run at once — capped "
 				+ "at your bankroll (" + gp(bank) + ") and skipping ones that likely won't fill. Raise your "
 				+ "Bankroll/coins to fund bigger or more slots.");
-			if (dips == 0)
-			{
-				JLabel none = new JLabel("no dips right now — nothing's trading below its norm");
-				none.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-				none.setFont(FontManager.getRunescapeSmallFont());
-				none.setBorder(BorderFactory.createEmptyBorder(8, 6, 8, 6));
-				dipsRows.add(none);
-			}
+			if (dips == 0) dipsRows.add(hint("no dips right now — nothing's trading below its norm."));
+			else addTopN(dipsRows, dipRows, 10, true);
 			tabDips.setText(dips > 0 ? "Dips (" + dips + ")" : "Dips");
 			rows.revalidate(); rows.repaint();
 			dipsRows.revalidate(); dipsRows.repaint();
@@ -906,7 +999,12 @@ class GeflipPanel extends PluginPanel
 				none.setAlignmentX(Component.LEFT_ALIGNMENT);
 				decantRows.add(none);
 			}
-			else for (GeflipScanner.Decant d : decants) decantRows.add(decantRow(d));
+			else
+			{
+				List<JComponent> comps = new ArrayList<>();
+				for (GeflipScanner.Decant d : decants) comps.add(decantRow(d));
+				addTopN(decantRows, comps, 8, true);
+			}
 			tabDecant.setText(decants != null && !decants.isEmpty() ? "Decant (" + decants.size() + ")" : "Decant");
 			decantRows.revalidate(); decantRows.repaint();
 		});
@@ -932,7 +1030,12 @@ class GeflipPanel extends PluginPanel
 				none.setAlignmentX(Component.LEFT_ALIGNMENT);
 				setsRows.add(none);
 			}
-			else for (GeflipScanner.SetFlip s : sets) setsRows.add(setRow(s));
+			else
+			{
+				List<JComponent> comps = new ArrayList<>();
+				for (GeflipScanner.SetFlip s : sets) comps.add(setRow(s));
+				addTopN(setsRows, comps, 8, true);
+			}
 			tabSets.setText(sets != null && !sets.isEmpty() ? "Sets (" + sets.size() + ")" : "Sets");
 			setsRows.revalidate(); setsRows.repaint();
 		});
@@ -940,19 +1043,22 @@ class GeflipPanel extends PluginPanel
 
 	private JPanel setRow(GeflipScanner.SetFlip s)
 	{
-		JPanel p = new JPanel(new BorderLayout(0, 2));
-		p.setBorder(BorderFactory.createEmptyBorder(5, 7, 5, 7));
+		JPanel p = new JPanel(new BorderLayout(6, 0));
+		p.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.add(iconLabel(s.id, 36), BorderLayout.WEST);
 		JPanel top = new JPanel(new BorderLayout(6, 0));
 		top.setOpaque(false);
-		JLabel name = new JLabel(s.name);
+		JLabel name = new JLabel(trunc(s.name, 18));
+		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		name.setForeground(ColorScheme.TEXT_COLOR);
 		JLabel prof = new JLabel("+" + gp(s.profit));
+		prof.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
 		prof.setHorizontalAlignment(JLabel.RIGHT);
 		top.add(name, BorderLayout.CENTER);
 		top.add(prof, BorderLayout.EAST);
-		JLabel sub = new JLabel(s.dir + "   (" + gp(s.buyTotal) + " → " + gp(s.sellNet) + ")");
+		JLabel sub = new JLabel(s.dir + "  (" + gp(s.buyTotal) + " → " + gp(s.sellNet) + ")");
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 		JPanel col = new JPanel();
@@ -961,27 +1067,31 @@ class GeflipPanel extends PluginPanel
 		top.setAlignmentX(Component.LEFT_ALIGNMENT); sub.setAlignmentX(Component.LEFT_ALIGNMENT);
 		col.add(top); col.add(sub);
 		p.add(col, BorderLayout.CENTER);
-		name.setToolTipText(s.name + ": " + s.dir + " for +" + gp(s.profit) + " (net of tax). Combine/split is free at a GE clerk.");
-		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
+		p.setToolTipText(s.name + ": " + s.dir + " for +" + gp(s.profit) + " (net of tax). Combine/split is free at a GE clerk. Click to copy the name.");
+		p.addMouseListener(copyOnClick(s.name));
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
 	}
 
 	private JPanel decantRow(GeflipScanner.Decant d)
 	{
-		JPanel p = new JPanel(new BorderLayout(0, 2));
-		p.setBorder(BorderFactory.createEmptyBorder(5, 7, 5, 7));
+		JPanel p = new JPanel(new BorderLayout(6, 0));
+		p.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.add(iconLabel(d.sell4Id, 36), BorderLayout.WEST);
 		JPanel top = new JPanel(new BorderLayout(6, 0));
 		top.setOpaque(false);
-		JLabel name = new JLabel(d.name);
+		JLabel name = new JLabel(trunc(d.name, 18));
+		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		name.setForeground(ColorScheme.TEXT_COLOR);
 		JLabel prof = new JLabel("+" + gp(d.profitPer4) + "/ea");
+		prof.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
 		prof.setHorizontalAlignment(JLabel.RIGHT);
 		top.add(name, BorderLayout.CENTER);
 		top.add(prof, BorderLayout.EAST);
-		JLabel sub = new JLabel("buy " + d.buyLabel + " @" + gp(d.buyPrice) + "  →  sell (4) @" + gp(d.sell4));
+		JLabel sub = new JLabel("buy " + trunc(d.buyLabel, 14) + " @" + gp(d.buyPrice) + " → (4) @" + gp(d.sell4));
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 		JPanel col = new JPanel();
@@ -990,40 +1100,36 @@ class GeflipPanel extends PluginPanel
 		top.setAlignmentX(Component.LEFT_ALIGNMENT); sub.setAlignmentX(Component.LEFT_ALIGNMENT);
 		col.add(top); col.add(sub);
 		p.add(col, BorderLayout.CENTER);
-		name.setToolTipText("Buy " + d.buyLabel + " at ~" + gp(d.buyPrice) + ", decant to (4) free at Bob Barter, "
+		p.setToolTipText("Buy " + d.buyLabel + " at ~" + gp(d.buyPrice) + ", decant to (4) free at Bob Barter, "
 			+ "sell (4) at ~" + gp(d.sell4) + " → +" + gp(d.profitPer4) + " each after tax. Click to copy the name.");
-		final String copyName = d.name;
-		p.addMouseListener(new java.awt.event.MouseAdapter()
-		{
-			@Override public void mouseClicked(java.awt.event.MouseEvent e)
-			{
-				java.awt.datatransfer.StringSelection sel = new java.awt.datatransfer.StringSelection(copyName);
-				java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, sel);
-				status.setText("copied \"" + copyName + "\"");
-			}
-		});
-		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
+		p.addMouseListener(copyOnClick(d.name));
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
 	}
 
-	private JPanel rowFor(GeflipScanner.Flip f)
+	/** THE flip row: [icon 36] · bold name + colour-coded gp/h · buy→sell +margin×qty · optional
+	 *  sparkline (grounded picks) · limit/basket chips · a slim trust ProgressBar as the bottom bar. */
+	private JPanel flipRow(GeflipScanner.Flip f)
 	{
-		JPanel p = new JPanel(new BorderLayout(0, 2));
-		p.setBorder(BorderFactory.createEmptyBorder(5, 7, 5, 7));
+		JPanel p = new JPanel(new BorderLayout(6, 0));
+		p.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.add(iconLabel(f.id, 36), BorderLayout.WEST);
 
-		// --- line 1: item name (left, clips if long) + gp/hour headline (right) ---
+		// --- line 1: flag tags + item name (left, truncated) + gp/hour headline (right) ---
 		JPanel top = new JPanel(new BorderLayout(6, 0));
 		top.setOpaque(false);
-		String tag = (f.personalized && f.yourWinRate >= 0.6 ? "◆ " : "") + (f.basketQty > 0 ? "★ " : "")
+		String tag = (f.personalized && f.yourWinRate >= 0.6 ? "◆ " : "")
 			+ (f.dumping ? "🔥 " : "") + (f.decliner ? "⚠ " : "")
 			+ (f.unstable ? "⚡ " : "") + (f.tsChecked && f.marginPersist >= 0.7 ? "✓ " : "");
-		JLabel name = new JLabel(tag + f.name);
+		JLabel name = new JLabel(tag + trunc(f.name, 15));
+		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		name.setForeground(f.decliner ? ColorScheme.PROGRESS_ERROR_COLOR
 			: f.unstable ? ColorScheme.PROGRESS_INPROGRESS_COLOR
 			: f.dumping ? ColorScheme.BRAND_ORANGE : ColorScheme.TEXT_COLOR);
 		JLabel gph = new JLabel(gp((long) f.expGph) + "/h");
+		gph.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		// colour the headline by fill confidence — the honest signal: a fat gp/h in orange/red
 		// means it probably won't fill. Green = reliable, orange = so-so, red = thin.
 		gph.setForeground(f.wontFill || f.fillProb < 0.4 ? ColorScheme.PROGRESS_ERROR_COLOR
@@ -1032,22 +1138,10 @@ class GeflipPanel extends PluginPanel
 		top.add(name, BorderLayout.CENTER);
 		top.add(gph, BorderLayout.EAST);
 
-		// --- line 2: buy -> sell, margin, qty, and the ESTIMATED FILL TIME so the
-		// gp/h rate isn't a mystery (a "~2d" item won't earn its hourly rate soon) ---
+		// --- line 2: buy -> sell, margin×qty, and the ESTIMATED FILL TIME so the gp/h isn't a mystery ---
 		String ft = fillTxt(f.fillHours);
-		// show the buy limit is TRACKED: if you've already bought some this 4h window, show what's left
-		// (+ the reset timer). If it's fully spent the scanner drops the item entirely, so a shown row with
-		// limitLeft means you can still buy that many.
-		String reset = f.resetMins > 0
-			? "   ↻" + (f.resetMins >= 60 ? (f.resetMins / 60) + "h" : f.resetMins + "m")
-				+ (f.limitLeft >= 0 ? " (" + gp(f.limitLeft) + " left)" : "")
-			: "";
-		String fill = f.wontFill ? "   ⏳low" : "   " + Math.round(f.fillProb * 100) + "% fill";
-		String bask = f.basketQty > 0 ? "   ★×" + f.basketQty : "";   // suggested slot size (#3)
-		String trust = f.trust >= 0 ? "   🛡" + f.trust : "";        // "is this margin real?" 0-100
 		JLabel sub = new JLabel(gp(f.buy) + " → " + gp(f.sell)
-			+ "   +" + gp(f.margin) + "×" + f.quantity + " = +" + gp((long) f.margin * f.quantity)
-			+ (ft.isEmpty() ? "" : "   " + ft) + reset + fill + bask + trust);
+			+ "  +" + gp(f.margin) + "×" + f.quantity + (ft.isEmpty() ? "" : "  " + ft));
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 
@@ -1058,6 +1152,32 @@ class GeflipPanel extends PluginPanel
 		sub.setAlignmentX(Component.LEFT_ALIGNMENT);
 		col.add(top);
 		col.add(sub);
+
+		// #6 sparkline — only the grounded top picks carry a ~2h price series (bounded, so it stays cheap)
+		if (f.series != null && f.series.length >= 2)
+		{
+			Spark spark = new Spark(f.series, PluginPanel.PANEL_WIDTH - 70, 20);
+			spark.setAlignmentX(Component.LEFT_ALIGNMENT);
+			col.add(Box.createRigidArea(new Dimension(0, 2)));
+			col.add(spark);
+		}
+
+		// chips: buy-limit reset (#5) + suggested basket size (#3) + a thin-fill warning — visuals, not text noise
+		JPanel chips = chipRow();
+		if (f.resetMins > 0)
+			chips.add(chip("↻ " + fmtMins(f.resetMins) + (f.limitLeft >= 0 ? " · " + gp(f.limitLeft) + " left" : ""),
+				ColorScheme.PROGRESS_INPROGRESS_COLOR));
+		if (f.basketQty > 0) chips.add(chip("★ ×" + f.basketQty, ColorScheme.BRAND_ORANGE));
+		if (f.wontFill) chips.add(chip("⏳ thin", ColorScheme.PROGRESS_ERROR_COLOR));
+		if (chips.getComponentCount() > 0) col.add(chips);
+
+		// #4 trust as the thin bottom bar (green ≥70 / orange 45-69 / red <45) — "is this margin REAL?"
+		if (f.trust >= 0)
+		{
+			col.add(Box.createRigidArea(new Dimension(0, 3)));
+			col.add(trustBar(f.trust));
+		}
+
 		p.add(col, BorderLayout.CENTER);
 
 		// full plain-English explanation of this row on hover (escape name/why — this is an HTML label)
@@ -1095,16 +1215,8 @@ class GeflipPanel extends PluginPanel
 		name.setToolTipText(tip.toString());
 
 		// click = copy the item name for the GE search (no game input)
-		p.addMouseListener(new java.awt.event.MouseAdapter()
-		{
-			@Override public void mouseClicked(java.awt.event.MouseEvent e)
-			{
-				java.awt.datatransfer.StringSelection sel = new java.awt.datatransfer.StringSelection(f.name);
-				java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, sel);
-				status.setText("copied \"" + f.name + "\"");
-			}
-		});
-		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
+		p.addMouseListener(copyOnClick(f.name));
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
 	}
@@ -1146,5 +1258,276 @@ class GeflipPanel extends PluginPanel
 		if (h < 1) return "~" + Math.max(1, (int) Math.round(h * 60)) + "m";
 		if (h < 24) return "~" + (h < 9.5 ? String.format("%.1f", h) : "" + (int) Math.round(h)) + "h";
 		return "~" + String.format("%.1f", h / 24) + "d";
+	}
+
+	// ==================== house-style row-grammar helpers (match the Coach panel) ====================
+
+	/** ⭐ BUY THESE NOW — the ★-basket picks as a 2x-weight hero card: the max-profit slate you can fund +
+	 *  fill this cycle, with a header line showing the TOTAL expected gp across the slots. THE headline. */
+	private JPanel heroCard(List<GeflipScanner.Flip> basket, long total)
+	{
+		JPanel card = new JPanel();
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+		card.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		card.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(2, 0, 0, 0, ColorScheme.BRAND_ORANGE),
+			BorderFactory.createEmptyBorder(6, 7, 7, 7)));
+		card.setAlignmentX(Component.LEFT_ALIGNMENT);
+		card.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, Integer.MAX_VALUE));
+
+		JLabel h = new JLabel("⭐ BUY THESE NOW");
+		h.setFont(FontManager.getRunescapeBoldFont());
+		h.setForeground(ColorScheme.BRAND_ORANGE);
+		h.setAlignmentX(Component.LEFT_ALIGNMENT);
+		card.add(h);
+		JLabel tot = new JLabel("≈ +" + gp(total) + " this cycle · " + basket.size() + (basket.size() == 1 ? " slot" : " slots"));
+		tot.setFont(FontManager.getRunescapeSmallFont());
+		tot.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		tot.setAlignmentX(Component.LEFT_ALIGNMENT);
+		tot.setToolTipText("The full ★-basket this scan: each pick sized to your cash + buy-limit, summed to the "
+			+ "expected profit if the whole slate buys and sells this 4h cycle. This is the max-profit plan — buy these first.");
+		card.add(tot);
+		card.add(gap());
+		for (GeflipScanner.Flip f : basket) { card.add(heroRow(f)); card.add(Box.createRigidArea(new Dimension(0, 3))); }
+		return card;
+	}
+
+	/** One basket pick inside the hero card: icon · name · "buy N @buy → sell @sell" · expected profit (+ spark). */
+	private JPanel heroRow(GeflipScanner.Flip f)
+	{
+		JPanel p = new JPanel(new BorderLayout(8, 0));
+		p.setBorder(BorderFactory.createEmptyBorder(4, 5, 4, 5));
+		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		p.add(iconLabel(f.id, 40), BorderLayout.WEST);
+		JPanel col = new JPanel();
+		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+		col.setOpaque(false);
+		JPanel top = new JPanel(new BorderLayout(6, 0));
+		top.setOpaque(false);
+		JLabel name = new JLabel(trunc(f.name, 16));
+		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		name.setForeground(ColorScheme.TEXT_COLOR);
+		JLabel prof = new JLabel("+" + gp((long) f.margin * f.basketQty));
+		prof.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		prof.setHorizontalAlignment(JLabel.RIGHT);
+		top.add(name, BorderLayout.CENTER); top.add(prof, BorderLayout.EAST);
+		top.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JLabel sub = new JLabel("buy " + f.basketQty + " @" + gp(f.buy) + " → sell @" + gp(f.sell));
+		sub.setFont(FontManager.getRunescapeSmallFont());
+		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+		col.add(top); col.add(sub);
+		if (f.series != null && f.series.length >= 2)
+		{
+			Spark spark = new Spark(f.series, PluginPanel.PANEL_WIDTH - 74, 18);
+			spark.setAlignmentX(Component.LEFT_ALIGNMENT);
+			col.add(Box.createRigidArea(new Dimension(0, 2)));
+			col.add(spark);
+		}
+		p.add(col, BorderLayout.CENTER);
+		p.setToolTipText("Put " + f.basketQty + " of " + esc(f.name) + " in a GE slot: buy @" + gp(f.buy)
+			+ ", sell @" + gp(f.sell) + " → +" + gp((long) f.margin * f.basketQty) + " expected this cycle. Click to copy.");
+		p.addMouseListener(copyOnClick(f.name));
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return p;
+	}
+
+	/** A fixed-size item-icon label. getImage is safe off the client thread (a placeholder that addTo fills
+	 *  in on the EDT). id ≤ 0 → an empty cell, so the row grammar stays aligned. NEVER new ImageIcon (blank bug). */
+	private JLabel iconLabel(int itemId, int size)
+	{
+		JLabel l = new JLabel();
+		Dimension d = new Dimension(size, size);
+		l.setPreferredSize(d); l.setMinimumSize(d); l.setMaximumSize(d);
+		l.setHorizontalAlignment(SwingConstants.CENTER);
+		l.setVerticalAlignment(SwingConstants.CENTER);
+		if (itemId > 0 && itemManager != null)
+		{
+			AsyncBufferedImage img = itemManager.getImage(itemId, 1, false);
+			img.addTo(l);
+		}
+		return l;
+	}
+
+	/** A slim colour-coded trust ProgressBar (green ≥70 / orange 45-69 / red <45) — the "is this margin REAL?"
+	 *  score as a visual instead of "🛡N" text. Doubles as the row's thin bottom bar. */
+	private static ProgressBar trustBar(int trust)
+	{
+		int t = Math.max(0, Math.min(100, trust));
+		ProgressBar bar = new ProgressBar();
+		bar.setMaximumValue(100);
+		bar.setValue(t);
+		bar.setCenterLabel("🛡 " + t);
+		bar.setForeground(t >= 70 ? ColorScheme.PROGRESS_COMPLETE_COLOR
+			: t >= 45 ? ColorScheme.BRAND_ORANGE : ColorScheme.PROGRESS_ERROR_COLOR);
+		bar.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		bar.setPreferredSize(new Dimension(PluginPanel.PANEL_WIDTH - 60, 14));
+		bar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 14));
+		bar.setAlignmentX(Component.LEFT_ALIGNMENT);
+		bar.setToolTipText("Trust " + t + "/100 — is this margin REAL? Blends how long the margin actually held, "
+			+ "fill probability, and price stability. " + (t >= 70 ? "Trustworthy." : t >= 45 ? "So-so — check the fill." : "Shaky — treat with caution."));
+		return bar;
+	}
+
+	/** A small colour-coded chip (a compact pill of context: buy-limit reset, basket size, thin-fill). */
+	private static JLabel chip(String text, Color fg)
+	{
+		JLabel l = new JLabel(text);
+		l.setFont(FontManager.getRunescapeSmallFont());
+		l.setForeground(fg);
+		l.setOpaque(true);
+		l.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		l.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 4));
+		return l;
+	}
+
+	/** A left-aligned, height-capped row that holds chips without stretching the card. */
+	private static JPanel chipRow()
+	{
+		JPanel r = new JPanel(new FlowLayout(FlowLayout.LEFT, 3, 2));
+		r.setOpaque(false);
+		r.setAlignmentX(Component.LEFT_ALIGNMENT);
+		r.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, 20));
+		return r;
+	}
+
+	/** A clipboard-copy click handler shared by every copyable row (copies the item name for the GE search). */
+	private java.awt.event.MouseAdapter copyOnClick(String nameToCopy)
+	{
+		return new java.awt.event.MouseAdapter()
+		{
+			@Override public void mouseClicked(java.awt.event.MouseEvent e)
+			{
+				java.awt.datatransfer.StringSelection sel = new java.awt.datatransfer.StringSelection(nameToCopy);
+				java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, sel);
+				status.setText("copied \"" + nameToCopy + "\"");
+			}
+		};
+	}
+
+	private static String fmtMins(int m) { return m >= 60 ? (m / 60) + "h" : m + "m"; }
+
+	private static Component gap() { return Box.createRigidArea(new Dimension(0, 5)); }
+
+	/** An orange section header. */
+	private static JLabel header(String t)
+	{
+		JLabel l = new JLabel(wrap(t));
+		l.setForeground(ColorScheme.BRAND_ORANGE);
+		l.setBorder(BorderFactory.createEmptyBorder(6, 1, 2, 1));
+		l.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return l;
+	}
+
+	/** A muted, width-wrapped hint line. */
+	private static JLabel hint(String t)
+	{
+		JLabel l = new JLabel(wrap(t));
+		l.setFont(FontManager.getRunescapeSmallFont());
+		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		l.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+		l.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return l;
+	}
+
+	/** Wrap text to the sidebar width so long lines WRAP instead of clipping off the right edge. */
+	private static String wrap(String t) { return "<html><div style='width:176px'>" + esc(t) + "</div></html>"; }
+
+	/** Truncate a single-line label so the row grammar stays tight; full text lives in the tooltip. */
+	private static String trunc(String s, int max)
+	{
+		if (s == null) return "";
+		return s.length() <= max ? s : s.substring(0, Math.max(1, max - 1)).trim() + "…";
+	}
+
+	/** Add up to topN rows, then (if more) a "▾ show N more" toggle that reveals the rest in place, so a long
+	 *  list is never a 40-row wall. spaced=true inserts a breathing gap between card rows. */
+	private void addTopN(JPanel box, List<? extends JComponent> rows, int topN, boolean spaced)
+	{
+		int n = rows.size();
+		int show = Math.min(topN, n);
+		for (int i = 0; i < show; i++) { box.add(rows.get(i)); if (spaced) box.add(gap()); }
+		if (n > topN)
+		{
+			JPanel more = new JPanel();
+			more.setLayout(new BoxLayout(more, BoxLayout.Y_AXIS));
+			more.setOpaque(false);
+			more.setAlignmentX(Component.LEFT_ALIGNMENT);
+			more.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, Integer.MAX_VALUE));
+			for (int i = topN; i < n; i++) { more.add(rows.get(i)); if (spaced) more.add(gap()); }
+			more.setVisible(false);
+			final int hidden = n - topN;
+			JButton toggle = linkBtn("▾ show " + hidden + " more");
+			toggle.addActionListener(e ->
+			{
+				boolean v = !more.isVisible();
+				more.setVisible(v);
+				toggle.setText(v ? "▴ show less" : "▾ show " + hidden + " more");
+				box.revalidate(); box.repaint();
+			});
+			box.add(toggle);
+			box.add(more);
+		}
+	}
+
+	private static JButton linkBtn(String t)
+	{
+		JButton b = new JButton(t);
+		b.setFont(FontManager.getRunescapeSmallFont());
+		b.setForeground(ColorScheme.BRAND_ORANGE);
+		b.setFocusPainted(false);
+		b.setContentAreaFilled(false);
+		b.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
+		b.setHorizontalAlignment(SwingConstants.LEFT);
+		b.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+		b.setAlignmentX(Component.LEFT_ALIGNMENT);
+		b.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, 22));
+		return b;
+	}
+
+	/** #6 — a tiny inline price sparkline (antialiased, green-up / red-down). Guards length &lt; 2 and a flat
+	 *  series (draws a mid-line). Painted from the grounded pick's recent ~2h mids. */
+	private static final class Spark extends JComponent
+	{
+		private final int[] s;
+		Spark(int[] s, int w, int h)
+		{
+			this.s = s;
+			Dimension d = new Dimension(Math.max(20, w), h);
+			setPreferredSize(d); setMinimumSize(d); setMaximumSize(d);
+			setOpaque(false);
+		}
+		@Override protected void paintComponent(Graphics g)
+		{
+			if (s == null || s.length < 2) return;
+			int w = getWidth(), h = getHeight(), pad = 2;
+			int min = s[0], max = s[0];
+			for (int v : s) { if (v < min) min = v; if (v > max) max = v; }
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			boolean up = s[s.length - 1] >= s[0];
+			g2.setColor(up ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.PROGRESS_ERROR_COLOR);
+			g2.setStroke(new BasicStroke(1.4f));
+			double range = max - min;
+			if (range <= 0)   // flat series — a calm mid-line
+			{
+				g2.setColor(ColorScheme.LIGHT_GRAY_COLOR);
+				int y = h / 2;
+				g2.drawLine(pad, y, w - pad, y);
+				g2.dispose();
+				return;
+			}
+			int n = s.length, prevX = 0, prevY = 0;
+			for (int i = 0; i < n; i++)
+			{
+				int x = pad + (int) Math.round((w - 2.0 * pad) * (i / (double) (n - 1)));
+				int y = pad + (int) Math.round((h - 2.0 * pad) * (1 - (s[i] - min) / range));
+				if (i > 0) g2.drawLine(prevX, prevY, x, y);
+				prevX = x; prevY = y;
+			}
+			g2.dispose();
+		}
 	}
 }
