@@ -198,9 +198,9 @@ public class GeflipPlugin extends Plugin
 	/** An item you're holding (bought, not yet sold) + where to list it to sell. */
 	static final class Hold
 	{
-		final int id; final String name; final int qty; final long avgCost; final int sellHint; final boolean exempt;
-		Hold(int id, String name, int qty, long avgCost, int sellHint, boolean exempt)
-		{ this.id = id; this.name = name; this.qty = qty; this.avgCost = avgCost; this.sellHint = sellHint; this.exempt = exempt; }
+		final int id; final String name; final int qty; final long avgCost; final int sellHint; final boolean exempt; final int listed;
+		Hold(int id, String name, int qty, long avgCost, int sellHint, boolean exempt, int listed)
+		{ this.id = id; this.name = name; this.qty = qty; this.avgCost = avgCost; this.sellHint = sellHint; this.exempt = exempt; this.listed = listed; }
 	}
 
 	/**
@@ -224,8 +224,10 @@ public class GeflipPlugin extends Plugin
 			// consistent with the session "held" total
 			long avg = e.getValue()[1] / e.getValue()[0];
 			// subtract what you've ALREADY LISTED for sale — that's not "to sell" anymore.
-			// (only actively-SELLING units; a CANCELLED sell is back in your hands.)
-			qty -= listedForSaleQty(id);
+			// (only actively-SELLING units; a CANCELLED sell is back in your hands.) Keep the listed count
+			// so the row can SHOW it ("×200 · 100 listed") — makes the auto-tracking visible.
+			int listed = listedForSaleQty(id);
+			qty -= listed;
 			if (qty <= 0) continue;
 			if (invKnown)
 			{
@@ -238,7 +240,7 @@ public class GeflipPlugin extends Plugin
 				else if (have < qty) qty = have;   // some sold — show only what's actually in hand
 			}
 			String nm = scanner.nameFor(id);
-			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id), scanner.isExempt(id)));
+			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id), scanner.isExempt(id), listed));
 		}
 		// OPT-IN: also surface tradeable items sitting in your INVENTORY that the flip ledger never tracked
 		// you buying (drops, older buys, a bailed flip). OFF by default because it also catches PvM
@@ -257,7 +259,7 @@ public class GeflipPlugin extends Plugin
 				if (nm == null) continue;                              // not on the GE mapping ⇒ can't sell it there
 				int qty = ie.getValue();   // inventory count ALREADY excludes units listed on the GE (listing
 				if (qty <= 0) continue;    // moves them out of your bag) — don't subtract listedForSaleQty again
-				out.add(new Hold(id, nm, qty, -1, scanner.sellHint(id), scanner.isExempt(id)));   // −1 = cost untracked
+				out.add(new Hold(id, nm, qty, -1, scanner.sellHint(id), scanner.isExempt(id), 0));   // −1 = cost untracked; inv already excludes listed
 			}
 		}
 		out.sort((a, b) -> Long.compare((long) b.qty * Math.max(0, b.avgCost), (long) a.qty * Math.max(0, a.avgCost)));

@@ -424,9 +424,19 @@ const NATURE_RUNE = 561;
 
 /* ---------------------------- tax ---------------------------- */
 const TAX_CAP = 5_000_000;
-const EXEMPT = new Set(['old school bond','chisel','gardening trowel','glassblowing pipe',
-  'hammer','needle','pestle and mortar','rake','saw','secateurs','seed dibber','shears',
-  'spade','watering can']);
+// Full current GE tax-exempt list (45 items, OSRS Wiki): bond + starter tools + the May-2025 additions
+// (early ammo, mind rune, energy potions, 13 foods, 8 teleport tablets, 2 charged travel jewellery).
+// Stored WITHOUT a charge/dose suffix; isExempt() strips a trailing "(n)" so Energy potion(4) /
+// Games necklace(8) / Ring of dueling(8) resolve to their exempt base. A stale list here silently
+// understates margin + P&L on staples (lobsters, arrows, teleports) — kept complete.
+const EXEMPT = new Set(['old school bond','chisel','gardening trowel','glassblowing pipe','hammer','needle',
+  'pestle and mortar','rake','saw','secateurs','seed dibber','shears','spade','watering can',
+  'bronze arrow','iron arrow','steel arrow','bronze dart','iron dart','steel dart','mind rune','energy potion',
+  'lobster','salmon','tuna','shrimps','bread','cake','cooked chicken','cooked meat','herring','mackerel',
+  'meat pie','pike','bass','varrock teleport','lumbridge teleport','falador teleport','camelot teleport',
+  'ardougne teleport','kourend castle teleport','civitas illa fortis teleport','teleport to house',
+  'games necklace','ring of dueling']);
+const isExempt = name => name!=null && EXEMPT.has(String(name).trim().toLowerCase().replace(/\s*\(\d+\)$/,''));
 // Exact integer math: price*2 stays < 2^53 for any gp value, so floor is exact.
 const saleTax = (sell, exempt) => (exempt || sell < 50) ? 0 : Math.min(Math.floor(sell*2/100), TAX_CAP);
 // Smallest meaningful price step for jumping the offer queue. The GE matches

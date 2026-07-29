@@ -1174,6 +1174,10 @@ class GeflipScanner
 	private void applyTsResult(Flip f, double persist, double dir, double dayDir, double volCV, double zScore)
 	{
 		f.marginPersist = persist; f.tsDir = dir; f.tsDayDir = dayDir; f.volCV = volCV; f.zScore = zScore; f.tsChecked = true;
+		// A "dip" that's STILL falling (last 2h) or bleeding over a day is a FALLING KNIFE, not a buy — a dip
+		// is only a buy signal when it's cheap AND stabilising. Un-flag it as a dip + mark it a decliner so we
+		// never surface "buy-the-dip" on something that's actively crashing.
+		if (f.dumping && (dir < -0.02 || dayDir < -0.05)) { f.dumping = false; f.decliner = true; }
 		double tsConf = 0.4 + 0.6 * persist;          // 0.4 (never present) .. 1.0 (always present)
 		if (dir < -0.03) tsConf *= 0.7;               // falling over the last 2h
 		if (dayDir < -0.05) tsConf *= 0.9;            // #4 slow multi-hour bleed (mild demotion, not a reject)

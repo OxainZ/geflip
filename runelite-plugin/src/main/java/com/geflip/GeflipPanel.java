@@ -701,7 +701,7 @@ class GeflipPanel extends PluginPanel
 		JPanel p = new JPanel(new BorderLayout(0, 1));
 		p.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
 		p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		JLabel name = new JLabel(h.name + "  ×" + h.qty);
+		JLabel name = new JLabel(h.name + "  ×" + h.qty + (h.listed > 0 ? "  (" + h.listed + " already listed)" : ""));
 		name.setForeground(ColorScheme.TEXT_COLOR);
 		String line2;
 		if (h.sellHint > 0 && h.avgCost < 0)
@@ -814,10 +814,12 @@ class GeflipPanel extends PluginPanel
 			else
 			{
 				int tick = GeflipScanner.tickSize(o.sellHint);
+				// EXACT prices here (not the 0.1k-rounded gp()): a real ~50gp reprice must never read as
+				// "4.2k → 4.2k". Only warn when the actual numbers differ meaningfully.
 				if (o.price > o.sellHint + tick)
-				{ guide = "⚠ reprice ↓ to ~" + gp(o.sellHint) + "  (buyers are below your " + gp(o.price) + ")"; gcol = ColorScheme.PROGRESS_ERROR_COLOR; }
+				{ guide = "⚠ reprice ↓ to " + exact(o.sellHint) + " (you're at " + exact(o.price) + ", −" + exact(o.price - o.sellHint) + ")"; gcol = ColorScheme.PROGRESS_ERROR_COLOR; }
 				else
-					guide = "sell target ~" + gp(o.sellHint) + " — your price is fine";
+					guide = "sell target ~" + exact(o.sellHint) + " — your price is fine";
 			}
 		}
 		JPanel col = new JPanel();
@@ -1122,6 +1124,10 @@ class GeflipPanel extends PluginPanel
 		if (a >= 1000) return sign(v) + String.format("%.1fk", a / 1e3);
 		return v + "";
 	}
+
+	/** Exact gp with thousands separators — for reprice guidance where a ~50gp gap must be visible
+	 *  (the abbreviated gp() rounds to 0.1k and would show a real reprice as "4.2k → 4.2k"). */
+	private static String exact(long v) { return String.format("%,d", v); }
 	private static String sign(long v) { return v < 0 ? "-" : ""; }
 	private static String pct(double v) { return String.format("%+.1f%%", v * 100); }
 	private static String fillTxt(double h)
