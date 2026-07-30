@@ -51,6 +51,7 @@ class CoachPanel extends PluginPanel
 	private final JLabel summary = new JLabel(" ");
 	private final JLabel sessionStats = new JLabel(" ");
 	private final JPanel nextBox = new JPanel();
+	private final JPanel nowExtraBox = new JPanel();   // dailies + permanent-unlocks + "so close" (on the Now tab)
 	private final JPanel goalsBox = new JPanel();
 	private final JPanel blockedBox = new JPanel();
 	private final JPanel pathBox = new JPanel();
@@ -125,14 +126,14 @@ class CoachPanel extends PluginPanel
 		tabMoney.addActionListener(e -> show("money"));
 		tabAsk.addActionListener(e -> show("ask"));
 
-		for (JPanel p : new JPanel[]{ nextBox, goalsBox, blockedBox, pathBox, farmBox, farmStepsBox, riskBox, skillsBox, skillProgBox })
+		for (JPanel p : new JPanel[]{ nextBox, nowExtraBox, goalsBox, blockedBox, pathBox, farmBox, farmStepsBox, riskBox, skillsBox, skillProgBox })
 		{
 			p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 			p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		}
 
 		// Now = the ranked action list (hero + top-N) above your live death-risk read
-		cards.add(scroll(vstack(nextBox, gap(), riskBox)), "now");
+		cards.add(scroll(vstack(nextBox, gap(), nowExtraBox, gap(), riskBox)), "now");
 		// Goals = tracked goals + the focus PATH + the long-term BLOCKED arcs, one scannable column
 		cards.add(scroll(vstack(goalsBox, gap(), pathBox, gap(), blockedBox)), "goals");
 		// Skills = the road-to-99 progress bars (kept — the one part that already reads well)
@@ -311,6 +312,34 @@ class CoachPanel extends PluginPanel
 			}
 			skillsBox.revalidate();
 			skillsBox.repaint();
+		});
+	}
+
+	/** Now-tab extras: dailies + permanent-unlocks + "SO CLOSE" (re-homed here after the Skills-tab strip).
+	 *  Same "*"-header rendering + top-N collapse as setSkills. */
+	void setNowExtras(List<String> lines)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			nowExtraBox.removeAll();
+			if (lines != null && !lines.isEmpty())
+			{
+				List<JComponent> comps = new ArrayList<>();
+				for (String s : lines)
+				{
+					if (s.isEmpty()) continue;
+					boolean head = s.startsWith("*");
+					JLabel l = new JLabel(wrap(head ? s.substring(1) : s));
+					l.setFont(FontManager.getRunescapeSmallFont());
+					l.setForeground(head ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
+					l.setBorder(BorderFactory.createEmptyBorder(head ? 6 : 1, 6, 1, 6));
+					l.setAlignmentX(Component.LEFT_ALIGNMENT);
+					comps.add(l);
+				}
+				addTopN(nowExtraBox, comps, 12, false);
+			}
+			nowExtraBox.revalidate();
+			nowExtraBox.repaint();
 		});
 	}
 

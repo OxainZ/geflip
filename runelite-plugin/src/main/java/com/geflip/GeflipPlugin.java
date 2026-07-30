@@ -114,6 +114,7 @@ public class GeflipPlugin extends Plugin
 	private static final long BUY_WINDOW_MS = 4 * 60 * 60 * 1000L;
 	// the last ranked flips, shared so the web app/phone shows exactly what the panel shows
 	private volatile java.util.List<GeflipScanner.Flip> lastFlips = java.util.Collections.emptyList();
+	private volatile long lastGoodScanMs = 0;   // when the last SUCCESSFUL scan finished — for the stale-on-failure label
 	// immutable snapshot of your GE offers, built ONLY on the client thread and published
 	// here so the bridge/cloud (other threads) never touch live client objects or slots[]
 	private volatile java.util.List<Offer> offerSnapshot = java.util.Collections.emptyList();
@@ -938,6 +939,7 @@ public class GeflipPlugin extends Plugin
 				for (GeflipScanner.Flip f : flips) f.resetMins = limitResetMins(f.id);   // buy-limit timer
 				if (p != null) p.setBankroll(bank, config.autoBankroll() && liveGp >= 0);
 				lastFlips = flips;                       // share with the bridge/cloud
+				lastGoodScanMs = System.currentTimeMillis();   // mark this scan good (for the stale-on-failure label)
 				// hour-of-week logger: record the current global market activity, persist, and surface it
 				int bin = MarketClock.hourOfWeekUtc();
 				long volIdx = scanner.globalVolumeIndex();
@@ -961,7 +963,17 @@ public class GeflipPlugin extends Plugin
 			catch (Exception e)
 			{
 				log.warn("geflip scan failed", e);
-				if (p != null) p.setStatus("scan failed — check connection");
+				// don't leave the OLD flips looking live — say they're stale + how old, so you never act on
+				// minutes-old prices thinking they're current.
+				if (p != null)
+				{
+					if (lastGoodScanMs > 0)
+					{
+						long ageMin = (System.currentTimeMillis() - lastGoodScanMs) / 60000;
+						p.setStatus("⚠ prices STALE (last good " + ageMin + "m ago) — fetch failed, showing old flips");
+					}
+					else p.setStatus("scan failed — check connection");
+				}
 			}
 			finally { scanning.set(false); }
 			checkDumps();  // warn if anything you HOLD has crashed below your buy

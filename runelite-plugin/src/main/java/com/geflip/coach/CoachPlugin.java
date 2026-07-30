@@ -187,8 +187,13 @@ public class CoachPlugin extends Plugin
 				farmLines.addAll(CoachFarm.run(farmRunType, st, farmElapsedMin()));
 			}
 			p.setFarmSteps(config.farmingHelper() ? farmSteps(st) : java.util.Collections.emptyList());
-			p.setSkills(skillLines(st));   // the text sections (dailies/unlocks/so-close/quickest/money)
+			p.setSkills(skillLines(st));   // Money tab: quickest-99 + gp/hr router
 			p.setSkillProgress(skillProgress(st));   // road-to-99 as native progress-bar rows
+			// Now tab: the compounding dailies + permanent unlocks + "so close" (re-homed after the Skills strip)
+			List<String> nowExtras = new ArrayList<>(CoachDailies.lines(st));
+			nowExtras.addAll(CoachUnlocks.lines(st));
+			nowExtras.addAll(almostRadar(st));
+			p.setNowExtras(nowExtras);
 			publishAccountNeeds(st);       // cross-reference: hand the flipper your account shopping list
 			p.setSummary(summary);
 			p.setSessionStats(sess);
