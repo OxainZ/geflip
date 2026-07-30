@@ -841,7 +841,7 @@ class GeflipPanel extends PluginPanel
 		keep.addActionListener(e -> { if (onPersonalUse != null) onPersonalUse.accept(h.id); });
 		actions.add(sold); actions.add(edit); actions.add(keep);
 		p.add(actions, BorderLayout.EAST);
-		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));   // fit the panel — no h-scroll to reach the buttons
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
 	}
@@ -928,7 +928,7 @@ class GeflipPanel extends PluginPanel
 		String age = o.ageSec >= 3600 ? "~" + (o.ageSec / 3600) + "h" : "~" + Math.max(1, o.ageSec / 60) + "m";
 		l.setToolTipText(o.stale ? "Unfilled for " + age + " — the price moved; reprice it."
 			: (buy ? "Once this buys, sell it at ~" + gp(o.sellHint) : "Market sell price is ~" + gp(o.sellHint)));
-		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.getPreferredSize().height));
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));   // fit the panel — no h-scroll
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
 	}
@@ -967,13 +967,13 @@ class GeflipPanel extends PluginPanel
 				rows.add(gap());
 			}
 			if (flipRows.isEmpty()) rows.add(hint("no flips right now — hit Rescan (or widen your filters in config)."));
-			else addTopN(rows, flipRows, 10, true);
+			else addTopN(rows, flipRows, flipRows.size(), true);   // Flips = the money surface → show them ALL (no 10-cap)
 			combined.setText(slots > 0 ? "≈ " + gp((long) top) + "/hr across " + slots + " slots" : " ");
 			combined.setToolTipText("Your realistic earn rate = the flips you can actually run at once — capped "
 				+ "at your bankroll (" + gp(bank) + ") and skipping ones that likely won't fill. Raise your "
 				+ "Bankroll/coins to fund bigger or more slots.");
 			if (dips == 0) dipsRows.add(hint("no dips right now — nothing's trading below its norm."));
-			else addTopN(dipsRows, dipRows, 10, true);
+			else addTopN(dipsRows, dipRows, dipRows.size(), true);   // show all dips too
 			tabDips.setText(dips > 0 ? "Dips (" + dips + ")" : "Dips");
 			rows.revalidate(); rows.repaint();
 			dipsRows.revalidate(); dipsRows.repaint();
