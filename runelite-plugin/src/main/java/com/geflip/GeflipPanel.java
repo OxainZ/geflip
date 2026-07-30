@@ -1141,8 +1141,10 @@ class GeflipPanel extends PluginPanel
 
 		// --- line 2: buy -> sell, margin×qty, and the ESTIMATED FILL TIME so the gp/h isn't a mystery ---
 		String ft = fillTxt(f.fillHours);
-		JLabel sub = new JLabel(gp(f.buy) + " → " + gp(f.sell)
-			+ "  +" + gp(f.margin) + "×" + f.quantity + (ft.isEmpty() ? "" : "  " + ft));
+		// WRAP + EXACT prices so the buy/sell you actually type is ALWAYS fully visible (never clipped by the
+		// 225px width) — this is the info you need to place the trade.
+		JLabel sub = new JLabel("<html><div style='width:165px'>Buy " + exact(f.buy) + " → Sell " + exact(f.sell)
+			+ " · +" + exact(f.margin) + " ea ×" + f.quantity + (ft.isEmpty() ? "" : " · " + ft) + "</div></html>");
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 
@@ -1314,7 +1316,8 @@ class GeflipPanel extends PluginPanel
 		prof.setHorizontalAlignment(JLabel.RIGHT);
 		top.add(name, BorderLayout.CENTER); top.add(prof, BorderLayout.EAST);
 		top.setAlignmentX(Component.LEFT_ALIGNMENT);
-		JLabel sub = new JLabel("buy " + f.basketQty + " @" + gp(f.buy) + " → sell @" + gp(f.sell));
+		JLabel sub = new JLabel("<html><div style='width:160px'>Buy " + f.basketQty + " @" + exact(f.buy)
+			+ " → Sell @" + exact(f.sell) + "</div></html>");
 		sub.setFont(FontManager.getRunescapeSmallFont());
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setAlignmentX(Component.LEFT_ALIGNMENT);
