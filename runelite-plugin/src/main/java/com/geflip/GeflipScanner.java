@@ -905,6 +905,18 @@ class GeflipScanner
 				}
 			}
 			if (hi <= lo) continue;   // no realistic spread once guarded
+			// ANTI-PUMP: if the guarded price is far ABOVE the item's 24h average, the recent prints are a
+			// pump/outlier on thin volume (e.g. Mixed hide cape: 5m avg 47-50k on ~6 trades vs a 20k 24h norm)
+			// — buying there means overpaying an item that reverts. Reject when the mid is >1.5x the 24h mid.
+			if (d24 != null && d24.has(e.getKey()))
+			{
+				JsonObject p24 = d24.getAsJsonObject(e.getKey());
+				if (!p24.get("avgHighPrice").isJsonNull() && !p24.get("avgLowPrice").isJsonNull())
+				{
+					double mid24 = (p24.get("avgHighPrice").getAsInt() + p24.get("avgLowPrice").getAsInt()) / 2.0;
+					if (mid24 > 0 && (lo + hi) / 2.0 > mid24 * 1.5) continue;   // pumped ~1.5x+ above its daily norm
+				}
+			}
 			// DUMP signal: the instant-sell price is well below the recent norm = someone's
 			// dumping, so you can buy cheap right now (a dip; per the swing research these revert).
 			boolean dumping = guardLow > 0 && loInst < guardLow * 0.95;

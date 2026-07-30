@@ -520,6 +520,8 @@ public class CoachPlugin extends Plugin
 		Map<Integer, Integer> slotStr = new java.util.HashMap<>();    // slot -> melee str bonus
 		Map<Integer, Integer> slotRstr = new java.util.HashMap<>();   // slot -> ranged str bonus
 		Map<Integer, Double> slotMdmg = new java.util.HashMap<>();    // slot -> magic dmg %
+		Set<Integer> worn = new HashSet<>();   // every equipped id → detect Void / crystal / Salve / Slayer helm / DH weapons
+		int weaponId = 0;
 		ItemContainer eq = client.getItemContainer(InventoryID.EQUIPMENT);
 		if (eq != null) for (Item it : eq.getItems())
 		{
@@ -527,9 +529,10 @@ public class CoachPlugin extends Plugin
 			net.runelite.client.game.ItemStats s = itemManager.getItemStats(it.getId());
 			if (s == null || s.getEquipment() == null) continue;
 			net.runelite.client.game.ItemEquipmentStats e = s.getEquipment();
+			worn.add(it.getId());
 			strB += e.getStr(); rstrB += e.getRstr(); mdmgB += e.getMdmg();
 			aStab += e.getAstab(); aSlash += e.getAslash(); aCrush += e.getAcrush(); aRange += e.getArange();
-			if (e.getSlot() == 3) { if (e.isTwoHanded()) twoH = true; if (e.getAspeed() > 0) weaponSpeed = e.getAspeed(); }   // slot 3 = weapon
+			if (e.getSlot() == 3) { weaponId = it.getId(); if (e.isTwoHanded()) twoH = true; if (e.getAspeed() > 0) weaponSpeed = e.getAspeed(); }   // slot 3 = weapon
 			slotStr.merge(e.getSlot(), e.getStr(), Integer::sum);
 			slotRstr.merge(e.getSlot(), e.getRstr(), Integer::sum);
 			slotMdmg.merge(e.getSlot(), (double) e.getMdmg(), Double::sum);
@@ -542,33 +545,101 @@ public class CoachPlugin extends Plugin
 		out.addAll(strengthUpgrades("Best melee upgrades (max-hit gain):", MELEE_UPGRADES, true, strB, bStr, meleeMax, slotStr, twoH));
 		out.addAll(strengthUpgrades("Best ranged upgrades (max-hit gain):", RANGED_UPGRADES, false, rstrB, bRng, rangeMax, slotRstr, twoH));
 		out.addAll(magicUpgrades(mdmgB, slotMdmg, twoH));
-		out.addAll(dpsLines(client.getBoostedSkillLevel(Skill.ATTACK) + 8, aStab, aSlash, aCrush, meleeMax,
-			bRng + 8, aRange, rangeMax, weaponSpeed > 0 ? weaponSpeed : 4));
+		out.addAll(dpsLines(aStab, aSlash, aCrush, aRange, strB, rstrB, weaponSpeed, worn, weaponId));
 		out.add("(Bank + banked coins are NOT at risk — only what's equipped/carried.)");
 		return out;
 	}
 
-	/** Est. DPS vs each boss with your CURRENT gear (base — no prayer/combat style). Melee auto-picks the
-	 *  best of stab/slash/crush against that boss's defence; ranged uses your ranged gear. Uses your equipped
-	 *  weapon's attack speed for both (ranged Rapid saves a tick — real ranged DPS is a bit higher). */
-	private List<String> dpsLines(int effAtk, int aStab, int aSlash, int aCrush, int meleeMax,
-		int effRange, int aRange, int rangeMax, int speed)
+	// --- gear IDs the DPS loadout detects (verified vs ItemID 1.12.33) ---
+	private static final int VOID_RANGER_HELM = 11664, VOID_MELEE_HELM = 11665, VOID_TOP = 8839,
+		VOID_ROBE = 8840, VOID_GLOVES = 8842, ELITE_VOID_TOP = 13072, ELITE_VOID_ROBE = 13073;
+	private static final int CRYSTAL_HELM = 23971, CRYSTAL_BODY = 23975, CRYSTAL_LEGS = 23979;
+	private static final int BOWFA = 25865, CRYSTAL_BOW = 4212;
+	private static final int SALVE_EI = 12018, SALVE_I = 12017;
+	private static final int DHCB = 21012, DHL = 22978, TOXIC_BLOWPIPE = 12926;
+	// only the IMBUED slayer helms count for the on-task bonus (matches CoachGoals' list)
+	private static final int[] SLAYER_HELMS_I = { 11865, 19641, 19645, 19649, 21266, 21890, 23075, 24444, 25900, 25906, 25912 };
+
+	/**
+	 * REAL DPS vs each boss, computed by {@link CoachDps} with a SENSIBLE assumed loadout: best affordable
+	 * offensive prayer, the standard potion, Rapid (ranged) / Aggressive (melee) style, plus any Void / crystal /
+	 * Salve / Slayer-helm / Dragon-hunter multiplier — the conditional ones applied ONLY where the equipped item
+	 * AND the target flag both qualify. Ranged is the priority (blowpipe): its dart is ammo not in the item def,
+	 * so Dragon-dart +35 ranged strength is added and the blowpipe runs at its 2-tick Rapid speed. Levels/potion
+	 * use REAL (unboosted) skill levels so the estimate is stable regardless of current buffs. Melee auto-picks
+	 * the best of stab/slash/crush vs each boss's matching defence. */
+	private List<String> dpsLines(int aStab, int aSlash, int aCrush, int aRange,
+		int meleeStrBonus, int rangedStrBonus, int weaponSpeed, Set<Integer> worn, int weaponId)
 	{
 		List<String> out = new ArrayList<>();
-		out.add("Est. DPS vs bosses (current gear, base — no prayer/style):");
-		boolean anyMelee = meleeMax > 1 && (aStab > 0 || aSlash > 0 || aCrush > 0);
-		boolean anyRange = rangeMax > 1 && aRange > 0;
-		if (!anyMelee && !anyRange) { out.add("  (equip a weapon to estimate DPS)"); return out; }
+		int rRanged = client.getRealSkillLevel(Skill.RANGED), rAtk = client.getRealSkillLevel(Skill.ATTACK);
+		int rStr = client.getRealSkillLevel(Skill.STRENGTH), rDef = client.getRealSkillLevel(Skill.DEFENCE);
+		int rPray = client.getRealSkillLevel(Skill.PRAYER);
+
+		boolean blowpipe = weaponId == TOXIC_BLOWPIPE;
+		boolean crystalWeapon = weaponId == BOWFA || weaponId == CRYSTAL_BOW;
+		boolean voidBody = (worn.contains(VOID_TOP) || worn.contains(ELITE_VOID_TOP))
+			&& (worn.contains(VOID_ROBE) || worn.contains(ELITE_VOID_ROBE)) && worn.contains(VOID_GLOVES);
+		boolean fullVoidR = voidBody && worn.contains(VOID_RANGER_HELM);
+		boolean eliteVoidR = fullVoidR && worn.contains(ELITE_VOID_TOP) && worn.contains(ELITE_VOID_ROBE);
+		boolean fullVoidM = voidBody && worn.contains(VOID_MELEE_HELM);
+		double crystalAcc = 1.0, crystalDmg = 1.0;
+		if (crystalWeapon)
+		{
+			double a = 0, d = 0;
+			if (worn.contains(CRYSTAL_HELM)) { a += 0.05; d += 0.025; }
+			if (worn.contains(CRYSTAL_BODY)) { a += 0.15; d += 0.075; }
+			if (worn.contains(CRYSTAL_LEGS)) { a += 0.10; d += 0.05; }
+			crystalAcc = 1.0 + a; crystalDmg = 1.0 + d;
+		}
+		boolean salveEi = worn.contains(SALVE_EI), salveI = worn.contains(SALVE_I);
+		boolean slayerHelm = false;
+		for (int id : SLAYER_HELMS_I) if (worn.contains(id)) { slayerHelm = true; break; }
+		boolean dhcb = weaponId == DHCB, dhl = weaponId == DHL;
+
+		int rangedStr = rangedStrBonus + (blowpipe ? 35 : 0);   // Dragon dart is ammo, not in the item def
+		int baseSpeed = weaponSpeed > 0 ? weaponSpeed : 4;
+		int rangedSpeed = blowpipe ? 2 : Math.max(1, baseSpeed - 1);   // Rapid = −1 tick; blowpipe PvM = 2
+
+		boolean anyRange = aRange > 0 && rRanged > 1;
+		boolean anyMelee = aStab > 0 || aSlash > 0 || aCrush > 0;   // a melee weapon gives attack bonus
+		if (!anyRange && !anyMelee) { out.add("Est. DPS vs bosses: equip a weapon to estimate."); return out; }
+
+		CoachDps.RangedIn rin = anyRange ? CoachDps.rangedLoadout(rRanged, rPray, aRange, rangedStr, rangedSpeed,
+			fullVoidR, eliteVoidR, crystalAcc, crystalDmg, salveEi, slayerHelm, dhcb) : null;
+		CoachDps.MeleeIn min = anyMelee ? CoachDps.meleeLoadout(rStr, rAtk, rPray, rDef,
+			aStab, aSlash, aCrush, meleeStrBonus, baseSpeed, fullVoidM, salveEi, salveI, slayerHelm, dhl) : null;
+
+		out.add("Est. DPS vs bosses — REAL DPS w/ a sensible loadout:");
+		if (rin != null) out.add("  ranged assumes: " + rin.label + (blowpipe ? " + Dragon darts" : ""));
+		if (min != null) out.add("  melee assumes: " + min.label);
+		out.add("  (Salve/Slayer/DH bonuses auto-apply only vs qualifying targets; Slayer helm assumes on-task.)");
 		for (CoachDps.Boss b : CoachDps.BOSSES)
 		{
-			double melee = anyMelee ? Math.max(CoachDps.dps(effAtk, aStab, meleeMax, b.defLvl, b.dStab, speed),
-				Math.max(CoachDps.dps(effAtk, aSlash, meleeMax, b.defLvl, b.dSlash, speed),
-					CoachDps.dps(effAtk, aCrush, meleeMax, b.defLvl, b.dCrush, speed))) : 0;
-			double ranged = anyRange ? CoachDps.dps(effRange, aRange, rangeMax, b.defLvl, b.dRange, speed) : 0;
-			out.add("  " + b.name + ": " + (anyMelee ? "melee ~" + String.format("%.1f", melee) : "")
-				+ (anyMelee && anyRange ? " · " : "") + (anyRange ? "ranged ~" + String.format("%.1f", ranged) : "") + " dps");
+			StringBuilder line = new StringBuilder("  " + b.name + ":");
+			if (rin != null)
+			{
+				CoachDps.Result r = CoachDps.ranged(rin, b);
+				line.append(" R ").append(String.format("%.1f", r.dps)).append("dps (max ").append(r.maxHit)
+					.append(", ").append(Math.round(r.hitChance * 100)).append("%, ").append(ttk(r.ttk)).append(")");
+			}
+			if (min != null)
+			{
+				CoachDps.Result m = CoachDps.melee(min, b);
+				line.append(rin != null ? " ·" : "").append(" M ").append(String.format("%.1f", m.dps)).append("dps (max ")
+					.append(m.maxHit).append(", ").append(Math.round(m.hitChance * 100)).append("%, ").append(ttk(m.ttk)).append(")");
+			}
+			out.add(line.toString());
 		}
 		return out;
+	}
+
+	/** Time-to-kill in a compact m/s form; "—" when DPS is zero. */
+	private static String ttk(double secs)
+	{
+		if (secs <= 0 || Double.isInfinite(secs) || Double.isNaN(secs)) return "—";
+		int s = (int) Math.round(secs);
+		return s >= 60 ? (s / 60) + "m" + String.format("%02d", s % 60) + "s" : s + "s";
 	}
 
 	// curated high-value upgrades per style (ids verified vs ItemID 1.12.33). Stats + prices are read
