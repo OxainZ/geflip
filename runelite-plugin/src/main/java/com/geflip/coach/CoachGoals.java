@@ -296,7 +296,7 @@ final class CoachGoals
 		HOW.put("Zulrah (money boss)", "WHERE: Zul-Andra (fairy ring CKR then run S, or the Zul-Andra teleport scroll). BRING: blowpipe + dragon darts, trident once 75 Mag, anti-venom+, prayer/super restores. Turn on RuneLite's Zulrah plugin and learn the fixed rotation.");
 		HOW.put("Rigour (ranged prayer)", "GET TO 74 Prayer (see Prayer training), then READ a Dexterous prayer scroll — a Chambers of Xeric drop, or buy one on the GE (~24M).");
 		HOW.put("Augury (magic prayer)", "GET TO 77 Prayer, then read an Arcane prayer scroll (~15M on the GE).");
-		HOW.put("Slayer helmet (imbued)", "NEED 55 Slayer + 55 Crafting. From ANY Slayer master: unlock 'Malevolent masquerade' (400 pts), buy the black mask + the 5 headgear parts, then combine them. Imbue at Nightmare Zone (1250 pts) or Soul Wars.");
+		HOW.put("Slayer helmet (imbued)", "NEED 55 Crafting (no Slayer LEVEL required). From ANY Slayer master: unlock 'Malevolent masquerade' (400 pts), buy the black mask + the 5 headgear parts, then combine them. Imbue at Nightmare Zone (1250 pts) or Soul Wars.");
 		HOW.put("Ava's accumulator (ranged QoL)", "DO the Animal Magnetism quest — START by talking to Ava at Draynor Manor (Ernest the Chicken area). After the quest, talk to her for the accumulator (needs 50 Ranged). Upgrade to the Assembler after DS2 + a Vorkath head.");
 		HOW.put("Barrows gloves", "DO Monkey Madness I, then finish ALL Recipe for Disaster subquests → buy the gloves from the Culinaromancer's chest under Lumbridge Castle. Use Quest Helper for each subquest's steps.");
 		HOW.put("Barrows (ranged gear + money)", "WHERE: the Barrows mounds NE of Canifis (fairy ring BKR, or the Barrows minigame teleport). Priest in Peril unlocks Morytania. Dig into each brother's mound, kill all 6, then loot the chest in the tunnels.");
@@ -304,7 +304,7 @@ final class CoachGoals
 		HOW.put("Trident of the swamp", "NEED 75 Magic to wield. Assemble from Zulrah drops (magic fang + an uncharged toxic trident), or buy the charged swamp trident on the GE.");
 		HOW.put("Void ranged set", "WHERE: Void Knights' Outpost — talk to the Squire on the docks in Port Sarim to sail there. Play Pest Control (take the HARD boat), spend ~30-40 points on the ranged top, legs, gloves + a helm.");
 		HOW.put("Amulet of anguish", "Buy it on the GE, or craft from a zenyte (demonic gorillas after MM2, or ToA). Big ranged-neck upgrade over the fury.");
-		HOW.put("Rune pouch", "DO the 'Enter the Abyss' miniquest — talk to the Mage of Zamorak (he wanders the ruins just NE of Edgeville, edge of the Wild). ~5 min, no requirements. (Or buy it with 750 Slayer points.)");
+		HOW.put("Rune pouch", "BUY it with 750 Slayer reward points from any Slayer master (Turael, Nieve, Duradel, etc.) — or with Mage Training Arena points, Last Man Standing points, or Guardians of the Rift. NOT from Enter the Abyss (that gives the essence pouches, a different item).");
 		HOW.put("Ancient Magicks (Barrage)", "DO Desert Treasure I (use Quest Helper). Then switch to the Ancient spellbook at the altar in the pyramid north of the Bandit Camp (or a POH altar).");
 		HOW.put("Fairy rings (travel QoL)", "DO Fairytale II up to the point you re-attune the rings (partial completion is enough) — use Quest Helper. Then any fairy ring lets you code-hop the map.");
 		HOW.put("Book of the Dead (thralls)", "DO 'A Kingdom Divided' (use Quest Helper), then read the Book of the Dead. Cast Resurrect Thrall from the Arceuus spellbook (needs the book equipped/owned).");

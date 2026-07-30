@@ -251,12 +251,13 @@ class GeflipPanel extends PluginPanel
 
 	private static JScrollPane scrollOf(JPanel content)
 	{
-		// vertical scroll only — rows are width-capped and text wraps, so you can never get stuck
-		// scrolled off the left edge (matches the Coach panel's scroll behaviour)
+		// horizontal scroll AS-NEEDED so any wide row (e.g. To-sell/offer controls on the You tab) is always
+		// REACHABLE — never clipped off-edge with no way to get to it. Bar only appears if something overflows.
 		JScrollPane s = new JScrollPane(content,
-			ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+			ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 		s.setBorder(null);
 		s.getVerticalScrollBar().setUnitIncrement(16);
+		s.getHorizontalScrollBar().setUnitIncrement(16);
 		return s;
 	}
 

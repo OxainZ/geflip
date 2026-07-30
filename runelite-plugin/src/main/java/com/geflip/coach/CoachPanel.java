@@ -378,13 +378,13 @@ class CoachPanel extends PluginPanel
 
 	private static JScrollPane scroll(Component c)
 	{
-		// Vertical scroll only (never horizontal — text wraps + rows are width-capped, so you can never
-		// get stuck scrolled off the left). Content goes straight into the scrollpane so the height sizes
-		// correctly and you can always reach the bottom.
+		// horizontal scroll AS-NEEDED so any wide row/control is always REACHABLE (bar only shows if content
+		// overflows). Content goes straight into the scrollpane so height sizes correctly + you reach the bottom.
 		JScrollPane sp = new JScrollPane(c,
-			ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+			ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 		sp.setBorder(BorderFactory.createEmptyBorder());
 		sp.getVerticalScrollBar().setUnitIncrement(16);
+		sp.getHorizontalScrollBar().setUnitIncrement(16);
 		return sp;
 	}
 
