@@ -39,7 +39,18 @@ final class CoachMoney
 		new M("Black chinchompa hunting (Wilderness)", 2_000_000, "high profit; PvP risk; needs 73 Hunter", st -> st.level(Skill.HUNTER) >= 73),
 		new M("Rogues' Castle thieving (Wilderness)", 2_200_000, "fast; PvP risk; needs 84 Thieving", st -> st.level(Skill.THIEVING) >= 84),
 		new M("Zulrah", 3_000_000, "learn the rotations; needs mid gear + fairy-ring/teleport access; ~90+ combat", st -> st.combatLevel >= 90),
-		new M("Vorkath", 4_000_000, "needs Dragon Slayer II + strong gear; ~110+ combat", st -> st.combatLevel >= 110),
+		new M("Demonic gorillas (MM2)", 1_200_000, "zenyte shard drops; needs Monkey Madness II. Great for a ranger (chin/blowpipe).",
+			st -> st.finished(net.runelite.api.Quest.MONKEY_MADNESS_II)),
+		new M("Vorkath", 4_000_000, "needs Dragon Slayer II + strong gear; ~110+ combat. Blowpipe caps it — a Dragon Hunter Crossbow lifts the rate a lot.",
+			st -> st.finished(net.runelite.api.Quest.DRAGON_SLAYER_II)),
+		new M("Phantom Muspah", 2_500_000, "lower supply cost than Vorkath, ranged-friendly; needs Secrets of the North.",
+			st -> st.finished(net.runelite.api.Quest.SECRETS_OF_THE_NORTH)),
+		new M("Tombs of Amascut (low invocation)", 1_500_000, "scalable raid — a fire cape is enough to learn at low invo; needs Beneath Cursed Sands. Ranged-friendly.",
+			st -> st.finished(net.runelite.api.Quest.BENEATH_CURSED_SANDS)),
+		new M("Alchemical Hydra", 3_500_000, "high gp/hr + hydra leather; needs 95 Slayer (on-task).",
+			st -> st.level(Skill.SLAYER) >= 95),
+		new M("Corrupted Gauntlet", 1_000_000, "crystal armour + enhanced-weapon-seed shot; needs Song of the Elves. Solo, gear-independent (you get crystal gear inside).",
+			st -> st.finished(net.runelite.api.Quest.SONG_OF_THE_ELVES)),
 	};
 
 	/** Eligible methods (requirements met), ranked by gp/hr descending; the passive ones (gpHr 0) sort
