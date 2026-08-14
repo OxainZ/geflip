@@ -21,8 +21,10 @@ def runeLiteVersion = '1.12.33'
 dependencies {
     compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
 
-    compileOnly 'org.projectlombok:lombok:1.18.24'
-    annotationProcessor 'org.projectlombok:lombok:1.18.24'
+    // 1.18.30+ is required to run under JDK 20+ javac (1.18.24 crashes with a JCImport
+    // NoSuchFieldError); still fully compatible with the JDK 11 source/target below.
+    compileOnly 'org.projectlombok:lombok:1.18.34'
+    annotationProcessor 'org.projectlombok:lombok:1.18.34'
 
     compileOnly 'com.google.code.gson:gson:2.8.9'
 

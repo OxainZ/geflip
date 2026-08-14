@@ -819,9 +819,12 @@ public class GeflipPlugin extends Plugin
 		{
 			com.google.gson.JsonObject o = new com.google.gson.JsonObject();
 			// cap the pushed fills to the last 3000 (matches the disk cap) so a marathon session doesn't
-			// serialize + PUT a huge payload every scan
-			java.util.List<Fill> fillsOut = fills.size() > 3000
-				? new java.util.ArrayList<>(fills.subList(fills.size() - 3000, fills.size())) : fills;
+			// serialize + PUT a huge payload every scan. Copy the COW list FIRST (an atomic snapshot):
+			// a subList view over the live list throws ConcurrentModificationException if the client
+			// thread books a fill mid-copy, which silently skipped the whole push.
+			java.util.List<Fill> fillsAll = new java.util.ArrayList<>(fills);
+			java.util.List<Fill> fillsOut = fillsAll.size() > 3000
+				? fillsAll.subList(fillsAll.size() - 3000, fillsAll.size()) : fillsAll;
 			o.add("fills", new com.google.gson.Gson().toJsonTree(fillsOut));
 			o.add("flips", new com.google.gson.Gson().toJsonTree(lastFlips));
 			o.add("offers", new com.google.gson.Gson().toJsonTree(offerSnapshot));
