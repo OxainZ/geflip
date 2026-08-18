@@ -3,7 +3,7 @@
  * (2) host notifications so a backgrounded/installed PWA can still alert.
  * Prices are ALWAYS fetched live from the network — we never cache API data,
  * only the app shell, so a stale flip is impossible. */
-const SHELL = 'geflip-shell-v2';
+const SHELL = 'geflip-shell-v3';
 const SHELL_FILES = ['.', 'index.html', 'manifest.webmanifest',
   'geflip_icon.png', 'geflip_icon_192.png', 'geflip_icon_512.png'];
 
