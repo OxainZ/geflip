@@ -63,6 +63,24 @@ public class CoachAiSnapshotTest
 	}
 
 	@Test
+	public void bankDailiesFarmCarriedAndOmittedHonestly()
+	{
+		int[][] bank = {{4151, 2}, {995, 40_000_000}};
+		JsonObject o = CoachAiSnapshot.build(state(), null, null, -1, -1, null,
+			bank, java.util.Arrays.asList("Herb run ready"), 95);
+		assertEquals(2, o.get("bankItems").getAsInt());
+		assertEquals(4151, o.getAsJsonArray("bank").get(0).getAsJsonArray().get(0).getAsInt());
+		assertEquals("Herb run ready", o.getAsJsonArray("dailies").get(0).getAsString());
+		assertEquals(95, o.get("farmRunMinsAgo").getAsInt());
+		// bank never seen + farm unknown -> keys ABSENT, not fabricated
+		JsonObject o2 = CoachAiSnapshot.build(state(), null, null, -1, -1, null,
+			null, null, -1);
+		assertFalse(o2.has("bank"));
+		assertFalse(o2.has("dailies"));
+		assertFalse(o2.has("farmRunMinsAgo"));
+	}
+
+	@Test
 	public void pushRefusesWeakOrMissingId()
 	{
 		// contract test: a short id or blank url must be a silent no-op (the

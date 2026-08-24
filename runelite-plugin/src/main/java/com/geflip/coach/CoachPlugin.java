@@ -170,8 +170,23 @@ public class CoachPlugin extends Plugin
 		String id = configManager.getConfiguration("geflip", "cloudId");
 		if (url == null || url.isEmpty() || id == null || id.length() < 16) return;
 		lastAiPushMs = now;
-		com.google.gson.JsonObject snap =
-			CoachAiSnapshot.build(st, goals, caTier, slayerPts, streak, wom);
+		// bank contents: last-known container persists in the client after one
+		// open; null (never opened this session) is OMITTED from the snapshot.
+		int[][] bank = null;
+		net.runelite.api.ItemContainer bc =
+			client.getItemContainer(net.runelite.api.InventoryID.BANK);
+		if (bc != null)
+		{
+			net.runelite.api.Item[] items = bc.getItems();
+			java.util.List<int[]> rows = new java.util.ArrayList<>();
+			for (net.runelite.api.Item it : items)
+				if (it != null && it.getId() > 0 && it.getQuantity() > 0)
+					rows.add(new int[]{it.getId(), it.getQuantity()});
+			bank = rows.toArray(new int[0][]);
+		}
+		com.google.gson.JsonObject snap = CoachAiSnapshot.build(
+			st, goals, caTier, slayerPts, streak, wom,
+			bank, CoachDailies.lines(st), farmElapsedMin());
 		executor.submit(() -> CoachAiSnapshot.push(url, id, snap));
 	}
 

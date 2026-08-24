@@ -29,6 +29,17 @@ final class CoachAiSnapshot
 	static JsonObject build(CoachState st, List<CoachEngine.Scored> goals,
 		String caTier, int slayerPoints, int slayerStreak, CoachWom.Result wom)
 	{
+		return build(st, goals, caTier, slayerPoints, slayerStreak, wom,
+			null, null, -1);
+	}
+
+	/** Full form: adds bank contents [[id,qty],...] (null = bank not seen
+	 * this session -- OMITTED, never guessed), the coach's daily lines, and
+	 * minutes since the last logged farm run (-1 = unknown/never). */
+	static JsonObject build(CoachState st, List<CoachEngine.Scored> goals,
+		String caTier, int slayerPoints, int slayerStreak, CoachWom.Result wom,
+		int[][] bank, List<String> dailies, int farmMinsAgo)
+	{
 		JsonObject o = new JsonObject();
 		o.addProperty("updated", System.currentTimeMillis() / 1000);
 		o.addProperty("loggedIn", st.loggedIn);
@@ -89,6 +100,22 @@ final class CoachAiSnapshot
 			if (wom.ttm > 0) w.addProperty("hoursToMax", Math.round(wom.ttm));
 			o.add("wom", w);
 		}
+		if (bank != null)
+		{
+			JsonArray b = new JsonArray();
+			for (int[] row : bank)
+			{
+				JsonArray pair = new JsonArray();
+				pair.add(row[0]);
+				pair.add(row[1]);
+				b.add(pair);
+			}
+			o.add("bank", b);
+			o.addProperty("bankItems", bank.length);
+		}
+		if (dailies != null && !dailies.isEmpty())
+			o.add("dailies", new Gson().toJsonTree(dailies));
+		if (farmMinsAgo >= 0) o.addProperty("farmRunMinsAgo", farmMinsAgo);
 		return o;
 	}
 
