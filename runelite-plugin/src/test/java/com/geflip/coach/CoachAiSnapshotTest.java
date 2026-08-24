@@ -81,6 +81,24 @@ public class CoachAiSnapshotTest
 	}
 
 	@Test
+	public void slayerTaskAndEquipmentHonest()
+	{
+		JsonObject o = CoachAiSnapshot.build(state(), null, null, -1, -1, null);
+		CoachAiSnapshot.attachTask(o, 41, 77, "Ghouls", new int[][]{{4151, 1}});
+		assertEquals(77, o.getAsJsonObject("slayerTask").get("remaining").getAsInt());
+		assertEquals("Ghouls", o.getAsJsonObject("slayerTask").get("name").getAsString());
+		assertEquals(4151, o.getAsJsonArray("equipment").get(0).getAsJsonArray().get(0).getAsInt());
+		// no task / failed name lookup / naked: keys absent or name omitted
+		JsonObject o2 = CoachAiSnapshot.build(state(), null, null, -1, -1, null);
+		CoachAiSnapshot.attachTask(o2, 0, 0, null, null);
+		assertFalse(o2.has("slayerTask"));
+		assertFalse(o2.has("equipment"));
+		JsonObject o3 = CoachAiSnapshot.build(state(), null, null, -1, -1, null);
+		CoachAiSnapshot.attachTask(o3, 41, 5, null, null);
+		assertFalse(o3.getAsJsonObject("slayerTask").has("name"));
+	}
+
+	@Test
 	public void pushRefusesWeakOrMissingId()
 	{
 		// contract test: a short id or blank url must be a silent no-op (the

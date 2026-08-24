@@ -119,6 +119,35 @@ final class CoachAiSnapshot
 		return o;
 	}
 
+	/** Attach the current slayer task (name best-effort via game enum 693 --
+	 * the community-standard task-name table; a failed lookup ships raw ids
+	 * only, never a guessed name) and worn equipment. Both OMITTED when
+	 * unknown. Called with values read on the client thread. */
+	static void attachTask(JsonObject o, int creatureId, int remaining,
+		String name, int[][] equipment)
+	{
+		if (creatureId > 0 && remaining > 0)
+		{
+			JsonObject t = new JsonObject();
+			t.addProperty("creatureId", creatureId);
+			t.addProperty("remaining", remaining);
+			if (name != null && !name.isEmpty()) t.addProperty("name", name);
+			o.add("slayerTask", t);
+		}
+		if (equipment != null && equipment.length > 0)
+		{
+			JsonArray eq = new JsonArray();
+			for (int[] row : equipment)
+			{
+				JsonArray pair = new JsonArray();
+				pair.add(row[0]);
+				pair.add(row[1]);
+				eq.add(pair);
+			}
+			o.add("equipment", eq);
+		}
+	}
+
 	/** PUT {"account": snapshot} to the Worker — the flipper's exact HTTP
 	 * pattern (best-effort, bounded timeouts, always disconnect). Call OFF
 	 * the client thread. */

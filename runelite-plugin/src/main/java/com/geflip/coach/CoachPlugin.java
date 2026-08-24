@@ -187,6 +187,29 @@ public class CoachPlugin extends Plugin
 		com.google.gson.JsonObject snap = CoachAiSnapshot.build(
 			st, goals, caTier, slayerPts, streak, wom,
 			bank, CoachDailies.lines(st), farmElapsedMin());
+		// current slayer task: size + creature varps; name via game enum 693
+		// (fail-soft -- a changed cache ships raw ids, never a wrong name)
+		int taskSize = client.getVarpValue(net.runelite.api.VarPlayer.SLAYER_TASK_SIZE);
+		int taskCreature = client.getVarpValue(net.runelite.api.VarPlayer.SLAYER_TASK_CREATURE);
+		String taskName = null;
+		try
+		{
+			net.runelite.api.EnumComposition e = client.getEnum(693);
+			if (e != null && taskCreature > 0) taskName = e.getStringValue(taskCreature);
+		}
+		catch (Exception ignored) {}
+		int[][] equip = null;
+		net.runelite.api.ItemContainer ec =
+			client.getItemContainer(net.runelite.api.InventoryID.EQUIPMENT);
+		if (ec != null)
+		{
+			java.util.List<int[]> rows = new java.util.ArrayList<>();
+			for (net.runelite.api.Item it : ec.getItems())
+				if (it != null && it.getId() > 0 && it.getQuantity() > 0)
+					rows.add(new int[]{it.getId(), it.getQuantity()});
+			if (!rows.isEmpty()) equip = rows.toArray(new int[0][]);
+		}
+		CoachAiSnapshot.attachTask(snap, taskCreature, taskSize, taskName, equip);
 		executor.submit(() -> CoachAiSnapshot.push(url, id, snap));
 	}
 
