@@ -150,6 +150,69 @@ public class CoachPlugin extends Plugin
 		return o;
 	}
 
+	private volatile long lastAiPushMs;
+
+	/**
+	 * The AI lane (CoachAiSnapshot): every ~5 min, serialize the account read
+	 * and PUT it to the flipper's sync Worker under {"account": ...} so any
+	 * advisor holding the sync-id (Claude, the phone, curl) sees live state.
+	 * Reuses the FLIPPER's cloud settings (geflip.cloudUrl / geflip.cloudId) —
+	 * nothing new to configure; blank there = this lane is off. Build happens
+	 * here with immutables only; HTTP goes to the executor, never the client
+	 * thread.
+	 */
+	private void maybePushAiSnapshot(CoachState st, List<CoachEngine.Scored> goals,
+		String caTier, int slayerPts, int streak, CoachWom.Result wom)
+	{
+		long now = System.currentTimeMillis();
+		if (now - lastAiPushMs < 300_000) return;
+		String url = configManager.getConfiguration("geflip", "cloudUrl");
+		String id = configManager.getConfiguration("geflip", "cloudId");
+		if (url == null || url.isEmpty() || id == null || id.length() < 16) return;
+		lastAiPushMs = now;
+		// bank contents: last-known container persists in the client after one
+		// open; null (never opened this session) is OMITTED from the snapshot.
+		int[][] bank = null;
+		net.runelite.api.ItemContainer bc =
+			client.getItemContainer(net.runelite.api.InventoryID.BANK);
+		if (bc != null)
+		{
+			net.runelite.api.Item[] items = bc.getItems();
+			java.util.List<int[]> rows = new java.util.ArrayList<>();
+			for (net.runelite.api.Item it : items)
+				if (it != null && it.getId() > 0 && it.getQuantity() > 0)
+					rows.add(new int[]{it.getId(), it.getQuantity()});
+			bank = rows.toArray(new int[0][]);
+		}
+		com.google.gson.JsonObject snap = CoachAiSnapshot.build(
+			st, goals, caTier, slayerPts, streak, wom,
+			bank, CoachDailies.lines(st), farmElapsedMin());
+		// current slayer task: size + creature varps; name via game enum 693
+		// (fail-soft -- a changed cache ships raw ids, never a wrong name)
+		int taskSize = client.getVarpValue(net.runelite.api.VarPlayer.SLAYER_TASK_SIZE);
+		int taskCreature = client.getVarpValue(net.runelite.api.VarPlayer.SLAYER_TASK_CREATURE);
+		String taskName = null;
+		try
+		{
+			net.runelite.api.EnumComposition e = client.getEnum(693);
+			if (e != null && taskCreature > 0) taskName = e.getStringValue(taskCreature);
+		}
+		catch (Exception ignored) {}
+		int[][] equip = null;
+		net.runelite.api.ItemContainer ec =
+			client.getItemContainer(net.runelite.api.InventoryID.EQUIPMENT);
+		if (ec != null)
+		{
+			java.util.List<int[]> rows = new java.util.ArrayList<>();
+			for (net.runelite.api.Item it : ec.getItems())
+				if (it != null && it.getId() > 0 && it.getQuantity() > 0)
+					rows.add(new int[]{it.getId(), it.getQuantity()});
+			if (!rows.isEmpty()) equip = rows.toArray(new int[0][]);
+		}
+		CoachAiSnapshot.attachTask(snap, taskCreature, taskSize, taskName, equip);
+		executor.submit(() -> CoachAiSnapshot.push(url, id, snap));
+	}
+
 	/** Read the account on the client thread, evaluate goals, push to the panel. */
 	private void rescan()
 	{
@@ -195,6 +258,7 @@ public class CoachPlugin extends Plugin
 			nowExtras.addAll(almostRadar(st));
 			p.setNowExtras(nowExtras);
 			publishAccountNeeds(st);       // cross-reference: hand the flipper your account shopping list
+			maybePushAiSnapshot(st, all, ca, slayerPts, streak, w);   // the AI lane (throttled, off-thread)
 			p.setSummary(summary);
 			p.setSessionStats(sess);
 			refreshHiscore();

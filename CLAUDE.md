@@ -18,6 +18,20 @@ Three surfaces share this repo:
 3. **Cloudflare sync worker** (`sync-worker/src/worker.js`) — relays
    fills/flips/offers between the plugin and the phone page. CORS-open **by
    design**; the sync-id is the secret. Don't "fix" the CORS.
+4. **The AI lane (2026-08-24, `ASK_THE_AI.md`)** — CoachPlugin pushes a full
+   account snapshot (`account` key: skills, QP, quests, gp, net worth, CA
+   tier, slayer, WOM, top goals+gaps) to the same worker every ~5 min, using
+   the FLIPPER's cloudUrl/cloudId settings (nothing new to configure). One
+   GET of the blob gives an AI advisor the whole picture: account + session
+   P&L + fills + live GE offers + ranked flips. **v2 adds BANK CONTENTS
+   ([[id,qty],...], omitted until the bank is opened once per session), the
+   coach's daily lines, and minutes-since-last-farm-run.** The consuming
+   side lives in FidelityTrades `scripts/osrs_advisor.py` (phone-reachable
+   via Telegram/claude.ai), which layers LIVE wiki prices/volumes/limits/
+   alch-margins and official hiscores on top of this snapshot. READ-ONLY toward the game —
+   state ships out, nothing automates input; the sync-id stays the only
+   secret and is never committed. Builder is pure + unit-tested
+   (CoachAiSnapshotTest); unknown wealth/WOM are OMITTED, never fabricated.
 
 ## Build & test (plugin)
 - `gradle build` from `runelite-plugin/` — **no wrapper is committed on
@@ -26,7 +40,7 @@ Three surfaces share this repo:
 - Lombok is pinned **1.18.34** — do not downgrade below 1.18.30 (older
   crashes under JDK 20+ javac with a JCTree$JCImport error). Source/target
   stays Java 11 (RuneLite's floor).
-- Tests: `gradle test` — 10 test classes / 34 tests, all green. Keep them so.
+- Tests: `gradle test` — 11 test classes / 38 tests, all green. Keep them so.
 - The jar MUST contain `runelite-plugin.properties` (repo root of
   `runelite-plugin/`) — without it the sideloader silently skips the plugin.
   It lists all three plugin classes; update it if a plugin class is
