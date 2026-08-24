@@ -150,6 +150,31 @@ public class CoachPlugin extends Plugin
 		return o;
 	}
 
+	private volatile long lastAiPushMs;
+
+	/**
+	 * The AI lane (CoachAiSnapshot): every ~5 min, serialize the account read
+	 * and PUT it to the flipper's sync Worker under {"account": ...} so any
+	 * advisor holding the sync-id (Claude, the phone, curl) sees live state.
+	 * Reuses the FLIPPER's cloud settings (geflip.cloudUrl / geflip.cloudId) —
+	 * nothing new to configure; blank there = this lane is off. Build happens
+	 * here with immutables only; HTTP goes to the executor, never the client
+	 * thread.
+	 */
+	private void maybePushAiSnapshot(CoachState st, List<CoachEngine.Scored> goals,
+		String caTier, int slayerPts, int streak, CoachWom.Result wom)
+	{
+		long now = System.currentTimeMillis();
+		if (now - lastAiPushMs < 300_000) return;
+		String url = configManager.getConfiguration("geflip", "cloudUrl");
+		String id = configManager.getConfiguration("geflip", "cloudId");
+		if (url == null || url.isEmpty() || id == null || id.length() < 16) return;
+		lastAiPushMs = now;
+		com.google.gson.JsonObject snap =
+			CoachAiSnapshot.build(st, goals, caTier, slayerPts, streak, wom);
+		executor.submit(() -> CoachAiSnapshot.push(url, id, snap));
+	}
+
 	/** Read the account on the client thread, evaluate goals, push to the panel. */
 	private void rescan()
 	{
@@ -195,6 +220,7 @@ public class CoachPlugin extends Plugin
 			nowExtras.addAll(almostRadar(st));
 			p.setNowExtras(nowExtras);
 			publishAccountNeeds(st);       // cross-reference: hand the flipper your account shopping list
+			maybePushAiSnapshot(st, all, ca, slayerPts, streak, w);   // the AI lane (throttled, off-thread)
 			p.setSummary(summary);
 			p.setSessionStats(sess);
 			refreshHiscore();

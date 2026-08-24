@@ -18,6 +18,15 @@ Three surfaces share this repo:
 3. **Cloudflare sync worker** (`sync-worker/src/worker.js`) — relays
    fills/flips/offers between the plugin and the phone page. CORS-open **by
    design**; the sync-id is the secret. Don't "fix" the CORS.
+4. **The AI lane (2026-08-24, `ASK_THE_AI.md`)** — CoachPlugin pushes a full
+   account snapshot (`account` key: skills, QP, quests, gp, net worth, CA
+   tier, slayer, WOM, top goals+gaps) to the same worker every ~5 min, using
+   the FLIPPER's cloudUrl/cloudId settings (nothing new to configure). One
+   GET of the blob gives an AI advisor the whole picture: account + session
+   P&L + fills + live GE offers + ranked flips. READ-ONLY toward the game —
+   state ships out, nothing automates input; the sync-id stays the only
+   secret and is never committed. Builder is pure + unit-tested
+   (CoachAiSnapshotTest); unknown wealth/WOM are OMITTED, never fabricated.
 
 ## Build & test (plugin)
 - `gradle build` from `runelite-plugin/` — **no wrapper is committed on
