@@ -1269,6 +1269,29 @@ public class CoachPlugin extends Plugin
 
 	// --- LLM Ask -------------------------------------------------------------
 	/** The context prompt (used both by Copy-context and the endpoint call). */
+	/** Current slayer task as "Kraken (87 left)", or null when none / unreadable. Reads the same
+	 *  varps as the AI-snapshot push, which resolved this and then discarded it — so the coach's
+	 *  OWN advice never knew what you were assigned. Fail-soft: raw id rather than a wrong name. */
+	String taskLine()
+	{
+		try
+		{
+			int size = client.getVarpValue(net.runelite.api.VarPlayer.SLAYER_TASK_SIZE);
+			int creature = client.getVarpValue(net.runelite.api.VarPlayer.SLAYER_TASK_CREATURE);
+			if (creature <= 0 || size <= 0) return null;
+			String name = null;
+			try
+			{
+				net.runelite.api.EnumComposition e = client.getEnum(693);
+				if (e != null) name = e.getStringValue(creature);
+			}
+			catch (Exception ignored) {}
+			if (name == null || name.isEmpty()) name = "task #" + creature;
+			return name + " (" + size + " left)";
+		}
+		catch (Exception e) { return null; }
+	}
+
 	private String buildContext()
 	{
 		CoachState st = lastState;
@@ -1278,6 +1301,14 @@ public class CoachPlugin extends Plugin
 			+ "correct advice for THIS account. Be concise and concrete.\n\n");
 		b.append("ACCOUNT — combat ").append(st.combatLevel).append(", ").append(st.qp).append(" QP");
 		if (st.coins >= 0) b.append(", ").append(CoachGoals.gp(st.coins)).append(" gp on hand");
+		if (st.wealth >= 0) b.append(", ").append(CoachGoals.gp(st.wealth)).append(" total wealth");
+		String task = taskLine();
+		if (task != null) b.append(".\nCURRENT SLAYER TASK: ").append(task);
+		// Item gaps are only trustworthy once the bank has been read this session. Say which,
+		// so advice never tells him to buy something already sitting in his bank.
+		b.append(st.bankKnown
+			? ".\nBank HAS been read this session - gear/item gaps below are reliable."
+			: ".\nBank NOT opened this session - treat any 'you need item X' as UNVERIFIED; he may already own it.");
 		b.append(".\nLevels: ");
 		for (Skill sk : Skill.values())
 		{
@@ -1312,6 +1343,24 @@ public class CoachPlugin extends Plugin
 		String q = question.toLowerCase();
 		List<CoachEngine.Scored> all = CoachEngine.evaluate(st);
 		StringBuilder b = new StringBuilder();
+		// SLAYER intent: the plugin reads the live task varps, so answer from the actual
+		// assignment instead of generic advice. Falls through when no task is active.
+		if (q.contains("slayer") || q.contains("task"))
+		{
+			String task = taskLine();
+			if (task == null) return "No slayer task assigned right now - go get one, then ask again.";
+			b.append("Current task: ").append(task).append('\n');
+			int paren = task.indexOf(" (");
+			String bare = (paren > 0 ? task.substring(0, paren) : task).toLowerCase();
+			for (CoachDps.Boss bs : CoachDps.BOSSES)
+			{
+				if (!bs.name.toLowerCase().contains(bare) && !bare.contains(bs.name.toLowerCase())) continue;
+				b.append("Style: ").append(bs.note).append('\n');
+				break;
+			}
+			b.append("Tip: bring the imbued slayer helm if you own it - it applies on-task.").append('\n');
+			return b.toString();
+		}
 		if (q.contains("quest"))
 		{
 			b.append("Next quests for your stats:\n");
