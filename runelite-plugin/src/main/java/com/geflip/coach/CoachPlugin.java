@@ -1279,6 +1279,44 @@ public class CoachPlugin extends Plugin
 	 *  OWN advice never knew what you were assigned. Fail-soft: raw id rather than a wrong name. */
 	/** What you are actually WEARING, as item names. The AI snapshot shipped this to the cloud while
 	 *  the coach's own advice stayed blind to it - so it could recommend gear already on your back. */
+	/**
+	 * Your bank's biggest holdings by GE value. Bounded to the top N so the context stays small -
+	 * a raw dump of a few hundred stacks would crowd out the advice it is meant to inform.
+	 * Returns null when the bank has never been opened this session (container absent), which is
+	 * honest: better to say nothing than to imply an empty bank.
+	 */
+	String bankLine(int topN)
+	{
+		try
+		{
+			net.runelite.api.ItemContainer bc = client.getItemContainer(net.runelite.api.InventoryID.BANK);
+			if (bc == null) return null;
+			java.util.List<long[]> rows = new java.util.ArrayList<>();   // {value, id, qty}
+			long total = 0;
+			for (net.runelite.api.Item it : bc.getItems())
+			{
+				if (it == null || it.getId() <= 0 || it.getQuantity() <= 0) continue;
+				long v = (long) itemManager.getItemPrice(it.getId()) * it.getQuantity();
+				total += v;
+				rows.add(new long[]{ v, it.getId(), it.getQuantity() });
+			}
+			if (rows.isEmpty()) return null;
+			rows.sort((x, y) -> Long.compare(y[0], x[0]));
+			StringBuilder sb = new StringBuilder();
+			sb.append(rows.size()).append(" distinct items, ~").append(CoachGoals.gp(total))
+				.append(" total. Biggest: ");
+			for (int i = 0; i < Math.min(topN, rows.size()); i++)
+			{
+				long[] r = rows.get(i);
+				if (i > 0) sb.append("; ");
+				sb.append(itemManager.getItemComposition((int) r[1]).getName())
+					.append(" x").append(r[2]).append(" (").append(CoachGoals.gp(r[0])).append(")");
+			}
+			return sb.toString();
+		}
+		catch (Exception e) { return null; }
+	}
+
 	String equipmentLine()
 	{
 		try
@@ -1351,6 +1389,8 @@ public class CoachPlugin extends Plugin
 				.append(w.ttm > 0 ? " (" + Math.round(w.ttm) + "h to max)" : "");
 		String gear = equipmentLine();
 		if (gear != null) b.append("\nWEARING: ").append(gear);
+		String bank = bankLine(12);
+		if (bank != null) b.append("\nBANK: ").append(bank);
 		java.util.List<String> daily = CoachDailies.lines(st);
 		if (daily != null && !daily.isEmpty())
 			b.append("\nDailies/recurring available: ").append(String.join("; ", daily));
