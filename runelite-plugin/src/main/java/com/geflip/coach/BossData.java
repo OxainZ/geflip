@@ -40,5 +40,24 @@ final class BossData
 		b.add(new Boss("Dagannoth Prime",    255, 255, 255, 255,  10, 255,  255, false, false, true,  "ranged (ranged def +10) · Dagannoth task"));
 		b.add(new Boss("Dagannoth Supreme",  128,  10,  10,  10, 550, 255,  255, false, false, true,  "melee (melee def +10) · Dagannoth task"));
 		b.add(new Boss("Barrows brother",    100, 220, 230, 220, 220,   0,  100, false, true,  false, "magic (wind spells); melee ~high def · undead → Salve (HP ~100, varies by brother)"));
+
+		// --- 2026-09-07 expansion. Stats pulled from the wiki's Infobox Monster via api.php
+		// (action=parse&prop=wikitext) and machine-parsed, NOT written from memory; the parser was
+		// validated against Vorkath above, matching its verified def/hp/dstab/dslash/dcrush/dmagic.
+		// Recommended style is DERIVED from the lowest defence bonus rather than asserted.
+		// dragon/undead flags left false unless the wiki category confirmed them - a missing flag
+		// only under-states DPS (no Salve/DH multiplier), while a wrong one would over-state it.
+		// Grotesque Guardians deliberately omitted: two-boss page, no single infobox to verify.
+		b.add(new Boss("Vardorvis",                215,  215,   65,   85,  580,  580,  700, false, false, false, "slash (lowest def 65)"));
+		b.add(new Boss("Duke Sucellus",            275,  255,   45,  190,  320,  440,  485, false, false, false, "slash (lowest def 45)"));
+		b.add(new Boss("The Leviathan",            250,  260,  190,  230,   50,  280,  900, false, false, false, "ranged (lowest def 50)"));
+		b.add(new Boss("The Whisperer",            250,  180,  300,  220,  300,   10,  900, false, false, false, "magic (lowest def 10)"));
+		b.add(new Boss("Phantom Muspah",           200,  185,  134,  120,   56,  437,  850, false, false, false, "ranged (lowest def 56)"));
+		b.add(new Boss("Araxxor",                  135,  160,   75,   15,  218,  237, 1020, false, false, true , "crush (lowest def 15) - 92 Slayer, helm (i) applies on-task"));
+		b.add(new Boss("Scurrius",                  60,   20,   20,   20,   20,   10,  500, false, false, false, "magic (lowest def 10)"));
+		b.add(new Boss("Cerberus",                 100,   50,  100,   25,  100,   65,  600, false, false, true , "crush (lowest def 25) - 91 Slayer, helm (i) applies on-task"));
+		b.add(new Boss("Abyssal Sire",             250,   40,   60,   50,   60,   20,  425, false, false, true , "magic (lowest def 20) - 85 Slayer, helm (i) applies on-task"));
+		b.add(new Boss("Kalphite Queen",           300,   50,   50,   10,  100,  100,  255, false, false, false, "crush (lowest def 10)"));
+		b.add(new Boss("Thermonuclear smoke devil",  360,   11,    4,    9,  900,  800,  240, false, false, true , "slash (lowest def 4) - 93 Slayer, helm (i) applies on-task"));
 	}
 }
