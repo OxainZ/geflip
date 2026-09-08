@@ -778,8 +778,15 @@ class GeflipPanel extends PluginPanel
 			holdBox.removeAll();
 			if (holds != null && !holds.isEmpty())
 			{
-				JLabel hdr = new JLabel("To sell");
-				hdr.setForeground(ColorScheme.BRAND_ORANGE);
+				// Surface STALLED capital, not just what is sellable. Bulk positions that stop cycling
+				// are the quiet leak - they hold value fine, they just stop earning, and nothing used
+				// to say so. Gear (qty 1) is excluded by Hold.stuck.
+				int stuckN = GeflipPlugin.stuckCount(holds, STUCK_DAYS);
+				long parked = GeflipPlugin.parkedGp(holds, STUCK_DAYS);
+				JLabel hdr = new JLabel(stuckN > 0
+					? "To sell   -   " + stuckN + " idle >" + STUCK_DAYS + "d, " + gp(parked) + " parked"
+					: "To sell");
+				hdr.setForeground(stuckN > 0 ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.BRAND_ORANGE);
 				hdr.setBorder(BorderFactory.createEmptyBorder(6, 1, 2, 1));
 				hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
 				holdBox.add(hdr);
@@ -790,6 +797,15 @@ class GeflipPanel extends PluginPanel
 		});
 	}
 
+	/**
+	 * A bulk holding untouched this long counts as parked capital.
+	 * 14 is measured, not guessed: against the live ledger, 7 days flagged 26 positions (noisy -
+	 * plenty were still cycling), 14 flagged 11 holding ~7.6M, and 21 flagged 10 holding the same.
+	 * The flat 14-to-21 step is the tell that those 11 are genuinely stalled, so 14 catches them
+	 * without crying wolf over stock that is simply slow.
+	 */
+	private static final int STUCK_DAYS = 14;
+
 	private JPanel holdRow(GeflipPlugin.Hold h)
 	{
 		JPanel p = new JPanel(new BorderLayout(6, 0));
@@ -799,7 +815,8 @@ class GeflipPanel extends PluginPanel
 		JPanel col = new JPanel();
 		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
 		col.setOpaque(false);
-		JLabel name = new JLabel(trunc(h.name, 16) + "  ×" + h.qty + (h.listed > 0 ? "  (" + h.listed + " listed)" : ""));
+		JLabel name = new JLabel(trunc(h.name, 16) + "  ×" + h.qty + (h.listed > 0 ? "  (" + h.listed + " listed)" : "")
+			+ (h.stuck(STUCK_DAYS) ? "  idle " + h.idleDays + "d" : ""));
 		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		name.setForeground(ColorScheme.TEXT_COLOR);
 		name.setAlignmentX(Component.LEFT_ALIGNMENT);

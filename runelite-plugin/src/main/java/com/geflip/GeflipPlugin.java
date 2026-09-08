@@ -255,8 +255,16 @@ public class GeflipPlugin extends Plugin
 	static final class Hold
 	{
 		final int id; final String name; final int qty; final long avgCost; final int sellHint; final boolean exempt; final int listed;
-		Hold(int id, String name, int qty, long avgCost, int sellHint, boolean exempt, int listed)
-		{ this.id = id; this.name = name; this.qty = qty; this.avgCost = avgCost; this.sellHint = sellHint; this.exempt = exempt; this.listed = listed; }
+		/** Days since you last BOUGHT this (-1 unknown). Capital that stops cycling is the quiet
+		 *  leak: a 2026-09 audit found 12 bulk positions idle 2-5 weeks holding ~10.8M gp, barely
+		 *  moved in value - not losing, just not earning. Nothing surfaced them. */
+		final int idleDays;
+		Hold(int id, String name, int qty, long avgCost, int sellHint, boolean exempt, int listed, int idleDays)
+		{ this.id = id; this.name = name; this.qty = qty; this.avgCost = avgCost; this.sellHint = sellHint;
+		  this.exempt = exempt; this.listed = listed; this.idleDays = idleDays; }
+
+		/** Bulk position gone quiet. qty > 1 excludes gear you bought to USE, which is not a leak. */
+		boolean stuck(int minDays) { return qty > 1 && idleDays >= minDays; }
 	}
 
 	/**
@@ -266,11 +274,37 @@ public class GeflipPlugin extends Plugin
 	 * the shown qty. When the bank hasn't been opened we can't be sure, so we keep it (the ✓
 	 * button is the manual fallback there).
 	 */
+	/**
+	 * Capital parked in bulk positions that have not been bought into for {@code minDays}.
+	 * Static + package-private so it is unit-testable without a client. Gear (qty 1) is excluded:
+	 * an item bought to USE is not a stalled flip.
+	 */
+	static long parkedGp(java.util.List<Hold> holds, int minDays)
+	{
+		long gp = 0;
+		if (holds != null)
+			for (Hold h : holds) if (h.stuck(minDays)) gp += h.avgCost * h.qty;
+		return gp;
+	}
+
+	static int stuckCount(java.util.List<Hold> holds, int minDays)
+	{
+		int n = 0;
+		if (holds != null)
+			for (Hold h : holds) if (h.stuck(minDays)) n++;
+		return n;
+	}
+
 	private java.util.List<Hold> buildHoldings()
 	{
 		boolean invKnown = invCounts != null;      // logged in & inventory read
 		boolean bankKnown = bankCounts != null;    // bank opened this session
 		java.util.List<Hold> out = new java.util.ArrayList<>();
+		// most recent BUY per item, so a holding can report how long it has sat
+		java.util.Map<Integer, Long> lastBuyTs = new java.util.HashMap<>();
+		for (Fill f : fills)
+			if ("BUY".equals(f.side))
+				lastBuyTs.merge(f.id, f.ts, Math::max);
 		for (java.util.Map.Entry<Integer, long[]> e : ledger.holdings.entrySet())
 		{
 			int id = e.getKey();
@@ -296,7 +330,9 @@ public class GeflipPlugin extends Plugin
 				else if (have < qty) qty = have;   // some sold — show only what's actually in hand
 			}
 			String nm = scanner.nameFor(id);
-			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id), scanner.isExempt(id), listed));
+			long lb = lastBuyTs.getOrDefault(id, 0L);
+			int idle = lb > 0 ? (int) ((System.currentTimeMillis() / 1000 - lb) / 86400L) : -1;
+			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id), scanner.isExempt(id), listed, idle));
 		}
 		// ALWAYS surface tradeable items sitting in your INVENTORY that the flip ledger never tracked you
 		// buying (a buy the plugin missed while restarting, a drop, an older buy). HARDENED 2026-07-31: this
@@ -317,7 +353,7 @@ public class GeflipPlugin extends Plugin
 				if (nm == null) continue;                              // not on the GE mapping ⇒ can't sell it there
 				int qty = ie.getValue();   // inventory count ALREADY excludes units listed on the GE (listing
 				if (qty <= 0) continue;    // moves them out of your bag) — don't subtract listedForSaleQty again
-				out.add(new Hold(id, nm, qty, -1, scanner.sellHint(id), scanner.isExempt(id), 0));   // −1 = cost untracked; inv already excludes listed
+				out.add(new Hold(id, nm, qty, -1, scanner.sellHint(id), scanner.isExempt(id), 0, -1));   // −1 = cost untracked; inv already excludes listed
 			}
 		}
 		out.sort((a, b) -> Long.compare((long) b.qty * Math.max(0, b.avgCost), (long) a.qty * Math.max(0, a.avgCost)));
