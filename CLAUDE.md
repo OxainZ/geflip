@@ -1,83 +1,117 @@
-# geflip — OSRS workspace brief
+# CLAUDE.md — orient here first, every session
 
-**This is the RuneScape workspace. It is SEPARATE from the trading bot**
-(`C:\Users\Oxain\trading_bot`, `C:\Users\Oxain\stock_bot`). Nothing here touches money,
-brokers, or market code. Don't import trading context into RuneScape decisions or the reverse.
+geflip is Jonah's (OxainZ) Old School RuneScape Grand Exchange toolkit.
+Three surfaces share this repo:
 
-Repo: `C:\Users\Oxain\geflip` · git `main` · origin `github.com/OxainZ/geflip`
-Owner: Oxain (Jonah). Web app live at **https://oxainz.github.io/geflip/**
+1. **Web PWA** (`index.html` + `sw.js` + `manifest.webmanifest`) — one-file,
+   no-build-step flip finder, live at https://oxainz.github.io/geflip/
+   (GitHub Pages serves the repo root). Ranks all ~4,000 tradeables by
+   expected **gp/hour** with the 2% GE tax, buy limits, liquidity, drift and
+   staleness priced in. Data: OSRS Wiki real-time prices API, fetched
+   client-side.
+2. **RuneLite plugin trio** (`runelite-plugin/`) — Java 11 source, Gradle:
+   - `com.geflip.GeflipPlugin` — in-client flipper (scanner, panel, ledger,
+     local server for the phone page)
+   - `com.geflip.coach.CoachPlugin` — account coach (DPS, goals, dailies,
+     farm/skill plans, its own phone page via `CoachServer`)
+   - `com.geflip.jad.JadPrayerPlugin` — Jad prayer helper overlay
+3. **Cloudflare sync worker** (`sync-worker/src/worker.js`) — relays
+   fills/flips/offers between the plugin and the phone page. CORS-open **by
+   design**; the sync-id is the secret. Don't "fix" the CORS.
+4. **The AI lane (2026-08-24, `ASK_THE_AI.md`)** — CoachPlugin pushes a full
+   account snapshot (`account` key: skills, QP, quests, gp, net worth, CA
+   tier, slayer, WOM, top goals+gaps) to the same worker every ~5 min, using
+   the FLIPPER's cloudUrl/cloudId settings (nothing new to configure). One
+   GET of the blob gives an AI advisor the whole picture: account + session
+   P&L + fills + live GE offers + ranked flips. **v2 adds BANK CONTENTS
+   ([[id,qty],...], omitted until the bank is opened once per session), the
+   coach's daily lines, and minutes-since-last-farm-run.** The consuming
+   side lives in FidelityTrades `scripts/osrs_advisor.py` (phone-reachable
+   via Telegram/claude.ai), which layers LIVE wiki prices/volumes/limits/
+   alch-margins and official hiscores on top of this snapshot. READ-ONLY toward the game —
+   state ships out, nothing automates input; the sync-id stays the only
+   secret and is never committed. Builder is pure + unit-tested
+   (CoachAiSnapshotTest); unknown wealth/WOM are OMITTED, never fabricated.
 
-`README.md` explains what the tool does for a *user*. This file is the *operational* brief:
-how to run it, what breaks, and where things live.
+## Build & test (plugin)
+- `gradle build` from `runelite-plugin/` — **no wrapper is committed on
+  purpose** (`.gitignore` excludes `gradlew`/`gradle/`); use system Gradle
+  (8.x) despite README saying `./gradlew`.
+- Lombok is pinned **1.18.34** — do not downgrade below 1.18.30 (older
+  crashes under JDK 20+ javac with a JCTree$JCImport error). Source/target
+  stays Java 11 (RuneLite's floor).
+- Tests: `gradle test` — 11 test classes / 38 tests, all green. Keep them so.
+- The jar MUST contain `runelite-plugin.properties` (repo root of
+  `runelite-plugin/`) — without it the sideloader silently skips the plugin.
+  It lists all three plugin classes; update it if a plugin class is
+  added/renamed.
+- Jonah runs it via `launch-geflip.bat` (dev-mode RuneLite; needs JDK 11 at
+  the JAVA_HOME set inside the .bat). Built jar sideloads to
+  `~/.runelite/sideloaded-plugins/`.
 
----
+## Data
+- `data/trends.json` — 30/90/180d trend snapshots, refreshed by
+  `scripts/enrich_trends.py` (commit style: "data: refresh 30/90/180d
+  trends (YYYY-MM-DD)"). Never hand-edit; regenerate.
+- `osrs-flip.zip` / `osrsflip.pyz` — packaged artifacts, don't touch.
 
-## The three deliverables in this repo
+## Code conventions (these were audited in — keep them)
+- **All gp aggregate math is `long`** — item prices × quantities overflow
+  int. Per-fill `int` fields are fine (bounded by buy limits).
+- GE tax: `GeflipScanner.saleTax` is the single source (2%, floored, 5m gp
+  cap). Don't re-derive tax inline elsewhere.
+- Client-thread state is **snapshotted before any off-thread persist**
+  (copy the COW list first — never subList/iterate the live list off-thread).
+- Journal writes are atomic (`.tmp` + ATOMIC_MOVE with fallback).
+- Phone pages escape all remote data before `innerHTML` — keep it that way.
+- Uniform null-guard style on wiki JSON (`has()` checks are deliberately
+  omitted for keys the wiki API always sends; throws are caught by
+  `triggerScan` and surface as "prices STALE").
 
-1. **Web app (PWA)** — `index.html`, `manifest.webmanifest`, `sw.js`, icons. One file, no build
-   step, installs to the phone home screen. Ranks every tradeable item by expected **gp/hour**
-   (2% GE tax, buy limits, liquidity, drift and quote staleness priced in). Deployed to GitHub Pages.
-2. **RuneLite plugins** — `runelite-plugin/` (Java 11). Three plugins in one jar:
-   - **Geflip** — flip finder, live fills + P&L tracking, phone bridge.
-   - **Coach** — progression advisor: goal-graph, farm runs, Risk+max-hit, best-ranged-upgrade
-     finder. **Reads the LIVE account, so RuneScape must be open and logged in** or it can't answer.
-   - **Jad prayer helper** — see the ToS note below.
-3. **sync-worker/** — LAN/cloud sync so the phone sees the same state as the PC.
+## Gotchas
+- `GeflipScanner` staleness decay is keyed on the **older** leg's timestamp
+  (variable is named `newest` — misleading name, intentional behavior, see
+  README "staleness decay").
+- The service worker caches the app shell (never price data) — bump the
+  `SHELL` constant in `sw.js` (e.g. `geflip-shell-v2` → `-v3`) when changing
+  `index.html`/icons, or installed phones keep serving the old shell.
+- Not affiliated with Jagex; prices API has usage etiquette — keep the
+  user-agent header the scanner sends.
 
-Plugins are **READ-ONLY**: they observe game state and advise. They do not automate play.
-
----
-
-## Running it
-
-**Just launch it:** `launch-geflip.bat` (repo root, also a desktop shortcut). First launch of a
-session compiles ~20s, then the RuneLite window opens. Closing the window exits.
-
-It pins its own toolchain — the system Java/Gradle are NOT used:
-
+## Launching it, and what to do when it won't start
+Jonah launches with **`launch-geflip.bat`** (repo root / desktop shortcut). It pins its own
+toolchain — the system Java is NOT used:
 ```
-JAVA_HOME = C:\Users\Oxain\tools\jdk\jdk-11.0.31+11     (JDK 11 — the client needs 11)
+JAVA_HOME = C:\Users\Oxain\tools\jdk\jdk-11.0.31+11     (JDK 11 — the client's floor)
 GRADLE    = C:\Users\Oxain\tools\gradle\gradle-7.6.4\bin\gradle.bat
-cwd       = C:\Users\Oxain\geflip\runelite-plugin
+cwd       = C:\Users\Oxain\geflip\runelite-plugin  ->  gradle run --no-daemon
 ```
+First launch of a session compiles ~20s. Closing the RuneLite window exits.
 
-Gradle tasks (`runelite-plugin/build.gradle`):
-- `run` — launch real RuneLite with the plugins registered via `loadBuiltin` (`GeflipPluginTest`).
-  Needs `-ea`; RuneLite's `loadBuiltin()` refuses to run without assertions.
-- `runCli` — headless `GeflipCli` against the live wiki API. **No game needed.** This is the
-  canonical flip engine — anything else that reports flips should call this, not reimplement it.
+**Black screen / client stuck = `error_game_js5connect_outofdate`. It is NOT a GPU, driver,
+or 117HD problem — do not go down that road (a whole session was lost to it once).** It means
+the pinned client version went stale after a Jagex update. Fix: bump `runeLiteVersion` in
+`runelite-plugin/build.gradle` (~line 19), rebuild, kill the old client, relaunch. Confirm
+recovery in `C:\Users\Oxain\.runelite\logs\client.log`: `117 HD started successfully!` present,
+no `js5connect` line. The version is pinned deliberately (`latest.release` made builds
+non-reproducible) — bump it on purpose, never automatically.
+
+Log noise that is NOT a bug: `worldhopper ping` warnings; a `GeflipScanner.httpGet` stack
+trace means the wiki price API blipped and it self-recovers.
+
+## Gradle tasks beyond build/test
+- `run` — launch real RuneLite with the trio registered via `loadBuiltin` (`GeflipPluginTest`);
+  needs `-ea`, since `loadBuiltin()` refuses to run without assertions.
+- `runCli` — headless `GeflipCli` against the live wiki API, **no game needed**. This is the
+  **canonical flip engine**: anything reporting flips should call it, not reimplement the scan.
 - `runBridge` — local bridge server with mock state, no game needed.
 
-**Phone bridge:** the plugin serves on **port 7777** — open `http://<pc-ip>:7777` on the phone.
-The log line `geflip bridge on port 7777` at startup confirms it's up.
+The in-client plugin also serves the phone on **port 7777** (`http://<pc-ip>:7777`); the startup
+log line `geflip bridge on port 7777` confirms it. This is the LAN path; the Cloudflare
+sync-worker above is the remote path.
 
----
-
-## Known breakages (check these first)
-
-**Black screen / stuck client = `error_game_js5connect_outofdate`.** This is NOT a GPU, driver, or
-117HD problem — don't go down that road (we wasted a session on it once). It means the **pinned
-client version is stale** because Jagex shipped an update. Fix:
-
-```
-runelite-plugin/build.gradle line ~19:  def runeLiteVersion = '1.12.36'
-```
-
-Bump it to current, rebuild, kill any old client, relaunch. Verify recovery in the log by
-`117 HD started successfully!` and the absence of any `js5connect` line.
-
-The version is pinned deliberately — `latest.release` made builds non-reproducible and let an
-upstream release silently change the artifact. Bump it **on purpose**, not automatically.
-
-**Log:** `C:\Users\Oxain\.runelite\logs\client.log`. Routine `worldhopper ping` warnings are noise.
-A `GeflipScanner.httpGet` stack trace = the wiki price API blipped; it self-recovers.
-
----
-
-## Where the data actually lives
-
-Runtime state is **outside the repo** (RuneLite's profile dir), so cloning the repo does not carry it:
-
+## Runtime data lives OUTSIDE the repo
+Cloning the repo does not carry any of this — it's in RuneLite's profile dir:
 ```
 C:\Users\Oxain\.runelite\geflip\
   fills.json                    live buys/sells — holdings = net (bought - sold)
@@ -87,29 +121,17 @@ C:\Users\Oxain\.runelite\geflip\
   session.json / snapshot.json  current session state
 ```
 
-In-repo data: `data/trends.json` (built by `scripts/enrich_trends.py`).
-Item names resolve via the OSRS Wiki mapping API.
-
----
-
 ## Cross-project dependency (do not break)
+Separate from Jonah's trading bot (`C:\Users\Oxain\trading_bot`, `stock_bot`) — no shared code,
+no money here. The one live tie: the trading bot's Telegram bridge
+(`trading_bot/scripts/hermes_chat.py`) exposes `geflip(action=flips|holdings|coach)`, which runs
+**this repo's `gradle runCli`** for flips (cached ~10 min) and parses `.runelite\geflip\fills.json`
+for holdings. **Renaming `runCli`, changing its output shape, or moving `fills.json` breaks the
+phone** — update `hermes_chat.py` in the same pass. (See also `osrs_advisor.py` on the AI lane.)
 
-The trading bot's Telegram bridge exposes a `geflip(action=flips|holdings|coach)` tool
-(`trading_bot/scripts/hermes_chat.py`) so the phone can ask RuneScape questions. It:
-- runs **this repo's** `gradle runCli` for flips (cached ~10 min) — canonical, no divergence,
-- parses `.runelite/geflip/fills.json` for holdings,
-- reads `trading_bot/user_data/geflip_context.md` for background.
-
-So: **renaming `runCli`, changing its output shape, or moving `fills.json` breaks the phone.**
-If you change either, update `hermes_chat.py` in the same pass.
-
----
-
-## Rules
-
-- **Jad prayer helper is against Jagex ToS.** It exists as a local, user's-risk build at Jonah's
-  explicit decision. Never ship it publicly, never bundle it into the Pages deploy, and don't
-  quietly re-enable it if it's been turned off. It is his call, not yours.
-- Plugins stay **read-only** — no input automation, no botting. That's the line.
-- The pinned JDK/Gradle/client versions are load-bearing. Don't "modernise" them casually.
-- Not affiliated with Jagex. Prices come from the OSRS Wiki real-time prices API.
+## Standing rules
+- **The Jad prayer helper is against Jagex ToS.** It exists as a local, user's-risk build at
+  Jonah's explicit decision. Never ship it publicly, never bundle it into the Pages deploy, and
+  don't quietly disable or re-enable it on your own. His call, not yours.
+- Plugins are **read-only** toward the game — observe and advise, never automate input.
+- The pinned JDK / Gradle / client versions are load-bearing. Don't "modernise" them casually.

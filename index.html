@@ -816,6 +816,17 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     // if the live low is <half of it (a real dip within ~half the norm still prices off the quote).
     const g24low = d24?.[idStr]?.avgLowPrice;
     if (g24low!=null && g24low>0 && q.low < g24low/2) rLow = Math.max(rLow, g24low);
+    // ANTI-PUMP: if the guarded price sits far ABOVE the item's 24h average, the recent prints are a
+    // pump/outlier on thin volume (e.g. Mixed hide cape: 5m avg 47-50k on ~6 trades vs a 20k 24h norm)
+    // — buying there means overpaying an item that reverts. Reject when the mid is >1.5x the 24h mid.
+    // (Backported from the plugin scanner so both surfaces agree on the same item.)
+    {
+      const p24 = d24?.[idStr];
+      if (p24 && p24.avgHighPrice!=null && p24.avgLowPrice!=null){
+        const pumpMid24 = (p24.avgHighPrice + p24.avgLowPrice)/2;
+        if (pumpMid24 > 0 && (rLow + rHigh)/2 > pumpMid24*1.5){ R('pumped >1.5x its 24h norm'); continue; }
+      }
+    }
     let buy  = cfg.slip>0 ? Math.ceil(rLow *(1+cfg.slip)) : rLow;   // reassigned to the undercut price below
     let sell = cfg.slip>0 ? Math.floor(rHigh*(1-cfg.slip)) : rHigh;
     if (sell <= buy){ R('no realistic spread'); continue; }
@@ -886,7 +897,11 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     // fill probability (Poisson): expected units on the slower side in a 4h cycle vs your qty
     const expUnits = cfg.part * Math.min(sellersFc, buyersFc) * cfg.cycleH;
     const zf = (expUnits - qty) / Math.sqrt(Math.max(1, expUnits));
-    const fillProb = 1/(1+Math.exp(-1.702*zf));
+    let fillProb = 1/(1+Math.exp(-1.702*zf));
+    // STALENESS DISCOUNT (quant): a quote that hasn't traded in a while is less likely to actually
+    // fill at that price — cut fill-prob by the age of the quote (τ=1800s → ~21-min half-life).
+    // (Backported from the plugin scanner; without it a stale item outranked its fresher twin here.)
+    fillProb *= 0.4 + 0.6*Math.exp(-age/1800);
     const wontFill = Math.min(sellersHr, buyersHr) < 50 || fillProb < 0.15;
 
     // ---- Drift: a great spread on a collapsing price is not a flip ----
@@ -942,7 +957,13 @@ function scoreAll(map, latest, h1, d24, m5, cfg, now, limits){
     const touchBuy = buy, touchSell = sell, touchMargin = margin;
     buy = bidComp; sell = askComp; margin = marginComp;
     roi = buy>0 ? margin/buy : 0;
-    if (margin < 1){ R('undercut kills the margin'); continue; }
+    // the user's margin floor must hold on the ACHIEVABLE (post-undercut) margin too, not just the
+    // touch margin — ticks + flow-imbalance shift + the haircut can eat below it (plugin parity).
+    if (margin < Math.max(1, cfg.minMargin)){ R('undercut kills the margin'); continue; }
+    // PENNY-FLIP QUALITY GATE (plugin parity): drop a flip only when BOTH its after-tick ROI is
+    // trivial (<1%) AND its absolute margin is small (<300gp). Kills ruby-necklace/cheap-rune
+    // penny flips while KEEPING fat low-ROI flips (Dragonfire shield: 0.6% ROI but ~23k gp/ea).
+    if (roi < 0.01 && margin < 300){ R('penny flip — trivial ROI and margin'); continue; }
 
     const fresh = Math.exp(-age/cfg.tauS);
     const volS  = Math.sqrt(Math.min(1, vol1/cfg.volSat));
