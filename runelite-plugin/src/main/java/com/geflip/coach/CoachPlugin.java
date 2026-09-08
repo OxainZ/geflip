@@ -1446,8 +1446,11 @@ public class CoachPlugin extends Plugin
 		if (anthropic)
 		{
 			// Anthropic Messages API: system is a top-level field, max_tokens required, x-api-key auth.
-			body.addProperty("model", model.isEmpty() ? "claude-sonnet-4-5" : model);
-			body.addProperty("max_tokens", 900);
+			body.addProperty("model", model.isEmpty() ? "claude-opus-5" : model);
+			// max_tokens covers THINKING + visible text, and current models think by default.
+			// At 900 the reasoning could eat the whole budget and return no answer at all
+			// (stop_reason: max_tokens). Give it room; the system prompt keeps the reply short.
+			body.addProperty("max_tokens", 4096);
 			body.addProperty("system", ctx);
 			msgs.add(usr);
 			body.add("messages", msgs);
@@ -1484,11 +1487,45 @@ public class CoachPlugin extends Plugin
 			if (j.has("choices"))   // OpenAI
 				return j.getAsJsonArray("choices").get(0).getAsJsonObject()
 					.getAsJsonObject("message").get("content").getAsString();
-			if (j.has("content"))   // Anthropic
-				return j.getAsJsonArray("content").get(0).getAsJsonObject().get("text").getAsString();
+			if (j.has("content"))   // Anthropic Messages API
+				return anthropicAnswer(j);
 		}
 		catch (Exception ignored) { /* fall through to raw */ }
 		return resp;
+	}
+
+	/**
+	 * Pull the answer text out of an Anthropic Messages API response.
+	 *
+	 * Static + package-private ON PURPOSE: this is the path that silently broke, and a unit test
+	 * can exercise it without a network call. Never assume content[0] is the text — current models
+	 * (Opus 5 / Sonnet 5) think by default and emit a thinking block FIRST, whose text is empty
+	 * (display defaults to "omitted"). Reading content[0].text returned null, threw, and the caller's
+	 * catch dumped the raw JSON blob into the panel instead of an answer.
+	 */
+	static String anthropicAnswer(JsonObject j)
+	{
+		JsonArray blocks = j.has("content") && j.get("content").isJsonArray()
+			? j.getAsJsonArray("content") : null;
+		if (blocks != null)
+		{
+			for (int i = 0; i < blocks.size(); i++)
+			{
+				JsonObject b = blocks.get(i).getAsJsonObject();
+				if (b.has("type") && "text".equals(b.get("type").getAsString())
+					&& b.has("text") && !b.get("text").isJsonNull())
+				{
+					String txt = b.get("text").getAsString().trim();
+					if (!txt.isEmpty()) return txt;
+				}
+			}
+		}
+		// Nothing to show: say why in plain English rather than dumping the blob at the user.
+		String stop = j.has("stop_reason") && !j.get("stop_reason").isJsonNull()
+			? j.get("stop_reason").getAsString() : "";
+		if ("refusal".equals(stop)) return "The model declined to answer that one.";
+		if ("max_tokens".equals(stop)) return "Ran out of tokens before any answer text — try a narrower question.";
+		return "No answer text came back" + (stop.isEmpty() ? "" : " (stop_reason: " + stop + ")") + ".";
 	}
 
 	private static byte[] readAll(java.io.InputStream in) throws Exception

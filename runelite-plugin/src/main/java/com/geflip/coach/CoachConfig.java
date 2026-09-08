@@ -79,6 +79,7 @@ public interface CoachConfig extends Config
 	default String askKey() { return ""; }
 
 	@ConfigItem(keyName = "askModel", name = "Model", section = ask, position = 13,
-		description = "Model id to send (endpoint-dependent).")
-	default String askModel() { return "claude-sonnet-4-5"; }
+		description = "Model id to send (endpoint-dependent). Anthropic: claude-opus-5 (best), "
+			+ "claude-sonnet-5 (cheaper), claude-haiku-4-5 (fastest).")
+	default String askModel() { return "claude-opus-5"; }
 }
