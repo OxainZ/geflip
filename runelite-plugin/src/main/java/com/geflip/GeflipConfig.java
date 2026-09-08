@@ -261,4 +261,8 @@ public interface GeflipConfig extends Config
 		position = 14
 	)
 	default String cloudId() { return ""; }
+
+	@ConfigItem(keyName = "goalItem", name = "Savings goal (item)", position = 90,
+		description = "An item name to save toward, e.g. Twisted bow. Blank turns the goal line off.")
+	default String goalItem() { return "Twisted bow"; }
 }

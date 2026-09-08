@@ -303,6 +303,19 @@ public class GeflipPlugin extends Plugin
 	}
 
 	/** The holding worth closing first: biggest total profit at the current sell hint, or null. */
+	/**
+	 * Days to close a savings gap at a realised rate. -1 when it cannot be answered (no gap left,
+	 * or no earning rate) rather than dividing by zero or implying "never" as a number.
+	 * Deliberately uses the REALISED rate, not a hoped-for one: at 11.3k/day a 1.33b gap is 322
+	 * years, and seeing that is the point - the constraint is turnover, not bankroll.
+	 */
+	static long daysToGoal(long gap, long gpPerDay)
+	{
+		if (gap <= 0) return 0;
+		if (gpPerDay <= 0) return -1;
+		return (gap + gpPerDay - 1) / gpPerDay;
+	}
+
 	static Hold bestClose(java.util.List<Hold> holds)
 	{
 		Hold best = null;
@@ -816,6 +829,23 @@ public class GeflipPlugin extends Plugin
 				if ("BUYING".equals(o.state)) working += (long) o.price * Math.max(0, o.qtyTotal - o.qtySold);
 			}
 			panel.setCapital(working, bankrollGp(), slotsUsed);
+			// savings goal: live price vs what you have, ETA at the rate you ACTUALLY realise
+			try
+			{
+				String want = config.goalItem();
+				int gid = (want == null || want.trim().isEmpty()) ? -1 : scanner.idForName(want.trim());
+				int gprice = gid > 0 ? scanner.buyHint(gid) : -1;
+				if (gprice > 0)
+				{
+					long firstTs = fills.isEmpty() ? 0 : fills.get(0).ts;
+					double elapsed = firstTs > 0
+						? Math.max(1.0, (System.currentTimeMillis() / 1000.0 - firstTs) / 86400.0) : 1.0;
+					panel.setGoal(scanner.nameFor(gid), gprice, bankrollGp(),
+						(long) (ledger.realizedFlip / elapsed));
+				}
+				else panel.setGoal(null, 0, 0, 0);
+			}
+			catch (Exception e) { log.debug("geflip: goal line failed", e); }
 		}
 	}
 

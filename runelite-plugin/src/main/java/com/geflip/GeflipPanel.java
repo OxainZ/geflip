@@ -43,6 +43,7 @@ class GeflipPanel extends PluginPanel
 	private final JLabel combined = new JLabel(" ");   // real earn rate = top slots summed
 	private final JLabel bankLabel = new JLabel(" ");  // the bankroll being used (your coins)
 	private final JLabel capitalLabel = new JLabel(" ");  // capital working vs idle + slots in use
+	private final JLabel goalLabel = new JLabel(" ");     // savings goal: price, progress, honest ETA
 	private final JLabel session = new JLabel("session: —");
 	private final JLabel calib = new JLabel(" ");      // your ACTUAL results (win% / hold)
 	private final JLabel legend = new JLabel(" ");     // what the row symbols mean
@@ -167,6 +168,10 @@ class GeflipPanel extends PluginPanel
 		top.add(combined);
 		top.add(bankLabel);
 		top.add(capitalLabel);
+		goalLabel.setForeground(ColorScheme.BRAND_ORANGE);
+		goalLabel.setFont(FontManager.getRunescapeSmallFont());
+		goalLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		top.add(goalLabel);
 		top.add(priceRow);
 		top.add(priceResult);
 		top.add(legend);
@@ -549,6 +554,37 @@ class GeflipPanel extends PluginPanel
 	/** Capital-utilization meter: how much of the bankroll is WORKING (pending buys + held stock)
 	 *  vs idle coins, and how many of the 8 GE slots are in use. Idle capital / idle slots are the
 	 *  #1 throughput leak in flipping, so this makes them visible. */
+	/**
+	 * Savings goal. The ETA uses your REALISED gp/day, not a hoped-for rate - if that reads in
+	 * years, that IS the finding, and it points at turnover rather than bankroll.
+	 * perDay <= 0 (nothing realised yet) shows progress without inventing a date.
+	 */
+	void setGoal(String name, long price, long have, long perDay)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			if (name == null || price <= 0) { goalLabel.setText(" "); return; }
+			long gap = price - have;
+			if (gap <= 0)
+			{
+				goalLabel.setText("<html><div style='width:205px'>goal: " + name + " " + gp(price)
+					+ " - YOU CAN AFFORD IT</div></html>");
+				goalLabel.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+				return;
+			}
+			long days = GeflipPlugin.daysToGoal(gap, perDay);
+			String eta = days < 0 ? "no realised profit yet"
+				: days < 400 ? days + "d at " + gp(perDay) + "/day"
+				: String.format("%.1f yr at %s/day", days / 365.0, gp(perDay));
+			int pct = (int) Math.round(100.0 * have / price);
+			goalLabel.setText("<html><div style='width:205px'>goal: " + name + " " + gp(price)
+				+ " - " + pct + "% there, " + gp(gap) + " to go<br>" + eta + "</div></html>");
+			goalLabel.setForeground(ColorScheme.BRAND_ORANGE);
+			goalLabel.setToolTipText("Based on gp actually realised since your first tracked fill. A long "
+				+ "ETA means capital is not cycling - idle coins and free slots cost more than a better pick.");
+		});
+	}
+
 	void setCapital(long working, long bankroll, int slotsUsed)
 	{
 		SwingUtilities.invokeLater(() ->
