@@ -1504,6 +1504,37 @@ public class CoachPlugin extends Plugin
 		return b.toString();
 	}
 
+	/** Local Ollama, OpenAI-compatible. Free: no key, no account, no per-question cost. */
+	private static final String LOCAL_LLM_URL = "http://127.0.0.1:11434/v1/chat/completions";
+
+	/**
+	 * The model a local Ollama is serving, or null when nothing is listening. Short timeouts so a
+	 * machine without Ollama costs the Ask almost nothing before it falls back to localAnswer.
+	 * Prefers a general model over a *-coder one: this asks game questions, not code questions.
+	 */
+	private String localLlmModel()
+	{
+		try
+		{
+			HttpURLConnection c = (HttpURLConnection) new URL("http://127.0.0.1:11434/api/tags").openConnection();
+			c.setConnectTimeout(1200); c.setReadTimeout(2500);
+			if (c.getResponseCode() != 200) return null;
+			JsonObject j = new JsonParser().parse(
+				new String(readAll(c.getInputStream()), StandardCharsets.UTF_8)).getAsJsonObject();
+			JsonArray models = j.getAsJsonArray("models");
+			if (models == null || models.size() == 0) return null;
+			String first = null;
+			for (int i = 0; i < models.size(); i++)
+			{
+				String n = models.get(i).getAsJsonObject().get("name").getAsString();
+				if (first == null) first = n;
+				if (!n.toLowerCase().contains("coder")) return n;
+			}
+			return first;
+		}
+		catch (Exception e) { return null; }
+	}
+
 	private void ask(String question)
 	{
 		final String q = question;
@@ -1534,7 +1565,30 @@ public class CoachPlugin extends Plugin
 						out = pre + localAnswer(q) + "\n\n(LLM endpoint failed: " + e.getMessage() + ")";
 					}
 				}
-				else out = pre + localAnswer(q);
+				else
+				{
+					// No endpoint configured: try a local Ollama first (free, no key, nothing to set up),
+					// and fall back to the built-in coach when it is not running.
+					String localModel = localLlmModel();
+					if (localModel != null)
+					{
+						try
+						{
+							// A small local model WILL invent OSRS content if left unchecked (a 14B test run
+							// cited a quest that does not exist). Two guards: tell it to use only the given
+							// facts, and ALWAYS append the coach's own computed plan, so the grounded answer
+							// is on screen even when the prose above it drifts.
+							String rules = "Answer ONLY from the ACCOUNT and WIKI facts below. Never invent quest, item or boss names - if you are not certain, say you are not sure. Be brief and concrete.\n\n";
+							String grounded = rules + (wiki.isEmpty() ? "" : "OSRS WIKI (current, authoritative):\n" + wiki + "\n\n") + ctx;
+							out = callLlm(LOCAL_LLM_URL, "", localModel, grounded, q)
+								+ "\n\n--- coach (computed from your account, always accurate) ---\n"
+								+ localAnswer(q)
+								+ "\n\n(local " + localModel + " - free; the section above it is generated and can drift)";
+						}
+						catch (Exception e) { out = pre + localAnswer(q); }
+					}
+					else out = pre + localAnswer(q);
+				}
 			}
 			catch (Throwable t)   // Throwable, not Exception: an Error would strand the panel too
 			{
@@ -1620,6 +1674,13 @@ public class CoachPlugin extends Plugin
 			body.addProperty("max_tokens", 900);
 		}
 
+		// An endpoint with no key can only come back 401 - answer locally and say what to set,
+		// rather than spending a round-trip to show the user a raw authentication_error blob.
+		// A LOCAL endpoint (Ollama) needs no key - that is the free path, so never demand one there.
+		boolean localEndpoint = url.contains("127.0.0.1") || url.contains("localhost");
+		if (key.isEmpty() && !localEndpoint)
+			throw new IllegalStateException("no API key set - open the Coach plugin config, section 'Ask (LLM coach)', and paste your key into 'API key'. Or leave the endpoint URL BLANK: the coach then uses a local Ollama if one is running, and its own built-in brain otherwise - both free");
+
 		HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
 		c.setRequestMethod("POST");
 		c.setConnectTimeout(15000); c.setReadTimeout(60000);
@@ -1635,7 +1696,18 @@ public class CoachPlugin extends Plugin
 		int code = c.getResponseCode();
 		java.io.InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
 		String resp = new String(readAll(in), StandardCharsets.UTF_8);
-		if (code >= 400) return "endpoint " + code + ": " + resp;
+		if (code >= 400)
+		{
+			// Never show a raw API error blob in the panel - name the setting that fixes it.
+			String hint = "";
+			if (code == 401 || code == 403)
+				hint = " Your API key is missing or rejected - check 'API key' in the Coach plugin config.";
+			else if (code == 404 || (code == 400 && resp.contains("model")))
+				hint = " The Model id looks wrong. Current Anthropic ids: claude-opus-5, claude-sonnet-5, claude-haiku-4-5.";
+			else if (code == 429)
+				hint = " Rate limited, or the account is out of credit - try again shortly.";
+			return "LLM endpoint returned " + code + "." + hint + "\n\n" + resp;
+		}
 		try
 		{
 			JsonObject j = new JsonParser().parse(resp).getAsJsonObject();
