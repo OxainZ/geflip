@@ -84,6 +84,10 @@ public class CoachPlugin extends Plugin
 	// OWN reasoning (buildContext / localAnswer) can use them instead of only the cloud snapshot.
 	private volatile String lastCaTier;
 	private volatile int lastSlayerPts = -1, lastSlayerStreak = -1;
+	// Snapshots of LIVE client state, taken on the CLIENT THREAD during the scan. buildContext()
+	// runs off it, where touching the client is unsafe and walking the bank is slow - doing it there
+	// is what hung the Ask panel on 'thinking...'. Read these fields; never call the client there.
+	private volatile String lastTaskLine, lastEquipLine, lastBankLine;
 	private volatile long lastWomMs = 0;
 	private volatile java.util.Map<String, double[][]> womRates;   // WOM community-optimal xp/hr rate tables (fetched once)
 	private ScheduledFuture<?> priceRefresh;   // the net-worth price poller (cancelled on shutdown)
@@ -233,6 +237,9 @@ public class CoachPlugin extends Plugin
 			int slayerPts = client.getVarbitValue(Varbits.SLAYER_POINTS);
 			int streak = client.getVarbitValue(Varbits.SLAYER_TASK_STREAK);
 			lastCaTier = ca; lastSlayerPts = slayerPts; lastSlayerStreak = streak;
+			// live-client reads belong HERE (client thread), not in buildContext
+			try { lastTaskLine = taskLine(); lastEquipLine = equipmentLine(); lastBankLine = bankLine(12); }
+			catch (Exception ex) { log.debug("coach: account snapshot failed", ex); }
 			CoachWom.Result w = wom;
 			String eff = w != null && w.tracked && (w.ehp > 0 || w.ehb > 0)
 				? " · " + Math.round(w.ehp) + " EHP" + (w.ehb >= 1 ? "/" + Math.round(w.ehb) + " EHB" : "")
@@ -1367,7 +1374,7 @@ public class CoachPlugin extends Plugin
 		b.append("ACCOUNT — combat ").append(st.combatLevel).append(", ").append(st.qp).append(" QP");
 		if (st.coins >= 0) b.append(", ").append(CoachGoals.gp(st.coins)).append(" gp on hand");
 		if (st.wealth >= 0) b.append(", ").append(CoachGoals.gp(st.wealth)).append(" total wealth");
-		String task = taskLine();
+		String task = lastTaskLine;
 		if (task != null) b.append(".\nCURRENT SLAYER TASK: ").append(task);
 		// Item gaps are only trustworthy once the bank has been read this session. Say which,
 		// so advice never tells him to buy something already sitting in his bank.
@@ -1387,9 +1394,9 @@ public class CoachPlugin extends Plugin
 			b.append("\nEfficiency: ").append(Math.round(w.ehp)).append(" EHP, ")
 				.append(Math.round(w.ehb)).append(" EHB")
 				.append(w.ttm > 0 ? " (" + Math.round(w.ttm) + "h to max)" : "");
-		String gear = equipmentLine();
+		String gear = lastEquipLine;
 		if (gear != null) b.append("\nWEARING: ").append(gear);
-		String bank = bankLine(12);
+		String bank = lastBankLine;
 		if (bank != null) b.append("\nBANK: ").append(bank);
 		java.util.List<String> daily = CoachDailies.lines(st);
 		if (daily != null && !daily.isEmpty())
@@ -1437,7 +1444,7 @@ public class CoachPlugin extends Plugin
 		// assignment instead of generic advice. Falls through when no task is active.
 		if (q.contains("slayer") || q.contains("task"))
 		{
-			String task = taskLine();
+			String task = lastTaskLine;
 			if (task == null) return "No slayer task assigned right now - go get one, then ask again.";
 			b.append("Current task: ").append(task).append('\n');
 			int paren = task.indexOf(" (");
@@ -1499,35 +1506,44 @@ public class CoachPlugin extends Plugin
 
 	private void ask(String question)
 	{
-		final String ctx = buildContext();
 		final String q = question;
-		if (panel != null) panel.setAskResult("looking it up…");
-		// EVERYTHING off the EDT: fetch live OSRS wiki knowledge for the question, then either ground
-		// the LLM with it (endpoint set) or show the wiki + the coach's own plan (no endpoint). This is
-		// how the coach "knows everything" — it pulls the current wiki on demand, never a stale copy.
+		if (panel != null) panel.setAskResult("looking it up...");
 		executor.submit(() ->
 		{
-			String wiki = wikiSummary(q);
-			String url = config.askUrl().trim();
-			if (!url.isEmpty())
+			// The panel sits on its pending message until this task sets a result, so ANY escape from
+			// this lambda strands it there forever - that was the "thinking..." hang, caused by
+			// buildContext touching live client state off the client thread. Everything now runs inside
+			// one guard that ALWAYS ends by setting a result, and buildContext runs here reading only
+			// the fields snapshotted during the scan.
+			String out;
+			try
 			{
-				try
+				String ctx = buildContext();
+				String wiki = wikiSummary(q);
+				String url = config.askUrl().trim();
+				String pre = wiki.isEmpty() ? "" : "[wiki] " + wiki + "\n\n";
+				if (!url.isEmpty())
 				{
-					String grounded = (wiki.isEmpty() ? "" : "OSRS WIKI (current, authoritative):\n" + wiki + "\n\n") + ctx;
-					String reply = callLlm(url, config.askKey().trim(), config.askModel().trim(), grounded, q);
-					if (panel != null) panel.setAskResult(reply);
+					try
+					{
+						String grounded = (wiki.isEmpty() ? "" : "OSRS WIKI (current, authoritative):\n" + wiki + "\n\n") + ctx;
+						out = callLlm(url, config.askKey().trim(), config.askModel().trim(), grounded, q);
+					}
+					catch (Exception e)
+					{
+						out = pre + localAnswer(q) + "\n\n(LLM endpoint failed: " + e.getMessage() + ")";
+					}
 				}
-				catch (Exception e)
-				{
-					if (panel != null) panel.setAskResult((wiki.isEmpty() ? "" : "📖 " + wiki + "\n\n") + localAnswer(q)
-						+ "\n\n(LLM endpoint failed: " + e.getMessage() + ")");
-				}
+				else out = pre + localAnswer(q);
 			}
-			else if (panel != null)
+			catch (Throwable t)   // Throwable, not Exception: an Error would strand the panel too
 			{
-				// no LLM: still answer with live wiki knowledge + the coach's computed plan
-				panel.setAskResult((wiki.isEmpty() ? "" : "📖 " + wiki + "\n\n") + localAnswer(q));
+				log.warn("coach: ask failed", t);
+				out = "Ask failed: " + t.getClass().getSimpleName()
+					+ (t.getMessage() == null ? "" : " - " + t.getMessage())
+					+ "\nThe account read itself still works - hit Rescan account, then ask again.";
 			}
+			if (panel != null) panel.setAskResult(out);
 		});
 	}
 
