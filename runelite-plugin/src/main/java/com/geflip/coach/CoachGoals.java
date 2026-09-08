@@ -198,6 +198,37 @@ final class CoachGoals
 			skill(Skill.AGILITY, 70), skill(Skill.CONSTRUCTION, 70), skill(Skill.FARMING, 70), skill(Skill.HERBLORE, 70),
 			skill(Skill.HUNTER, 70), skill(Skill.MINING, 70), skill(Skill.SMITHING, 70), skill(Skill.WOODCUTTING, 70),
 			quest(Quest.MOURNINGS_END_PART_II), quest(Quest.MAKING_HISTORY), quest(Quest.DRUIDIC_RITUAL)));
+
+		// --- MONEY METHODS (2026-09-07) -------------------------------------------------
+		// The coach could rank bosses but had almost nothing to say about earning gp outside
+		// combat, which is where a mid-level account actually makes its money.
+		// SOURCING: requirements were parsed from each wiki Money making guide's own
+		// |Skill= / |Quest= fields (api.php action=parse&prop=wikitext), not written from memory.
+		// NO gp/hr IS HARDCODED ON PURPOSE: the wiki computes those live from GE prices, so a
+		// number baked in here would rot and the coach would start quoting stale profits. The
+		// requirements are the stable half; ask the coach and it pulls the live wiki page.
+		// Where a guide listed a level as "recommended" rather than required, it is left out.
+		GOALS.add(new Goal("Guardians of the Rift", 4, "medium",
+			"Runecrafting minigame - steady gp plus RC xp, and the best source of rune/ancient talismans. Scales hard with RC level.",
+			skill(Skill.RUNECRAFT, 27), quest(Quest.TEMPLE_OF_THE_EYE)));
+		GOALS.add(new Goal("Bird house runs", 5, "quick",
+			"Passive: ~50 min cycle, a couple of minutes of work, stacks with anything else you are doing. Nests fund Herblore seeds.",
+			quest(Quest.BONE_VOYAGE)));
+		GOALS.add(new Goal("Herb runs", 5, "quick",
+			"The classic passive earner - a few minutes per cycle. Ranarrs from ~32 Farming; higher herb tiers pay progressively more.",
+			skill(Skill.FARMING, 32)));
+		GOALS.add(new Goal("Herbiboar hunting", 3, "medium",
+			"Afk-ish herb income on Fossil Island, no combat and no risk. Pairs with bird house runs on the same trip.",
+			skill(Skill.HUNTER, 80), quest(Quest.BONE_VOYAGE)));
+		GOALS.add(new Goal("Crafting blood runes", 4, "long",
+			"High, steady gp/hr once unlocked - one of the better non-combat incomes at high RC.",
+			skill(Skill.RUNECRAFT, 77), quest(Quest.SINS_OF_THE_FATHER)));
+		GOALS.add(new Goal("Barrows runs", 4, "medium",
+			"Reliable mid-level money with no gear risk beyond supplies; also the Barrows gloves route.",
+			quest(Quest.PRIEST_IN_PERIL)));
+		GOALS.add(new Goal("Black chinchompas", 4, "medium",
+			"High gp/hr Hunter in the Wilderness - risky, bank often. Also the fastest Ranged xp in the game.",
+			quest(Quest.EAGLES_PEAK), quest(Quest.MONKEY_MADNESS_II)));
 	}
 
 	// --- curated high-value quests (with their BINDING requirements) ----------

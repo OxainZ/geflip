@@ -1538,6 +1538,11 @@ public class GeflipPlugin extends Plugin
 		try { java.nio.file.Files.copy(fillsFile.toPath(),
 				fillsFile.toPath().resolveSibling("fills_prehistory_backup.json"),
 				java.nio.file.StandardCopyOption.REPLACE_EXISTING); } catch (Exception ignore) { }
+		// NOTE: deliberately NOT routed through bookFill(). This path REPLACES the ledger from GE
+		// history (clear() above) so it cannot duplicate against live fills, and its timestamps are
+		// SYNTHETIC (base + (n - k), one second apart). Running the 120s dedup window over synthetic
+		// stamps would delete legitimately distinct history rows that merely look alike. The guard
+		// belongs on live booking, where timestamps are real.
 		fills.clear();
 		fills.addAll(rebuilt);
 		geHistReconciled = true;
