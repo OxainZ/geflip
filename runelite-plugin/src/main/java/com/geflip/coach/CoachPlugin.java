@@ -80,6 +80,10 @@ public class CoachPlugin extends Plugin
 	private volatile long lastHiscoreMs = 0;
 	// Wise Old Man efficiency metrics (EHP/EHB), fetched off-thread + cached
 	private volatile CoachWom.Result wom;
+	// Account facts the scan already computes for the panel summary. Kept in fields so the coach's
+	// OWN reasoning (buildContext / localAnswer) can use them instead of only the cloud snapshot.
+	private volatile String lastCaTier;
+	private volatile int lastSlayerPts = -1, lastSlayerStreak = -1;
 	private volatile long lastWomMs = 0;
 	private volatile java.util.Map<String, double[][]> womRates;   // WOM community-optimal xp/hr rate tables (fetched once)
 	private ScheduledFuture<?> priceRefresh;   // the net-worth price poller (cancelled on shutdown)
@@ -228,6 +232,7 @@ public class CoachPlugin extends Plugin
 			String ca = caTier();
 			int slayerPts = client.getVarbitValue(Varbits.SLAYER_POINTS);
 			int streak = client.getVarbitValue(Varbits.SLAYER_TASK_STREAK);
+			lastCaTier = ca; lastSlayerPts = slayerPts; lastSlayerStreak = streak;
 			CoachWom.Result w = wom;
 			String eff = w != null && w.tracked && (w.ehp > 0 || w.ehb > 0)
 				? " · " + Math.round(w.ehp) + " EHP" + (w.ehb >= 1 ? "/" + Math.round(w.ehb) + " EHB" : "")
@@ -1272,6 +1277,28 @@ public class CoachPlugin extends Plugin
 	/** Current slayer task as "Kraken (87 left)", or null when none / unreadable. Reads the same
 	 *  varps as the AI-snapshot push, which resolved this and then discarded it — so the coach's
 	 *  OWN advice never knew what you were assigned. Fail-soft: raw id rather than a wrong name. */
+	/** What you are actually WEARING, as item names. The AI snapshot shipped this to the cloud while
+	 *  the coach's own advice stayed blind to it - so it could recommend gear already on your back. */
+	String equipmentLine()
+	{
+		try
+		{
+			net.runelite.api.ItemContainer ec = client.getItemContainer(net.runelite.api.InventoryID.EQUIPMENT);
+			if (ec == null) return null;
+			StringBuilder sb = new StringBuilder();
+			for (net.runelite.api.Item it : ec.getItems())
+			{
+				if (it == null || it.getId() <= 0) continue;
+				String n = itemManager.getItemComposition(it.getId()).getName();
+				if (n == null || n.isEmpty() || "null".equals(n)) continue;
+				if (sb.length() > 0) sb.append(", ");
+				sb.append(n);
+			}
+			return sb.length() == 0 ? null : sb.toString();
+		}
+		catch (Exception e) { return null; }
+	}
+
 	String taskLine()
 	{
 		try
@@ -1309,6 +1336,29 @@ public class CoachPlugin extends Plugin
 		b.append(st.bankKnown
 			? ".\nBank HAS been read this session - gear/item gaps below are reliable."
 			: ".\nBank NOT opened this session - treat any 'you need item X' as UNVERIFIED; he may already own it.");
+		// FULL ACCOUNT PICTURE. All of this was already computed for the panel or the cloud
+		// snapshot; the coach just never saw it, so advice ignored what he owns, wears, and has
+		// unlocked. Every line is omitted when unknown rather than guessed.
+		if (lastCaTier != null && !lastCaTier.isEmpty())
+			b.append("\nCombat Achievements tier: ").append(lastCaTier);
+		if (lastSlayerPts >= 0 || lastSlayerStreak >= 0)
+			b.append("\nSlayer: ").append(Math.max(0, lastSlayerPts)).append(" points, ")
+				.append(Math.max(0, lastSlayerStreak)).append(" task streak");
+		CoachWom.Result w = wom;
+		if (w != null && w.tracked && (w.ehp > 0 || w.ehb > 0))
+			b.append("\nEfficiency: ").append(Math.round(w.ehp)).append(" EHP, ")
+				.append(Math.round(w.ehb)).append(" EHB")
+				.append(w.ttm > 0 ? " (" + Math.round(w.ttm) + "h to max)" : "");
+		String gear = equipmentLine();
+		if (gear != null) b.append("\nWEARING: ").append(gear);
+		java.util.List<String> daily = CoachDailies.lines(st);
+		if (daily != null && !daily.isEmpty())
+			b.append("\nDailies/recurring available: ").append(String.join("; ", daily));
+		java.util.List<String> unlocked = CoachUnlocks.lines(st);
+		if (unlocked != null && !unlocked.isEmpty())
+			b.append("\nUnlocks: ").append(String.join("; ", unlocked));
+		int farmMin = farmElapsedMin();
+		if (farmMin >= 0) b.append("\nMinutes since last farm run: ").append(farmMin);
 		b.append(".\nLevels: ");
 		for (Skill sk : Skill.values())
 		{
