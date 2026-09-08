@@ -783,10 +783,15 @@ class GeflipPanel extends PluginPanel
 				// to say so. Gear (qty 1) is excluded by Hold.stuck.
 				int stuckN = GeflipPlugin.stuckCount(holds, STUCK_DAYS);
 				long parked = GeflipPlugin.parkedGp(holds, STUCK_DAYS);
-				JLabel hdr = new JLabel(stuckN > 0
-					? "To sell   -   " + stuckN + " idle >" + STUCK_DAYS + "d, " + gp(parked) + " parked"
-					: "To sell");
-				hdr.setForeground(stuckN > 0 ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.BRAND_ORANGE);
+				// Lead with the money: the single position worth closing right now. A winner sitting
+				// in the bank is the thing you most need told, and per-row numbers are easy to scroll past.
+				GeflipPlugin.Hold best = GeflipPlugin.bestClose(holds);
+				String head = "To sell";
+				if (best != null) head += "   -   best: " + trunc(best.name, 14) + " +" + gp(best.positionPnl());
+				if (stuckN > 0) head += "   -   " + stuckN + " idle >" + STUCK_DAYS + "d, " + gp(parked) + " parked";
+				JLabel hdr = new JLabel(head);
+				hdr.setForeground(best != null ? ColorScheme.GRAND_EXCHANGE_PRICE
+					: stuckN > 0 ? ColorScheme.PROGRESS_ERROR_COLOR : ColorScheme.BRAND_ORANGE);
 				hdr.setBorder(BorderFactory.createEmptyBorder(6, 1, 2, 1));
 				hdr.setAlignmentX(Component.LEFT_ALIGNMENT);
 				holdBox.add(hdr);
@@ -832,12 +837,17 @@ class GeflipPanel extends PluginPanel
 		}
 		else if (h.sellHint > 0)
 		{
-			long tax = (h.exempt || h.sellHint < 50) ? 0 : Math.min((long) (h.sellHint * 0.02), 5_000_000);
+			// tax via the single source (GeflipScanner.saleTax through Hold), not re-derived here
+			long tax = h.unitTax();
 			long net = h.sellHint - tax;
 			boolean profit = net >= h.avgCost;
 			boolean taxTrap = !profit && (h.sellHint - h.avgCost) >= 0;   // raw spread ok, tax eats it
+			// per-unit does not register; the WHOLE-position number is what makes a winner obvious
+			long pos = h.positionPnl();
 			line2 = "cost " + gp(h.avgCost) + "  →  sell @ " + gp(h.sellHint)
-				+ "  (" + (profit ? "+" : "") + gp(net - h.avgCost) + "/ea)" + (taxTrap ? "  ⚠tax" : "");
+				+ "  (" + (profit ? "+" : "") + gp(net - h.avgCost) + "/ea"
+				+ (h.qty > 1 ? "  ·  " + (pos >= 0 ? "+" : "") + gp(pos) + " total" : "") + ")"
+				+ (taxTrap ? "  ⚠tax" : "");
 			sub = new JLabel(line2);
 			sub.setForeground(profit ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.PROGRESS_ERROR_COLOR);
 			p.setToolTipText("You hold " + h.qty + " at ~" + gp(h.avgCost) + " each. List a sell at ~"

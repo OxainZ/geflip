@@ -265,6 +265,21 @@ public class GeflipPlugin extends Plugin
 
 		/** Bulk position gone quiet. qty > 1 excludes gear you bought to USE, which is not a leak. */
 		boolean stuck(int minDays) { return qty > 1 && idleDays >= minDays; }
+
+		/** Tax on ONE unit at the current sell hint. Delegates to GeflipScanner.saleTax deliberately:
+		 *  that is the single source for GE tax (CLAUDE.md), and the panel used to re-derive it inline. */
+		long unitTax() { return GeflipScanner.saleTax(sellHint, exempt); }
+
+		/**
+		 * Profit for the WHOLE position if closed now at the sell hint, after tax. 0 when there is no
+		 * cost basis or no live price. long throughout - price x qty overflows int on a fat stack.
+		 * Per-unit numbers do not register; the total is what makes a winner worth acting on.
+		 */
+		long positionPnl()
+		{
+			if (avgCost < 0 || sellHint <= 0) return 0;
+			return ((long) sellHint - unitTax() - avgCost) * (long) qty;
+		}
 	}
 
 	/**
@@ -285,6 +300,16 @@ public class GeflipPlugin extends Plugin
 		if (holds != null)
 			for (Hold h : holds) if (h.stuck(minDays)) gp += h.avgCost * h.qty;
 		return gp;
+	}
+
+	/** The holding worth closing first: biggest total profit at the current sell hint, or null. */
+	static Hold bestClose(java.util.List<Hold> holds)
+	{
+		Hold best = null;
+		if (holds != null)
+			for (Hold h : holds)
+				if (h.positionPnl() > 0 && (best == null || h.positionPnl() > best.positionPnl())) best = h;
+		return best;
 	}
 
 	static int stuckCount(java.util.List<Hold> holds, int minDays)
