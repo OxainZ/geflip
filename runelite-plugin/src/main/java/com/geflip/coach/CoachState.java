@@ -19,6 +19,7 @@ final class CoachState
 	final int qp;                          // quest points
 	final Map<Quest, QuestState> quests;   // only the quests our goals reference
 	final Set<Integer> ownedItemIds;       // key items seen in equipment + inventory + bank
+	final Set<String> unlocks;             // account unlocks read from varbits (e.g. "deadeye", "vigour" prayers)
 	final boolean bankKnown;               // has the bank been opened this session? (else item gaps are soft)
 	final long coins;                      // gp in inventory + bank (−1 = unknown)
 	final long wealth;                     // coins + GE value of everything in inv+bank+equip (−1 = unknown)
@@ -26,9 +27,10 @@ final class CoachState
 	final boolean loggedIn;
 
 	CoachState(Map<Skill, Integer> levels, int qp, Map<Quest, QuestState> quests,
-		Set<Integer> ownedItemIds, boolean bankKnown, long coins, long wealth, int combatLevel, boolean loggedIn)
+		Set<Integer> ownedItemIds, Set<String> unlocks, boolean bankKnown, long coins, long wealth, int combatLevel, boolean loggedIn)
 	{
 		this.levels = levels; this.qp = qp; this.quests = quests; this.ownedItemIds = ownedItemIds;
+		this.unlocks = unlocks != null ? unlocks : java.util.Collections.emptySet();
 		this.bankKnown = bankKnown; this.coins = coins; this.wealth = wealth; this.combatLevel = combatLevel; this.loggedIn = loggedIn;
 	}
 
@@ -36,6 +38,7 @@ final class CoachState
 	boolean finished(Quest q) { return quests.get(q) == QuestState.FINISHED; }
 	boolean started(Quest q) { QuestState st = quests.get(q); return st == QuestState.IN_PROGRESS || st == QuestState.FINISHED; }
 	boolean owns(int id) { return ownedItemIds.contains(id); }
+	boolean unlocked(String key) { return unlocks.contains(key); }
 
 	/** Standard OSRS combat level from the snapshot's real levels. */
 	static int combat(int att, int str, int def, int hp, int ranged, int prayer, int magic)

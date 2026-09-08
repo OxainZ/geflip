@@ -30,6 +30,12 @@ class GeflipScanner
 	private static final String UA = "geflip-runelite (github.com/OxainZ/geflip)";
 	private static final int TAX_CAP = 5_000_000;
 	// scoring constants — kept identical to the web app's DEF_CFG so the panel and site agree
+	// A GE slot is only worth using if it's expected to net at least this much THIS cycle. The hero "BUY THESE
+	// NOW" basket ranks by expected PROFIT-PER-SLOT (not gp/h, which over-rewards fast penny flips that net
+	// trivial gp — the "+424 total" trap), and drops anything below the floor. If nothing clears it, the hero
+	// card shows FEWER (or no) picks — honest, never padded with trash.
+	private static final long SLOT_MIN_PROFIT = 1_000;      // absolute floor (protects tiny banks)
+	private static final double SLOT_FLOOR_PCT = 0.0005;    // and ≥0.05% of bankroll (kills trash on a fat bank)
 	private static final int MIN_VOL24 = 150;    // 24h liquidity floor — kept modest because qty is ALSO capped
 	                                             // by realized volume downstream, so a high flat floor just
 	                                             // starves legit moderate-volume flips (co-caused the 0-flips).
@@ -1265,20 +1271,32 @@ class GeflipScanner
 	void basket(List<Flip> ranked, long cashGp, int slots, double maxPct)
 	{
 		long cash = Math.max(0, cashGp);
-		long perSlotCap = (long) (Math.max(0, cashGp) * Math.max(0.05, Math.min(1.0, maxPct)));   // base exposure cap
-		int used = 0;
-		for (Flip f : ranked)
+		long perSlotCap = (long) (cash * Math.max(0.05, Math.min(1.0, maxPct)));   // base per-item exposure cap
+		long slotFloor = Math.max(SLOT_MIN_PROFIT, (long) (cash * SLOT_FLOOR_PCT));
+		// Greedily fill each free slot with the pick that makes the MOST this cycle (expected profit =
+		// margin × the qty you can actually fund/fill × fill-probability), re-evaluated as cash depletes.
+		// This maximises what your slots earn — unlike the old top-of-gp/h-list grab, which put a fast +424
+		// penny flip in "BUY THESE NOW" ahead of a slower 100k one. Only clean picks (no won't-fill / volatile /
+		// declining) are eligible, and a slot is used ONLY if its expected profit clears the floor.
+		java.util.Set<Flip> used = new java.util.HashSet<>();
+		for (int slot = 0; slot < slots && cash > 0; slot++)
 		{
-			if (used >= slots || cash <= 0) break;
-			if (f.wontFill || f.buy <= 0) continue;
-			// win-rate scaling: 0% wins → 0.6× the cap, 50% → 1.0×, 100% → 1.4× (bounded); neutral with no history
-			double kelly = f.yourWinRate >= 0 ? Math.max(0.6, Math.min(1.4, 0.6 + 0.8 * f.yourWinRate)) : 1.0;
-			long cap = (long) (perSlotCap * kelly);
-			int q = (int) Math.min(f.quantity, Math.min(cash / f.buy, cap / f.buy));
-			if (q <= 0) continue;
-			f.basketQty = q;
-			cash -= (long) q * f.buy;
-			used++;
+			Flip best = null; int bestQty = 0; double bestVal = 0;
+			for (Flip f : ranked)
+			{
+				if (used.contains(f) || f.wontFill || f.unstable || f.decliner || f.buy <= 0) continue;
+				// win-rate scaling: 0% wins → 0.6× the cap, 50% → 1.0×, 100% → 1.4× (bounded); neutral with no history
+				double kelly = f.yourWinRate >= 0 ? Math.max(0.6, Math.min(1.4, 0.6 + 0.8 * f.yourWinRate)) : 1.0;
+				long cap = (long) (perSlotCap * kelly);
+				int q = (int) Math.min(f.quantity, Math.min(cash / Math.max(1, f.buy), cap / Math.max(1, f.buy)));
+				if (q <= 0) continue;
+				double val = (double) f.margin * q * Math.max(0.1, f.fillProb);   // expected gp realised this cycle
+				if (val > bestVal) { bestVal = val; best = f; bestQty = q; }
+			}
+			if (best == null || bestVal < slotFloor) break;   // nothing left worth a GE slot → stop (no trash padding)
+			best.basketQty = bestQty;
+			cash -= (long) bestQty * best.buy;
+			used.add(best);
 		}
 	}
 }

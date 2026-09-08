@@ -188,6 +188,7 @@ public class CoachPlugin extends Plugin
 			}
 			p.setFarmSteps(config.farmingHelper() ? farmSteps(st) : java.util.Collections.emptyList());
 			p.setSkills(skillLines(st));   // Money tab: quickest-99 + gp/hr router
+			p.setMoneyBoard(moneyBoard(st));   // Money tab headline: best gp/hr methods you can do NOW
 			p.setSkillProgress(skillProgress(st));   // road-to-99 as native progress-bar rows
 			// Now tab: the compounding dailies + permanent unlocks + "so close" (re-homed after the Skills strip)
 			List<String> nowExtras = new ArrayList<>(CoachDailies.lines(st));
@@ -226,7 +227,7 @@ public class CoachPlugin extends Plugin
 	{
 		if (client.getGameState() != GameState.LOGGED_IN)
 			return new CoachState(new EnumMap<>(Skill.class), 0, new EnumMap<>(Quest.class),
-				new HashSet<>(), false, -1, -1, 0, false);
+				new HashSet<>(), new HashSet<>(), false, -1, -1, 0, false);
 
 		Map<Skill, Integer> levels = new EnumMap<>(Skill.class);
 		for (Skill sk : Skill.values())
@@ -252,10 +253,19 @@ public class CoachPlugin extends Plugin
 		scan(InventoryID.BANK, keyIds, owned, acc);
 		long wealth = prices != null ? acc[1] : -1;   // −1 until the price table has loaded
 
+		// account UNLOCKS read straight from varbits — these can't be inferred from levels/items (a prayer
+		// scroll is consumed on use), so we must read the unlock flag. The newer Varlamore ranged/magic
+		// prayers (Deadeye / Mystic Vigour) are what "I unlocked Vigour" refers to.
+		Set<String> unlocks = new HashSet<>();
+		if (client.getVarbitValue(Varbits.PRAYER_DEADEYE_UNLOCKED) > 0) unlocks.add("deadeye");
+		if (client.getVarbitValue(Varbits.PRAYER_MYSTIC_VIGOUR_UNLOCKED) > 0) unlocks.add("vigour");
+		if (config.rigourUnlocked()) unlocks.add("rigour");   // consumed scroll — you tick it in config
+		if (config.auguryUnlocked()) unlocks.add("augury");
+
 		int combat = CoachState.combat(get(levels, Skill.ATTACK), get(levels, Skill.STRENGTH),
 			get(levels, Skill.DEFENCE), get(levels, Skill.HITPOINTS), get(levels, Skill.RANGED),
 			get(levels, Skill.PRAYER), get(levels, Skill.MAGIC));
-		return new CoachState(levels, qp, quests, owned, bankKnown, acc[0], wealth, combat, true);
+		return new CoachState(levels, qp, quests, owned, unlocks, bankKnown, acc[0], wealth, combat, true);
 	}
 
 	/** Scan a container: record KEY_ITEMS into `owned`, and accumulate acc[0]=coins, acc[1]=GE value
@@ -542,8 +552,8 @@ public class CoachPlugin extends Plugin
 		int meleeMax = (int) (0.5 + (bStr + 8) * (strB + 64) / 640.0);
 		int rangeMax = (int) (0.5 + (bRng + 8) * (rstrB + 64) / 640.0);
 		out.add("Est. max hit — melee ~" + meleeMax + " · ranged ~" + rangeMax + "  (current levels + any potion; no prayer/combat style)");
-		out.addAll(strengthUpgrades("Best melee upgrades (max-hit gain):", MELEE_UPGRADES, true, strB, bStr, meleeMax, slotStr, twoH));
-		out.addAll(strengthUpgrades("Best ranged upgrades (max-hit gain):", RANGED_UPGRADES, false, rstrB, bRng, rangeMax, slotRstr, twoH));
+		out.addAll(strengthUpgrades("Best melee upgrades for your bank (dmg per gp):", MELEE_UPGRADES, true, strB, bStr, meleeMax, slotStr, twoH));
+		out.addAll(strengthUpgrades("Best ranged upgrades for your bank (dmg per gp):", RANGED_UPGRADES, false, rstrB, bRng, rangeMax, slotRstr, twoH));
 		out.addAll(magicUpgrades(mdmgB, slotMdmg, twoH));
 		out.addAll(dpsLines(aStab, aSlash, aCrush, aRange, strB, rstrB, weaponSpeed, worn, weaponId));
 		out.add("(Bank + banked coins are NOT at risk — only what's equipped/carried.)");
@@ -596,6 +606,7 @@ public class CoachPlugin extends Plugin
 		boolean slayerHelm = false;
 		for (int id : SLAYER_HELMS_I) if (worn.contains(id)) { slayerHelm = true; break; }
 		boolean dhcb = weaponId == DHCB, dhl = weaponId == DHL;
+		boolean deadeye = client.getVarbitValue(Varbits.PRAYER_DEADEYE_UNLOCKED) > 0;   // Varlamore ranged prayer
 
 		int rangedStr = rangedStrBonus + (blowpipe ? 35 : 0);   // Dragon dart is ammo, not in the item def
 		int baseSpeed = weaponSpeed > 0 ? weaponSpeed : 4;
@@ -606,7 +617,7 @@ public class CoachPlugin extends Plugin
 		if (!anyRange && !anyMelee) { out.add("Est. DPS vs bosses: equip a weapon to estimate."); return out; }
 
 		CoachDps.RangedIn rin = anyRange ? CoachDps.rangedLoadout(rRanged, rPray, aRange, rangedStr, rangedSpeed,
-			fullVoidR, eliteVoidR, crystalAcc, crystalDmg, salveEi, slayerHelm, dhcb) : null;
+			fullVoidR, eliteVoidR, crystalAcc, crystalDmg, salveEi, slayerHelm, dhcb, deadeye) : null;
 		CoachDps.MeleeIn min = anyMelee ? CoachDps.meleeLoadout(rStr, rAtk, rPray, rDef,
 			aStab, aSlash, aCrush, meleeStrBonus, baseSpeed, fullVoidM, salveEi, salveI, slayerHelm, dhl) : null;
 
@@ -670,12 +681,15 @@ public class CoachPlugin extends Plugin
 		20714, 6889,          // Tome of fire / Mage's book (offhand)
 	};
 
-	/** Max-hit-gain finder for a strength-based style (melee=getStr, ranged=getRstr). For each candidate
-	 *  it reports the max-hit gain from swapping it into its slot, ranked, with the live GE price. */
+	/** BEST-VALUE upgrade finder for a strength-based style (melee=getStr, ranged=getRstr). For each
+	 *  candidate it computes the max-hit gain from swapping it into its slot AND the value-for-money
+	 *  (% damage gained per gp spent), then ranks by VALUE — the "best upgrade for your bank" the coach is
+	 *  meant to answer. Stats + prices are read LIVE. Earned items (capes/void) show "earn" and rank top
+	 *  (no gp cost). */
 	private List<String> strengthUpgrades(String header, int[] ids, boolean melee,
 		int curBonus, int boostedLvl, int curMax, Map<Integer, Integer> slotBonus, boolean twoH)
 	{
-		java.util.List<Object[]> ups = new ArrayList<>();   // {label, gain, price}
+		java.util.List<Object[]> ups = new ArrayList<>();   // {name, gain, pct, price, valuePerM, buyable}
 		for (int id : ids)
 		{
 			net.runelite.client.game.ItemStats s = itemManager.getItemStats(id);
@@ -687,15 +701,25 @@ public class CoachPlugin extends Plugin
 			int newMax = (int) (0.5 + (boostedLvl + 8) * (newBonus + 64) / 640.0);
 			int gain = newMax - curMax;
 			if (gain <= 0) continue;   // already equal/better in that slot
+			double pct = curMax > 0 ? 100.0 * gain / curMax : 0;   // % max-hit (≈ %DPS for a pure-str swap)
+			int price = itemManager.getItemPrice(id);
+			boolean buyable = price > 0;
+			// value = % damage per 1M gp; earned items (price 0 = fire/inferno cape, void) have no gp cost → rank top
+			double valuePerM = buyable ? pct / (price / 1_000_000.0) : Double.MAX_VALUE;
 			net.runelite.api.ItemComposition c = itemManager.getItemComposition(id);
-			ups.add(new Object[]{ c != null ? c.getName() : "#" + id, gain, itemManager.getItemPrice(id) });
+			ups.add(new Object[]{ c != null ? c.getName() : "#" + id, gain, pct, price, valuePerM, buyable });
 		}
 		if (ups.isEmpty()) return java.util.Collections.emptyList();
-		ups.sort((a, b) -> Integer.compare((int) b[1], (int) a[1]));   // biggest max-hit gain first
+		ups.sort((a, b) -> Double.compare((double) b[4], (double) a[4]));   // best VALUE (dmg per gp) first
 		List<String> out = new ArrayList<>();
 		out.add(header);
 		int n = 0;
-		for (Object[] u : ups) { if (n++ >= 5) break; out.add("  " + u[0] + ": +" + u[1] + "  (~" + CoachGoals.gp((int) u[2]) + ")"); }
+		for (Object[] u : ups)
+		{
+			if (n++ >= 5) break;
+			String cost = (boolean) u[5] ? "~" + CoachGoals.gp((int) u[3]) : "earn (not GE)";
+			out.add("  " + u[0] + ": +" + u[1] + " max (+" + String.format("%.1f", (double) u[2]) + "%) · " + cost);
+		}
 		return out;
 	}
 
@@ -713,15 +737,23 @@ public class CoachPlugin extends Plugin
 			double newMdmg = curMdmg - slotMdmg.getOrDefault(slot, 0.0) + s.getEquipment().getMdmg();
 			double gain = newMdmg - curMdmg;
 			if (gain <= 0.05) continue;   // already equal/better in that slot
+			int price = itemManager.getItemPrice(id);
+			boolean buyable = price > 0;
+			double valuePerM = buyable ? gain / (price / 1_000_000.0) : Double.MAX_VALUE;   // %mdmg per 1M gp
 			net.runelite.api.ItemComposition c = itemManager.getItemComposition(id);
-			ups.add(new Object[]{ c != null ? c.getName() : "#" + id, gain, itemManager.getItemPrice(id) });
+			ups.add(new Object[]{ c != null ? c.getName() : "#" + id, gain, price, valuePerM, buyable });
 		}
 		if (ups.isEmpty()) return java.util.Collections.emptyList();
-		ups.sort((a, b) -> Double.compare((double) b[1], (double) a[1]));
+		ups.sort((a, b) -> Double.compare((double) b[3], (double) a[3]));   // best VALUE (mdmg per gp) first
 		List<String> out = new ArrayList<>();
-		out.add("Best magic upgrades (magic-dmg gain):");
+		out.add("Best magic upgrades for your bank (dmg per gp):");
 		int n = 0;
-		for (Object[] u : ups) { if (n++ >= 5) break; out.add("  " + u[0] + ": +" + String.format("%.1f", (double) u[1]) + "%  (~" + CoachGoals.gp((int) u[2]) + ")"); }
+		for (Object[] u : ups)
+		{
+			if (n++ >= 5) break;
+			String cost = (boolean) u[4] ? "~" + CoachGoals.gp((int) u[2]) : "earn (not GE)";
+			out.add("  " + u[0] + ": +" + String.format("%.1f", (double) u[1]) + "% · " + cost);
+		}
 		return out;
 	}
 
@@ -963,6 +995,19 @@ public class CoachPlugin extends Plugin
 			sp.name = skName(sk); sp.level = (int) r[1]; sp.pct = (int) r[4];
 			sp.hours = b.xpHr > 0 ? (double) r[3] : 0; sp.method = b.method; sp.xpHr = b.xpHr;
 			out.add(sp);
+		}
+		return out;
+	}
+
+	/** The Money-tab headline board: every gp/hr method your account can ACTUALLY do right now (CoachMoney
+	 *  requirement-gated), ranked by rate, as {name, "~Xk/hr", note} rows for the panel. */
+	private List<String[]> moneyBoard(CoachState st)
+	{
+		List<String[]> out = new ArrayList<>();
+		for (CoachMoney.M m : CoachMoney.eligible(st))
+		{
+			String gpHr = m.gpHr > 0 ? "~" + CoachGoals.gp(m.gpHr) + "/hr" : "passive";
+			out.add(new String[]{ m.name, gpHr, m.note });
 		}
 		return out;
 	}

@@ -58,6 +58,7 @@ class CoachPanel extends PluginPanel
 	private final JPanel farmBox = new JPanel();
 	private final JPanel farmStepsBox = new JPanel();   // clickable "lead me there" steps (arrows)
 	private final JPanel skillsBox = new JPanel();       // money-router + quickest-99 text (now on the Money tab)
+	private final JPanel moneyBoardBox = new JPanel();   // "Best money you can do NOW" board (Money tab headline)
 	private final JPanel skillProgBox = new JPanel();    // per-skill progress-bar rows (the Skills tab headline)
 
 	/** One skill's road-to-99 as structured data → rendered as a native ProgressBar row (not text). */
@@ -93,6 +94,8 @@ class CoachPanel extends PluginPanel
 	CoachPanel(ItemManager itemManager, Runnable onRefresh, Consumer<String> onAsk, Supplier<String> onCopyContext,
 		Runnable onFarmRunDone, Consumer<String> onGuide, Consumer<String> onFarmSelect, Consumer<FarmStep> onFarmGuide)
 	{
+		super(false);   // WE own scrolling (a scrollpane per tab) — stop RuneLite double-wrapping us, which stacked
+		                // two scrollbars, stole width, and trapped the scroll (same fix as the flipper panel).
 		this.itemManager = itemManager;
 		this.onFarmGuide = onFarmGuide;
 		this.onAsk = onAsk; this.onCopyContext = onCopyContext; this.onFarmRunDone = onFarmRunDone; this.onGuide = onGuide; this.onFarmSelect = onFarmSelect;
@@ -126,7 +129,7 @@ class CoachPanel extends PluginPanel
 		tabMoney.addActionListener(e -> show("money"));
 		tabAsk.addActionListener(e -> show("ask"));
 
-		for (JPanel p : new JPanel[]{ nextBox, nowExtraBox, goalsBox, blockedBox, pathBox, farmBox, farmStepsBox, riskBox, skillsBox, skillProgBox })
+		for (JPanel p : new JPanel[]{ nextBox, nowExtraBox, goalsBox, blockedBox, pathBox, farmBox, farmStepsBox, riskBox, skillsBox, moneyBoardBox, skillProgBox })
 		{
 			p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 			p.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -155,6 +158,8 @@ class CoachPanel extends PluginPanel
 	private JScrollPane moneyCard()
 	{
 		JPanel v = vstack();
+		v.add(moneyBoardBox);   // "Best money you can do NOW" — ranked, live-gated
+		v.add(gap());
 		v.add(skillsBox);
 		v.add(gap());
 		v.add(header("🌱 FARMING"));
@@ -201,7 +206,7 @@ class CoachPanel extends PluginPanel
 				farmStepsBox.add(hdr);
 				List<JComponent> rows = new ArrayList<>();
 				for (FarmStep s : steps) rows.add(farmStepRow(s));
-				addTopN(farmStepsBox, rows, 6, true);
+				addTopN(farmStepsBox, rows, 6, true, "farm");
 			}
 			farmStepsBox.revalidate();
 			farmStepsBox.repaint();
@@ -308,7 +313,7 @@ class CoachPanel extends PluginPanel
 					l.setAlignmentX(Component.LEFT_ALIGNMENT);
 					comps.add(l);
 				}
-				addTopN(skillsBox, comps, 14, false);
+				addTopN(skillsBox, comps, 14, false, "money-skills");
 			}
 			skillsBox.revalidate();
 			skillsBox.repaint();
@@ -336,7 +341,7 @@ class CoachPanel extends PluginPanel
 					l.setAlignmentX(Component.LEFT_ALIGNMENT);
 					comps.add(l);
 				}
-				addTopN(nowExtraBox, comps, 12, false);
+				addTopN(nowExtraBox, comps, 12, false, "now-extra");
 			}
 			nowExtraBox.revalidate();
 			nowExtraBox.repaint();
@@ -362,7 +367,7 @@ class CoachPanel extends PluginPanel
 			{
 				List<JComponent> comps = new ArrayList<>();
 				for (SkillProg sp : rows) comps.add(skillProgRow(sp));
-				addTopN(skillProgBox, comps, 6, true);
+				addTopN(skillProgBox, comps, 6, true, "skillprog");
 			}
 			skillProgBox.revalidate();
 			skillProgBox.repaint();
@@ -407,13 +412,12 @@ class CoachPanel extends PluginPanel
 
 	private static JScrollPane scroll(Component c)
 	{
-		// horizontal scroll AS-NEEDED so any wide row/control is always REACHABLE (bar only shows if content
-		// overflows). Content goes straight into the scrollpane so height sizes correctly + you reach the bottom.
+		// NO horizontal scroll — text WRAPS (wrap() divs) so nothing runs off the right edge, and you can never
+		// get trapped scrolled off-left. Vertical only, so you always reach the bottom.
 		JScrollPane sp = new JScrollPane(c,
-			ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+			ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 		sp.setBorder(BorderFactory.createEmptyBorder());
 		sp.getVerticalScrollBar().setUnitIncrement(16);
-		sp.getHorizontalScrollBar().setUnitIncrement(16);
 		return sp;
 	}
 
@@ -444,7 +448,7 @@ class CoachPanel extends PluginPanel
 					nextBox.add(gap());
 					List<JComponent> rest = new ArrayList<>();
 					for (int i = 1; i < rows.size(); i++) rest.add(scoredRow(rows.get(i), false));
-					addTopN(nextBox, rest, 5, true);
+					addTopN(nextBox, rest, 5, true, "now-next");
 				}
 			}
 			nextBox.revalidate(); nextBox.repaint();
@@ -461,22 +465,22 @@ class CoachPanel extends PluginPanel
 				goalsBox.add(gap());
 				List<JComponent> rws = new ArrayList<>();
 				for (CoachEngine.Scored sc : rows) rws.add(scoredRow(sc, false));
-				addTopN(goalsBox, rws, 6, true);
+				addTopN(goalsBox, rws, 6, true, "goals");
 			}
 			if (quests != null && !quests.isEmpty())
 			{
 				goalsBox.add(header("Next quests"));
-				addTopN(goalsBox, hints(quests), 6, false);
+				addTopN(goalsBox, hints(quests), 6, false, "goals-quests");
 			}
 			if (pvm != null && !pvm.isEmpty())
 			{
 				goalsBox.add(header("PvM (kill counts)"));
-				addTopN(goalsBox, hints(pvm), 6, false);
+				addTopN(goalsBox, hints(pvm), 6, false, "goals-pvm");
 			}
 			if (diaries != null && !diaries.isEmpty())
 			{
 				goalsBox.add(header("Achievement diaries"));
-				addTopN(goalsBox, hints(diaries), 6, false);
+				addTopN(goalsBox, hints(diaries), 6, false, "goals-diaries");
 			}
 			goalsBox.revalidate(); goalsBox.repaint();
 		});
@@ -494,7 +498,7 @@ class CoachPanel extends PluginPanel
 			{
 				List<JComponent> comps = new ArrayList<>();
 				for (String l : lines) comps.add(l.isEmpty() ? hint(" ") : (l.startsWith("RISK") ? header(l) : hint(l)));
-				addTopN(riskBox, comps, 12, false);
+				addTopN(riskBox, comps, 12, false, "risk");
 			}
 			riskBox.revalidate(); riskBox.repaint();
 		});
@@ -512,7 +516,7 @@ class CoachPanel extends PluginPanel
 			{
 				List<JComponent> comps = new ArrayList<>();
 				for (String l : lines) comps.add(l.isEmpty() ? hint(" ") : (l.startsWith("PATH") || l.startsWith("🎯") || l.startsWith("HOW") ? header(l) : hint(l)));
-				addTopN(pathBox, comps, 10, false);
+				addTopN(pathBox, comps, 10, false, "path");
 			}
 			pathBox.revalidate(); pathBox.repaint();
 		});
@@ -530,7 +534,7 @@ class CoachPanel extends PluginPanel
 			{
 				List<JComponent> comps = new ArrayList<>();
 				for (String l : lines) comps.add(l.isEmpty() ? hint(" ") : (l.startsWith("PATH") || l.startsWith("DO NOW") || l.startsWith("NEXT") || l.startsWith("MUST") ? header(l) : hint(l)));
-				addTopN(farmBox, comps, 14, false);
+				addTopN(farmBox, comps, 14, false, "farm-list");
 			}
 			farmBox.revalidate(); farmBox.repaint();
 		});
@@ -550,7 +554,7 @@ class CoachPanel extends PluginPanel
 			{
 				List<JComponent> rws = new ArrayList<>();
 				for (CoachEngine.Scored sc : rows) rws.add(scoredRow(sc, false));
-				addTopN(blockedBox, rws, 5, true);
+				addTopN(blockedBox, rws, 5, true, "blocked");
 			}
 			blockedBox.revalidate(); blockedBox.repaint();
 		});
@@ -578,8 +582,9 @@ class CoachPanel extends PluginPanel
 
 		// center: bold name (truncated) on line 1, a short chip on line 2
 		JPanel col = new JPanel(); col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS)); col.setOpaque(false);
-		JLabel name = new JLabel(trunc(sc.goal.name, hero ? 24 : 22));
-		name.setFont(hero ? FontManager.getRunescapeBoldFont() : FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		// FULL name, wrapped (no more "Dragon Slayer 2 (-> Vor…") — flows to a 2nd line instead of truncating
+		JLabel name = new JLabel("<html><div style='width:" + (hero ? 130 : 112) + "px'><b>" + esc(sc.goal.name) + "</b></div></html>");
+		name.setFont(hero ? FontManager.getRunescapeBoldFont() : FontManager.getRunescapeSmallFont());
 		name.setForeground(done ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.TEXT_COLOR);
 		name.setAlignmentX(Component.LEFT_ALIGNMENT);
 		String chipText = done ? "have it" : ready ? "ready now"
@@ -591,13 +596,17 @@ class CoachPanel extends PluginPanel
 		col.add(name); col.add(chip);
 		p.add(col, BorderLayout.CENTER);
 
-		// east: right-aligned, colour-coded status token (✓ ready · N steps otherwise)
-		JLabel east = new JLabel(done || ready ? "✓" : String.valueOf(sc.gaps.size()));
+		// east: a colour-coded STATUS PILL — scannable at a glance (green READY / orange ALMOST / grey N steps)
+		String pillTxt = done ? "✓ have" : ready ? "READY" : almost ? "ALMOST" : sc.gaps.size() + " steps";
+		java.awt.Color pillFg = ready ? ColorScheme.PROGRESS_COMPLETE_COLOR
+			: almost ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR;
+		JLabel east = new JLabel(pillTxt);
 		east.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
-		east.setForeground(done || ready ? ColorScheme.PROGRESS_COMPLETE_COLOR
-			: almost ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
-		east.setHorizontalAlignment(SwingConstants.RIGHT);
-		east.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 2));
+		east.setForeground(pillFg);
+		east.setOpaque(true);
+		east.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		east.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
+		east.setHorizontalAlignment(SwingConstants.CENTER);
 		p.add(east, BorderLayout.EAST);
 
 		// hover = the mini-guide (note + HOW/where); the tooltip wraps long text.
@@ -613,7 +622,7 @@ class CoachPanel extends PluginPanel
 			public void mouseClicked(java.awt.event.MouseEvent e) { showGuide(sc); if (onGuide != null) onGuide.accept(gname); }
 		});
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
-		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, hero ? 66 : 48));
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, hero ? 90 : 68));   // room for a wrapped 2-line name
 		return p;
 	}
 
@@ -687,7 +696,56 @@ class CoachPanel extends PluginPanel
 
 	/** Add up to topN rows, then (if more) a "▾ show N more" toggle that reveals the rest in place.
 	 *  spaced=true inserts a breathing gap between rows (for card rows); false keeps text lines tight. */
-	private void addTopN(JPanel box, List<? extends JComponent> rows, int topN, boolean spaced)
+	// which "show more" sections you've expanded — REMEMBERED across the ~20s rescan rebuilds so an
+	// expanded list never collapses out from under you a second after you open it.
+	private final java.util.Set<String> expanded = new java.util.HashSet<>();
+
+	/** The Money tab headline: the best gp/hr methods your account can ACTUALLY do right now (live-gated),
+	 *  ranked, each with its rate + a one-line how. */
+	void setMoneyBoard(List<String[]> rows)   // each = {name, gpHrLabel, note}
+	{
+		SwingUtilities.invokeLater(() -> {
+			moneyBoardBox.removeAll();
+			moneyBoardBox.add(header("💰 Best money you can do NOW"));
+			moneyBoardBox.add(gap());
+			if (rows == null || rows.isEmpty())
+				moneyBoardBox.add(hint("Log in + Rescan to see your money methods."));
+			else
+			{
+				List<JComponent> comps = new ArrayList<>();
+				for (String[] r : rows) comps.add(moneyRow(r[0], r[1], r[2]));
+				addTopN(moneyBoardBox, comps, 8, true, "money-board");
+			}
+			moneyBoardBox.revalidate(); moneyBoardBox.repaint();
+		});
+	}
+
+	private JPanel moneyRow(String name, String gpHr, String note)
+	{
+		JPanel p = vstack();
+		p.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		p.setBorder(BorderFactory.createEmptyBorder(5, 6, 5, 6));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JPanel top = new JPanel(new BorderLayout(6, 0));
+		top.setOpaque(false); top.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JLabel nm = new JLabel("<html><div style='width:120px'><b>" + esc(name) + "</b></div></html>");
+		nm.setFont(FontManager.getRunescapeSmallFont());
+		nm.setForeground(ColorScheme.TEXT_COLOR);
+		JLabel gp = new JLabel(gpHr);
+		gp.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		gp.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
+		gp.setHorizontalAlignment(SwingConstants.RIGHT);
+		top.add(nm, BorderLayout.CENTER); top.add(gp, BorderLayout.EAST);
+		JLabel nt = new JLabel(wrap(note));
+		nt.setFont(FontManager.getRunescapeSmallFont());
+		nt.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		nt.setAlignmentX(Component.LEFT_ALIGNMENT);
+		p.add(top); p.add(nt);
+		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));
+		return p;
+	}
+
+	private void addTopN(JPanel box, List<? extends JComponent> rows, int topN, boolean spaced, String key)
 	{
 		int n = rows.size();
 		int show = Math.min(topN, n);
@@ -697,12 +755,14 @@ class CoachPanel extends PluginPanel
 			JPanel more = vstack();
 			more.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, Integer.MAX_VALUE));
 			for (int i = topN; i < n; i++) { more.add(rows.get(i)); if (spaced) more.add(gap()); }
-			more.setVisible(false);
+			boolean open = expanded.contains(key);   // restore prior state so a rescan can't collapse it
+			more.setVisible(open);
 			final int hidden = n - topN;
-			JButton toggle = linkBtn("▾ show " + hidden + " more");
+			JButton toggle = linkBtn(open ? "▴ show less" : "▾ show " + hidden + " more");
 			toggle.addActionListener(e -> {
 				boolean v = !more.isVisible();
 				more.setVisible(v);
+				if (v) expanded.add(key); else expanded.remove(key);
 				toggle.setText(v ? "▴ show less" : "▾ show " + hidden + " more");
 				box.revalidate(); box.repaint();
 			});

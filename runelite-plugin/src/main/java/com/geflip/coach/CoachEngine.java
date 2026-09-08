@@ -41,6 +41,11 @@ final class CoachEngine
 			int[] doneIds = CoachGoals.DONE_IF_OWN.get(g.name);
 			if (doneIds != null) { boolean have = false; for (int id : doneIds) if (s.owns(id)) { have = true; break; }
 				if (have) { out.add(new Scored(g, Status.DONE, new ArrayList<>(), 0, 0)); continue; } }
+			// already UNLOCKED this? DONE if ANY of its unlock keys is set — Deadeye/Vigour from a varbit,
+			// or Rigour/Augury which you tick in config (consumed scrolls have no item/varbit to detect).
+			String[] unlockKeys = CoachGoals.DONE_IF_UNLOCK.get(g.name);
+			if (unlockKeys != null) { boolean u = false; for (String k : unlockKeys) if (s.unlocked(k)) { u = true; break; }
+				if (u) { out.add(new Scored(g, Status.DONE, new ArrayList<>(), 0, 0)); continue; } }
 			List<String> gaps = new ArrayList<>();
 			int total = 0, max = 0;
 			for (CoachGoals.Req r : g.reqs)
@@ -48,6 +53,10 @@ final class CoachEngine
 				CoachGoals.Gap gap = r.gap(s);
 				if (gap != null) { gaps.add(gap.text); total += gap.weight; max = Math.max(max, gap.weight); }
 			}
+			// BANK-HONESTY: this goal is DONE if you own a certain item, but the bank isn't open so we CAN'T
+			// see it. Don't confidently say "READY" (go get it) when you might already own it — flag it instead.
+			if (doneIds != null && !s.bankKnown && gaps.isEmpty())
+				gaps.add("open bank — you may already own this");
 			Status st;
 			if (gaps.isEmpty()) st = Status.READY;
 			else if (max <= ALMOST_MAX_GAP && total <= ALMOST_TOTAL && gaps.size() <= 3) st = Status.ALMOST;

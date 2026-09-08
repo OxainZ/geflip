@@ -200,11 +200,13 @@ public interface GeflipConfig extends Config
 		keyName = "sellBagItems",
 		name = "Show bag items in To-sell",
 		description = "Also list tradeable items in your inventory that weren't tracked flip buys (drops, "
-			+ "old buys). OFF by default — it also catches PvM supplies/gear you carry (potions, brews, "
-			+ "bolts, boots). Your actual tracked flip holdings always show regardless of this.",
+			+ "old buys, or a flip whose BUY the plugin missed — e.g. it completed while RuneLite was "
+			+ "restarting). ON by default so anything sellable in your bag ALWAYS shows a sell price. It also "
+			+ "catches PvM supplies/gear you carry (potions, brews, bolts, boots) — mark those ⊘ personal-use "
+			+ "to hide them. Your tracked flip holdings show regardless of this.",
 		position = 81
 	)
-	default boolean sellBagItems() { return false; }
+	default boolean sellBagItems() { return true; }
 
 	@Range(min = 1, max = 48)
 	@ConfigItem(

@@ -78,7 +78,7 @@ final class CoachDps
 	 */
 	static RangedIn rangedLoadout(int realRanged, int realPrayer, int atkBonus, int strBonus, int speedTicks,
 		boolean fullVoid, boolean eliteVoid, double crystalAcc, double crystalDmg,
-		boolean salveEi, boolean slayerHelm, boolean dhcb)
+		boolean salveEi, boolean slayerHelm, boolean dhcb, boolean deadeye)
 	{
 		RangedIn in = new RangedIn();
 		in.lvl = realRanged;
@@ -86,10 +86,13 @@ final class CoachDps
 		in.atkBonus = atkBonus; in.strBonus = strBonus; in.speed = speedTicks;
 		in.styleAcc = 0; in.styleStr = 0;                    // Rapid: no level bonus
 
+		// Best ranged prayer available: Rigour (74 Prayer, assumed for an endgame ranger) → Deadeye (62 Prayer,
+		// CONFIRMED from the unlock varbit, +18%/+18% — an improved Eagle Eye) → Eagle Eye (44) → none.
 		String prayer;
-		if (realPrayer >= 74)      { in.prayAcc = 1.20; in.prayStr = 1.23; prayer = "Rigour"; }
-		else if (realPrayer >= 44) { in.prayAcc = 1.15; in.prayStr = 1.15; prayer = "Eagle Eye"; }
-		else                       { in.prayAcc = 1.0;  in.prayStr = 1.0;  prayer = "no prayer"; }
+		if (realPrayer >= 74)                 { in.prayAcc = 1.20; in.prayStr = 1.23; prayer = "Rigour"; }
+		else if (deadeye && realPrayer >= 62) { in.prayAcc = 1.18; in.prayStr = 1.18; prayer = "Deadeye"; }
+		else if (realPrayer >= 44)            { in.prayAcc = 1.15; in.prayStr = 1.15; prayer = "Eagle Eye"; }
+		else                                  { in.prayAcc = 1.0;  in.prayStr = 1.0;  prayer = "no prayer"; }
 
 		if (fullVoid) { in.voidAcc = 1.10; in.voidStr = eliteVoid ? 1.125 : 1.10; }
 		else          { in.voidAcc = 1.0;  in.voidStr = 1.0; }

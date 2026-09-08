@@ -28,7 +28,7 @@ public class CoachDpsTest
 	// a plain ranged loadout (no prayer/void/crystal/conditionals) with a given ranged-str bonus + speed
 	private static CoachDps.RangedIn rin(int strBonus, int speedTicks)
 	{
-		return CoachDps.rangedLoadout(90, 1, 100, strBonus, speedTicks, false, false, 1.0, 1.0, false, false, false);
+		return CoachDps.rangedLoadout(90, 1, 100, strBonus, speedTicks, false, false, 1.0, 1.0, false, false, false, false);
 	}
 
 	@Test

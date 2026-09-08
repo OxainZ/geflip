@@ -64,6 +64,8 @@ public class GeflipPlugin extends Plugin
 	// off-thread holdings reconcile never touches live containers. null = not read yet.
 	private volatile java.util.Map<Integer, Integer> invCounts;
 	private volatile java.util.Set<Integer> excludedIds = java.util.Collections.emptySet();   // personal-use ids
+	private volatile java.util.Set<Integer> personalUseIds = new java.util.HashSet<>();   // ⊘ ids, PERSISTED (survive relog immediately, before the mapping resolves names)
+	private volatile boolean geHistReconciled = false;   // one-time journal rebuild from GE history already done?
 	private final java.util.concurrent.atomic.AtomicBoolean scanning = new java.util.concurrent.atomic.AtomicBoolean(false);
 	private final MarketClock marketClock = new MarketClock();   // hour-of-week activity logger
 	private volatile java.util.concurrent.ScheduledFuture<?> persistDebounce;   // coalesces fill-event saves
@@ -80,6 +82,16 @@ public class GeflipPlugin extends Plugin
 	// persisted fill log, so history survives restarts and accumulates across sessions
 	private final java.io.File fillsFile =
 		new java.io.File(net.runelite.client.RuneLite.RUNELITE_DIR, "geflip/fills.json");
+	// compact scan snapshot (top flips + P&L) the Telegram bridge reads INSTANTLY + offline (last-known)
+	private final java.io.File snapshotFile =
+		new java.io.File(net.runelite.client.RuneLite.RUNELITE_DIR, "geflip/snapshot.json");
+	// per-item realized-P&L history as a spreadsheet-ready CSV (your edge per item, over time)
+	private final java.io.File statsCsvFile =
+		new java.io.File(net.runelite.client.RuneLite.RUNELITE_DIR, "geflip/flip_stats.csv");
+	// session state that must SURVIVE RELOG so To-sell doesn't reset: last-known BANK snapshot (else bank
+	// items vanish until you reopen the bank) + your ⊘ personal-use ids (else they re-show after login).
+	private final java.io.File sessionFile =
+		new java.io.File(net.runelite.client.RuneLite.RUNELITE_DIR, "geflip/session.json");
 
 	// local bridge: serves the UI + these live fills to the web app on your network
 	private GeflipServer bridge;
@@ -138,6 +150,8 @@ public class GeflipPlugin extends Plugin
 	{
 		final int slot, id; final String state; final int price, qtySold, qtyTotal; final long spent;
 		String name; long ageSec; boolean stale; int sellHint;   // recommended sell price for this item (live)
+		long avgCost = -1;   // your cost basis per unit (−1 = untracked) — makes reprice guidance PROFIT-aware
+		boolean exempt;      // GE-tax exempt? so the profit math matches the To-sell rows
 		Offer(int slot, int id, String state, int price, int qtySold, int qtyTotal, long spent)
 		{ this.slot = slot; this.id = id; this.state = state; this.price = price;
 		  this.qtySold = qtySold; this.qtyTotal = qtyTotal; this.spent = spent; }
@@ -244,12 +258,14 @@ public class GeflipPlugin extends Plugin
 			String nm = scanner.nameFor(id);
 			out.add(new Hold(id, nm != null ? nm : "#" + id, qty, avg, scanner.sellHint(id), scanner.isExempt(id), listed));
 		}
-		// OPT-IN: also surface tradeable items sitting in your INVENTORY that the flip ledger never tracked
-		// you buying (drops, older buys, a bailed flip). OFF by default because it also catches PvM
-		// supplies/gear you carry (potions, brews, bolts, boots) — turn on "Show bag items in To-sell" only
-		// if you want everything in your bag listed. Tracked flip holdings always show regardless.
+		// ALWAYS surface tradeable items sitting in your INVENTORY that the flip ledger never tracked you
+		// buying (a buy the plugin missed while restarting, a drop, an older buy). HARDENED 2026-07-31: this
+		// used to be gated behind config.sellBagItems(), but RuneLite PERSISTS a saved 'false' that overrides
+		// the code default — so the setting silently stayed off and held items kept vanishing from To-sell
+		// (the recurring bug). No config gate now = no stale-profile value can ever turn it off. Mark PvM
+		// supplies ⊘ personal-use to hide them. Tracked flip holdings already show above regardless.
 		java.util.Map<Integer, Integer> inv = invCounts;
-		if (inv != null && config.sellBagItems())
+		if (inv != null)
 		{
 			java.util.Set<Integer> shown = new java.util.HashSet<>();
 			for (Hold h : out) shown.add(h.id);
@@ -427,14 +443,23 @@ public class GeflipPlugin extends Plugin
 	 *  "To sell" and stays out of your flip P&L. */
 	void markPersonalUse(int id)
 	{
+		// persist the ID immediately (survives relog + works even before the item mapping has loaded) and
+		// hide it right now, so ⊘ never "un-sticks" after login.
+		personalUseIds.add(id);
+		java.util.Set<Integer> ex = new java.util.HashSet<>(excludedIds);
+		ex.add(id);
+		excludedIds = ex;
+		saveSession();
 		String nm = scanner.nameFor(id);
-		if (nm == null) return;
-		String cur = config.excludeItems() == null ? "" : config.excludeItems().trim();
-		// don't double-add
-		for (String p : cur.split(",")) if (p.trim().equalsIgnoreCase(nm)) { recomputeAsync(); return; }
-		String next = cur.isEmpty() ? nm : cur + ", " + nm;
-		configManager.setConfiguration("geflip", "excludeItems", next);
-		if (panel != null) panel.setStatus("kept \"" + nm + "\" — personal use, hidden from flips");
+		if (nm != null)   // also mirror to the user-editable name list when the mapping is available
+		{
+			String cur = config.excludeItems() == null ? "" : config.excludeItems().trim();
+			boolean dupe = false;
+			for (String p : cur.split(",")) if (p.trim().equalsIgnoreCase(nm)) { dupe = true; break; }
+			if (!dupe) configManager.setConfiguration("geflip", "excludeItems",
+				cur.isEmpty() ? nm : cur + ", " + nm);
+			if (panel != null) panel.setStatus("kept \"" + nm + "\" — personal use, hidden from flips");
+		}
 		recomputeAsync();
 	}
 
@@ -663,9 +688,11 @@ public class GeflipPlugin extends Plugin
 	 *  regardless of what changed realizedFlip in between (reset to 0, exclude move, etc.). */
 	private void recompute(boolean fromSell, int soldId)
 	{
-		java.util.Set<Integer> excluded = scanner.idsForNames(excludeLowered());
+		java.util.Set<Integer> excluded = new java.util.HashSet<>(scanner.idsForNames(excludeLowered()));
+		excluded.addAll(personalUseIds);   // merge the persisted ⊘ ids so name-resolution never drops them
 		excludedIds = excluded;   // shared with buildHoldings so personal-use items don't show as "to sell"
 		ledger = GeflipLedger.compute(fills, excluded, costOverride);
+		writeStatsCsv();   // keep the spreadsheet-ready per-item edge export current
 		if (notifyPrimed && fromSell && config.flipAlerts() && ledger.realizedFlip != lastRealizedNotified)
 		{
 			long delta = ledger.realizedFlip - lastRealizedNotified;
@@ -784,6 +811,9 @@ public class GeflipPlugin extends Plugin
 				o.getQuantitySold(), o.getTotalQuantity(), o.getSpent());
 			of.name = scanner.nameFor(o.getItemId());
 			of.sellHint = scanner.sellHint(o.getItemId());   // recommended sell price, shown on the row
+			of.exempt = scanner.isExempt(o.getItemId());
+			long[] hc = ledger != null ? ledger.holdings.get(o.getItemId()) : null;
+			if (hc != null && hc[0] > 0) of.avgCost = hc[1] / hc[0];   // your cost basis → profit-aware guidance
 			// age + staleness: an in-progress offer that hasn't filled after staleHours
 			// has almost certainly been priced out — reprice it instead of waiting days
 			boolean inProgress = st == GrandExchangeOfferState.BUYING || st == GrandExchangeOfferState.SELLING;
@@ -881,6 +911,7 @@ public class GeflipPlugin extends Plugin
 			.build();
 		clientToolbar.addNavigation(navButton);
 		loadFills();     // restore the persisted fill history
+		loadSession();   // restore last-known bank + ⊘ personal-use ids so To-sell doesn't reset on relog
 		recompute();     // show flip P&L from it immediately (reflows once mapping loads)
 		// reconcile against the live GE slots now, in case the plugin was enabled mid-session
 		// (RuneLite only replays offer events on login) — the truest fill source we can read.
@@ -947,6 +978,7 @@ public class GeflipPlugin extends Plugin
 				int act = marketClock.activityPct(bin);
 				String actStr = act >= 0 ? "  · mkt " + act + "% of peak" + (act >= 80 ? " (fast fills)" : act <= 40 ? " (slow)" : "") : "";
 				if (p != null) { p.setFlips(flips); p.setStatus(flips.size() + " finds · " + timeNow() + actStr); }
+				writeSnapshot(flips);   // share top flips + P&L with the Telegram bridge (instant + offline-readable)
 				if (p != null) p.setSuppressedWinners(suppressedWinners(flips));   // #1: proven winners not showing + why
 				if (p != null) p.setStable(stable());                             // your consistent-winner stable
 				if (p != null) p.setAccountNeeds(buildAccountNeeds());            // cross-ref: what the Coach says your account needs
@@ -1220,7 +1252,7 @@ public class GeflipPlugin extends Plugin
 	{
 		int id = ev.getContainerId();
 		if (id == InventoryID.INVENTORY.getId()) invCounts = countMap(client.getItemContainer(InventoryID.INVENTORY));
-		else if (id == InventoryID.BANK.getId()) bankCounts = countMap(client.getItemContainer(InventoryID.BANK));
+		else if (id == InventoryID.BANK.getId()) { bankCounts = countMap(client.getItemContainer(InventoryID.BANK)); saveSession(); }
 		else return;
 		long gp = 0; boolean known = false;
 		if (invCounts != null) { gp += invCounts.getOrDefault(ItemID.COINS_995, 0); known = true; }
@@ -1284,6 +1316,7 @@ public class GeflipPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(net.runelite.api.events.GameTick ev)
 	{
+		pollGeHistory();   // runs EVERY tick while a GE-history dump is pending (rows populate a few ticks late)
 		if (++tickCounter % 10 != 0) return;   // ~6s at 600ms/tick
 		java.util.List<Offer> snap = buildOffers();
 		offerSnapshot = snap;
@@ -1299,8 +1332,251 @@ public class GeflipPlugin extends Plugin
 		if (panel != null) panel.setHoldings(buildHoldings());
 	}
 
+	/** Persist a compact scan snapshot (top flips + session P&L) so the Telegram bridge reads your flips
+	 *  INSTANTLY — and last-known even when RuneScape is closed. Written each scan on the scan thread
+	 *  (flips + ledger only — no client-thread reads), atomically, best-effort. */
+	private void writeSnapshot(java.util.List<GeflipScanner.Flip> flips)
+	{
+		try
+		{
+			java.util.Map<String, Object> snap = new java.util.LinkedHashMap<>();
+			snap.put("ts", System.currentTimeMillis() / 1000);
+			snap.put("bankrollGp", bankrollGp());
+			java.util.List<Object> ff = new java.util.ArrayList<>();
+			int n = 0;
+			for (GeflipScanner.Flip f : flips)
+			{
+				if (n++ >= 20) break;
+				java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+				m.put("item", f.name); m.put("buy", f.buy); m.put("sell", f.sell);
+				m.put("margin", f.margin); m.put("qty", f.quantity);
+				m.put("gpPerHr", (long) f.expGph); m.put("basketQty", f.basketQty); m.put("trust", f.trust);
+				ff.add(m);
+			}
+			snap.put("flips", ff);
+			GeflipLedger l = ledger;
+			if (l != null)
+			{
+				java.util.Map<String, Object> s = new java.util.LinkedHashMap<>();
+				s.put("realizedFlip", l.realizedFlip); s.put("heldCost", l.inventoryCost);
+				s.put("flips", l.flips); s.put("winRatePct", Math.round(l.winRate() * 100));
+				snap.put("session", s);
+			}
+			String json = new com.google.gson.Gson().toJson(snap);
+			java.nio.file.Path tmp = snapshotFile.toPath().resolveSibling("snapshot.json.tmp");
+			java.nio.file.Files.write(tmp, json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			java.nio.file.Files.move(tmp, snapshotFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		}
+		catch (Exception e) { log.debug("geflip snapshot write failed", e); }
+	}
+
+	/** Write the per-item realized-P&L history as a spreadsheet-ready CSV (your edge per item, over time):
+	 *  realized gp, flips, win%, avg hold, units, and gp per flip. Refreshed on every recompute; the Telegram
+	 *  bridge can read it too. Best-effort. */
+	private void writeStatsCsv()
+	{
+		try
+		{
+			GeflipLedger l = ledger;
+			if (l == null) return;
+			StringBuilder sb = new StringBuilder("item,realized_gp,flips,wins,win_pct,avg_hold_hours,units,gp_per_flip\n");
+			for (java.util.Map.Entry<Integer, long[]> e : l.byItem.entrySet())
+			{
+				long[] v = e.getValue();   // [realized, flips, wins, holdSecSum, matchedUnits]
+				long realized = v[0], flips = v[1], wins = v[2], holdSec = v[3], units = v[4];
+				double winPct = flips > 0 ? 100.0 * wins / flips : 0;
+				double avgHold = units > 0 ? holdSec / (double) units / 3600.0 : 0;
+				long perFlip = flips > 0 ? realized / flips : 0;
+				String name = scanner.nameFor(e.getKey());
+				if (name == null) name = "#" + e.getKey();
+				name = name.replace(',', ' ').replace('\n', ' ');   // keep the CSV single-column-safe
+				sb.append(name).append(',').append(realized).append(',').append(flips).append(',').append(wins)
+					.append(',').append(String.format("%.0f", winPct)).append(',').append(String.format("%.1f", avgHold))
+					.append(',').append(units).append(',').append(perFlip).append('\n');
+			}
+			java.nio.file.Files.write(statsCsvFile.toPath(), sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		}
+		catch (Exception e) { log.debug("geflip stats csv write failed", e); }
+	}
+
+	/** Persist the last-known BANK snapshot + ⊘ personal-use ids so To-sell survives a RELOG — bank items
+	 *  keep showing without reopening the bank, and personal-use stays hidden. Best-effort, small file. */
+	private void saveSession()
+	{
+		try
+		{
+			java.util.Map<String, Object> s = new java.util.LinkedHashMap<>();
+			s.put("bank", bankCounts);
+			s.put("excludedIds", new java.util.ArrayList<>(personalUseIds));
+			s.put("geHistReconciled", geHistReconciled);
+			sessionFile.getParentFile().mkdirs();
+			java.nio.file.Files.write(sessionFile.toPath(),
+				new com.google.gson.Gson().toJson(s).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		}
+		catch (Exception e) { log.debug("geflip session save failed", e); }
+	}
+
+	private void loadSession()
+	{
+		try
+		{
+			if (!sessionFile.exists()) return;
+			com.google.gson.JsonObject o = new com.google.gson.JsonParser()
+				.parse(new String(java.nio.file.Files.readAllBytes(sessionFile.toPath()),
+					java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+			if (o.has("bank") && o.get("bank").isJsonObject())
+			{
+				java.util.Map<Integer, Integer> b = new java.util.HashMap<>();
+				for (java.util.Map.Entry<String, com.google.gson.JsonElement> e : o.getAsJsonObject("bank").entrySet())
+					b.put(Integer.parseInt(e.getKey()), e.getValue().getAsInt());
+				if (!b.isEmpty()) bankCounts = b;   // last-known bank → bank items show on relog, no reopen needed
+			}
+			if (o.has("excludedIds") && o.get("excludedIds").isJsonArray())
+			{
+				java.util.Set<Integer> ex = new java.util.HashSet<>();
+				for (com.google.gson.JsonElement e : o.getAsJsonArray("excludedIds")) ex.add(e.getAsInt());
+				personalUseIds = ex;
+				excludedIds = new java.util.HashSet<>(ex);   // apply immediately, before the mapping resolves names
+			}
+			if (o.has("geHistReconciled")) geHistReconciled = o.get("geHistReconciled").getAsBoolean();
+		}
+		catch (Exception e) { log.debug("geflip session load failed", e); }
+	}
+
+	/** ONE-TIME (reversible) journal rebuild from the GE History interface — the authoritative record. The
+	 *  live offer-event journal drifts (missed sells during restarts/mobile → phantom FIFO losses, the fake
+	 *  -266k). This parses the History rows (item cells give id+qty; text triples give side + gross + tax —
+	 *  parser validated against a live dump), backs up the old journal, and REBUILDS fills from the truth.
+	 *  Runs once ever (persisted flag); going-forward tracking + the relog-persistence keep it true after. */
+	private void reconcileGeHistory(java.util.List<java.util.Map<String, Object>> rows)
+	{
+		java.util.List<int[]> items = new java.util.ArrayList<>();   // {itemId, qty}
+		java.util.List<String> texts = new java.util.ArrayList<>();
+		for (java.util.Map<String, Object> m : rows)
+		{
+			if (m.containsKey("itemId")) items.add(new int[]{((Number) m.get("itemId")).intValue(), ((Number) m.get("itemQty")).intValue()});
+			else if (m.containsKey("text")) texts.add(String.valueOf(m.get("text")));
+		}
+		java.util.List<Object[]> tx = new java.util.ArrayList<>();   // {side, gross, tax}
+		java.util.regex.Pattern pc = java.util.regex.Pattern.compile("([\\d,]+)\\s*coins");
+		java.util.regex.Pattern pp = java.util.regex.Pattern.compile("\\(([\\d,]+)\\s*-\\s*([\\d,]+)\\)");
+		for (int i = 0; i < texts.size(); i++)
+		{
+			String t = texts.get(i);
+			if (("Bought:".equals(t) || "Sold:".equals(t)) && i + 2 < texts.size())
+			{
+				String side = "Bought:".equals(t) ? "BUY" : "SELL";
+				String tot = texts.get(i + 2);
+				java.util.regex.Matcher mc = pc.matcher(tot);
+				long net = mc.find() ? Long.parseLong(mc.group(1).replace(",", "")) : -1;
+				java.util.regex.Matcher mp = pp.matcher(tot);
+				long gross, tax;
+				if (mp.find()) { gross = Long.parseLong(mp.group(1).replace(",", "")); tax = Long.parseLong(mp.group(2).replace(",", "")); }
+				else { gross = net; tax = 0; }
+				if (gross > 0) tx.add(new Object[]{side, gross, tax});
+				else tx.add(null);
+				i += 2;
+			}
+		}
+		int n = Math.min(items.size(), tx.size());
+		if (n < 2) return;   // nothing usable → never touch the journal
+		java.util.List<Fill> rebuilt = new java.util.ArrayList<>();
+		long base = System.currentTimeMillis() / 1000 - n;
+		for (int k = n - 1; k >= 0; k--)   // History is newest-first → add OLDEST first for correct FIFO
+		{
+			int[] it = items.get(k); Object[] T = tx.get(k);
+			if (T == null) continue;
+			int qty = it[1]; if (qty <= 0) continue;
+			int unit = (int) ((long) T[1] / qty);
+			int tax = (int) Math.min((long) T[2], Integer.MAX_VALUE);
+			rebuilt.add(new Fill(it[0], (String) T[0], unit, qty, tax, base + (n - k)));
+		}
+		if (rebuilt.size() < 2) return;
+		try { java.nio.file.Files.copy(fillsFile.toPath(),
+				fillsFile.toPath().resolveSibling("fills_prehistory_backup.json"),
+				java.nio.file.StandardCopyOption.REPLACE_EXISTING); } catch (Exception ignore) { }
+		fills.clear();
+		fills.addAll(rebuilt);
+		geHistReconciled = true;
+		persist();
+		recompute();
+		saveSession();
+		log.info("geflip: journal REBUILT from GE history — {} authoritative trades (backup: fills_prehistory_backup.json)", rebuilt.size());
+		if (panel != null) panel.setStatus("Journal rebuilt from GE history: " + rebuilt.size() + " true trades");
+	}
+
 	private static String timeNow()
 	{
 		return new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date());
+	}
+
+	// ---- GE HISTORY = the truth source (layer 2, step 1: read-only instrumentation) ----------------
+	// The live offer-event tracking MISSES trades collected while the plugin was off (restart / mobile),
+	// which is why the journal drifts and you end up confirming "yeah/naw". The game's own GE History
+	// panel (InterfaceID.GE_HISTORY = 383) is authoritative. RuneLite exposes no named children for it,
+	// so this first pass WALKS the interface and DUMPS every item-cell + text to a file when you open
+	// History — it books NOTHING (a blind parse could corrupt P&L, your #1 rule). Once we've seen the
+	// real structure from one dump, the reconcile step books only the fills the live tracking missed.
+	private int geHistDumpTicks = 0;   // the History rows are filled by a CS2 script AFTER WidgetLoaded, so
+	                                   // an immediate read sees only the title — poll for a few ticks instead.
+
+	@Subscribe
+	public void onWidgetLoaded(net.runelite.api.events.WidgetLoaded ev)
+	{
+		if (ev.getGroupId() == 383) geHistDumpTicks = 8;   // GE_HISTORY — poll until the rows populate
+	}
+
+	/** Walk the GE History interface, dumping every item-cell + text, once its rows have populated. Called
+	 *  each tick while pending. READ-ONLY — books nothing (a blind parse must not corrupt P&L). */
+	private void pollGeHistory()
+	{
+		if (geHistDumpTicks <= 0) return;
+		geHistDumpTicks--;
+		try
+		{
+			java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>();
+			int[] itemCells = {0};
+			for (int i = 0; i < 200; i++)
+			{
+				net.runelite.api.widgets.Widget w = client.getWidget(383, i);
+				if (w != null) dumpGeWidget(w, rows, itemCells);
+			}
+			if (itemCells[0] > 0 || geHistDumpTicks == 0)   // got rows, or retries exhausted → write what we have
+			{
+				java.io.File f = new java.io.File(net.runelite.client.RuneLite.RUNELITE_DIR, "geflip/ge_history_dump.json");
+				f.getParentFile().mkdirs();
+				java.nio.file.Files.write(f.toPath(),
+					new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(rows)
+						.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+				log.info("geflip: GE-history dump = {} cells ({} item)", rows.size(), itemCells[0]);
+				if (itemCells[0] > 0)
+				{
+					geHistDumpTicks = 0;
+					if (!geHistReconciled) reconcileGeHistory(rows);   // ONE-TIME rebuild from the authoritative record
+					else if (panel != null) panel.setStatus("GE history read: " + itemCells[0] + " item cells");
+				}
+			}
+		}
+		catch (Exception e) { log.debug("geflip GE-history dump failed", e); }
+	}
+
+	private void dumpGeWidget(net.runelite.api.widgets.Widget w, java.util.List<java.util.Map<String, Object>> out, int[] itemCells)
+	{
+		if (w == null) return;
+		int itemId = w.getItemId();
+		String txt = w.getText();
+		boolean hasTxt = txt != null && !txt.trim().isEmpty();
+		if (itemId > 0 || hasTxt)
+		{
+			java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+			m.put("id", w.getId());
+			m.put("parentId", w.getParentId());
+			if (itemId > 0) { m.put("itemId", itemId); m.put("itemQty", w.getItemQuantity()); itemCells[0]++; }
+			if (hasTxt) m.put("text", txt.trim());
+			out.add(m);
+		}
+		for (net.runelite.api.widgets.Widget[] arr : new net.runelite.api.widgets.Widget[][]{
+			w.getDynamicChildren(), w.getStaticChildren(), w.getNestedChildren() })
+			if (arr != null) for (net.runelite.api.widgets.Widget c : arr) dumpGeWidget(c, out, itemCells);
 	}
 }

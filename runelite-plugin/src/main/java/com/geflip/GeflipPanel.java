@@ -79,6 +79,15 @@ class GeflipPanel extends PluginPanel
 	private final Runnable onResetJournal;
 	private final JPanel watchBox = new JPanel();      // "Watch" — pinned items + live prices (You tab)
 
+	// Usable wrap-widths in px. PANEL_WIDTH is 225, but after our scrollbar + row chrome (icon, borders, gaps)
+	// far less is actually free. These are CONSERVATIVE so every line WRAPS inside its row and can never clip
+	// off the right edge — the recurring "I can't see the sell price" bug. Hero rows are tighter (40px icon +
+	// card border). Anything wider than its container clips; anything narrower just wraps to another line.
+	private static final int NAME_W = 96;        // wrapped item-name column, left of the gp/h figure
+	private static final int LINE_W = 148;       // a full wrapped info line inside a 36px-icon flip row
+	private static final int HERO_NAME_W = 78;   // wrapped name inside the hero card
+	private static final int HERO_LINE_W = 126;  // wrapped info line inside the hero card
+
 	GeflipPanel(ItemManager itemManager, Runnable onRefresh, java.util.function.IntConsumer onClearHold,
 		java.util.function.Function<String, String> onPriceCheck,
 		java.util.function.ObjLongConsumer<Integer> onEditCost,
@@ -86,6 +95,9 @@ class GeflipPanel extends PluginPanel
 		Runnable onWatchLast, java.util.function.IntConsumer onUnwatch,
 		Runnable onResetJournal)
 	{
+		super(false);   // WE own scrolling (a scrollOf pane per tab). Stop RuneLite double-wrapping us in a
+		                // SECOND scrollpane — that stacked two vertical bars, stole ~16px of width (the cause of
+		                // the right-edge price clipping) and trapped the scroll wheel. One clean scrollbar now.
 		this.itemManager = itemManager;
 		this.onClearHold = onClearHold;
 		this.onPriceCheck = onPriceCheck;
@@ -251,13 +263,13 @@ class GeflipPanel extends PluginPanel
 
 	private static JScrollPane scrollOf(JPanel content)
 	{
-		// horizontal scroll AS-NEEDED so any wide row (e.g. To-sell/offer controls on the You tab) is always
-		// REACHABLE — never clipped off-edge with no way to get to it. Bar only appears if something overflows.
+		// NO horizontal scroll — that's what traps you scrolled off-left. Now that rows are width-capped AND
+		// the buy/sell info WRAPS, nothing overflows sideways: content that's long flows DOWN, never off-edge.
+		// Vertical only.
 		JScrollPane s = new JScrollPane(content,
-			ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+			ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 		s.setBorder(null);
 		s.getVerticalScrollBar().setUnitIncrement(16);
-		s.getHorizontalScrollBar().setUnitIncrement(16);
 		return s;
 	}
 
@@ -432,12 +444,14 @@ class GeflipPanel extends PluginPanel
 		JLabel name = new JLabel(trunc(pr.name, 22));
 		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		name.setForeground(ColorScheme.TEXT_COLOR);
-		JLabel prof = new JLabel("+" + gp(pr.profit) + "/ea");
+		// "/make" not "/ea": profit + buyCost + sellNet are all per crafting action (a make can yield >1 output,
+		// e.g. 1 steel bar → 4 cannonballs), so labelling it per-unit would understate/mislead.
+		JLabel prof = new JLabel("+" + gp(pr.profit) + "/make");
 		prof.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
 		prof.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
 		prof.setHorizontalAlignment(JLabel.RIGHT);
 		top.add(name, BorderLayout.CENTER); top.add(prof, BorderLayout.EAST);
-		JLabel sub = new JLabel(gp(pr.buyCost) + " → " + gp(pr.sellNet) + (pr.limit > 0 ? "  ·  " + pr.limit + "/4h" : ""));
+		JLabel sub = new JLabel(gp(pr.buyCost) + " → " + gp(pr.sellNet) + (pr.limit > 0 ? "  ·  " + pr.limit + "/4h buy-lim" : ""));
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
 		JPanel col = new JPanel();
@@ -447,7 +461,7 @@ class GeflipPanel extends PluginPanel
 		col.add(top); col.add(sub);
 		p.add(col, BorderLayout.CENTER);
 		p.setToolTipText("Buy inputs ~" + gp(pr.buyCost) + " → sell output ~" + gp(pr.sellNet) + " (after tax) → +"
-			+ gp(pr.profit) + " each" + (pr.limit > 0 ? ". Limit " + pr.limit + "/4h" : "") + ". Needs: " + pr.req);
+			+ gp(pr.profit) + " per make" + (pr.limit > 0 ? ". Output buy-limit " + pr.limit + "/4h (input limits may bind sooner)" : "") + ". Needs: " + pr.req);
 		p.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, p.getPreferredSize().height));
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return p;
@@ -542,8 +556,8 @@ class GeflipPanel extends PluginPanel
 			if (bankroll <= 0) { capitalLabel.setText(" "); return; }
 			int pct = (int) Math.round(100.0 * Math.min(working, bankroll) / bankroll);
 			long idle = Math.max(0, bankroll - working);
-			capitalLabel.setText("capital: " + gp(working) + " working (" + pct + "%) · "
-				+ gp(idle) + " idle · " + slotsUsed + "/8 slots");
+			capitalLabel.setText("<html><div style='width:205px'>capital: " + gp(working) + " working (" + pct + "%) · "
+				+ gp(idle) + " idle · " + slotsUsed + "/8 slots</div></html>");
 			// nudge orange when you're leaving a lot on the table (idle coins AND free slots)
 			boolean leak = slotsUsed < 8 && pct < 60;
 			capitalLabel.setForeground(leak ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
@@ -890,26 +904,45 @@ class GeflipPanel extends PluginPanel
 		top.setOpaque(false);
 		top.add(l, BorderLayout.CENTER); top.add(r, BorderLayout.EAST);
 
-		// SELL GUIDANCE right on the row: buys → what to sell it for after; sells → the reprice target.
+		// SELL GUIDANCE right on the row — COST-AWARE so it never SCARES you into thinking you're taking a loss
+		// when you aren't. Buys show the expected margin. Sells: if the market price is still above YOUR cost we
+		// show it GREEN with the profit ("still +N ea ✓"); we only go red when a reprice would actually put you
+		// underwater. (You sold Water orb at the right price — this stops that guidance from feeling like a loss.)
 		String guide = null; java.awt.Color gcol = ColorScheme.LIGHT_GRAY_COLOR;
 		if (o.sellHint > 0)
 		{
+			int tick = GeflipScanner.tickSize(o.sellHint);
+			long tax = (o.exempt || o.sellHint < 50) ? 0 : Math.min((long) (o.sellHint * 0.02), 5_000_000);
+			long netAtHint = o.sellHint - tax;   // what you actually pocket at the market price, after 2% tax
 			if (buy)
-				guide = "→ then sell at ~" + gp(o.sellHint);
-			else
 			{
-				int tick = GeflipScanner.tickSize(o.sellHint);
-				// EXACT prices (not the 0.1k-rounded gp()). And DON'T scream "reprice down" the instant you
-				// list — a fresh sell above the current bid may still fill as buyers come in. Only HARD-warn
-				// once it's actually sat unfilled (stale); until then just calmly inform. This kills the
-				// "as soon as I list, it says price down" nag.
-				if (o.price > o.sellHint + tick && o.stale)
-				{ guide = "⚠ reprice ↓ to " + exact(o.sellHint) + " (you're at " + exact(o.price) + ", −" + exact(o.price - o.sellHint) + ")"; gcol = ColorScheme.PROGRESS_ERROR_COLOR; }
-				else if (o.price > o.sellHint + tick)
-					guide = "buyers ~" + exact(o.sellHint) + " · yours " + exact(o.price) + " — may fill if you wait, or undercut to sell now";
-				else
-					guide = "sell target ~" + exact(o.sellHint) + " — your price is fine";
+				long m = netAtHint - o.price;   // your buy price IS your cost basis on an open buy
+				guide = "→ then sell ~" + exact(o.sellHint) + (m > 0 ? " · +" + gp(m) + " ea" : "");
 			}
+			else if (o.price <= o.sellHint + tick)
+				guide = "sell target ~" + exact(o.sellHint) + " — your price is fine";
+			else if (o.avgCost >= 0)
+			{
+				long profit = netAtHint - o.avgCost;
+				if (profit >= 0)
+				{
+					// STILL GREEN at the market price — reassure, do NOT alarm
+					guide = "market's ~" + exact(o.sellHint) + " — still +" + gp(profit) + " ea profit ✓"
+						+ (o.stale ? " · drop to it to sell now" : " · yours may still fill, or drop to sell now");
+					gcol = ColorScheme.GRAND_EXCHANGE_PRICE;
+				}
+				else
+				{
+					// the ONLY genuinely-bad case: repricing to market loses money → red, with the real tradeoff
+					guide = "⚠ market fell to " + exact(o.sellHint) + ", under your ~" + exact(o.avgCost)
+						+ " cost — that loses " + gp(-profit) + " ea. Hold for recovery, or cut only if you must";
+					gcol = ColorScheme.PROGRESS_ERROR_COLOR;
+				}
+			}
+			else
+				// no tracked cost → inform calmly, never a bare scary "reprice down"
+				guide = "buyers ~" + exact(o.sellHint) + " · yours " + exact(o.price)
+					+ " — may fill if you wait, or drop to " + exact(o.sellHint) + " to sell now";
 		}
 		JPanel col = new JPanel();
 		col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
@@ -1124,8 +1157,10 @@ class GeflipPanel extends PluginPanel
 		String tag = (f.personalized && f.yourWinRate >= 0.6 ? "◆ " : "")
 			+ (f.dumping ? "🔥 " : "") + (f.decliner ? "⚠ " : "")
 			+ (f.unstable ? "⚡ " : "") + (f.tsChecked && f.marginPersist >= 0.7 ? "✓ " : "");
-		JLabel name = new JLabel(tag + trunc(f.name, 15));
-		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		// FULL name, wrapped (no more "Large dragon k…") — it flows to a 2nd line instead of truncating,
+		// and the gp/h figure keeps its own space on the right so it never gets chopped ("23.2k/…").
+		JLabel name = new JLabel("<html><div style='width:" + NAME_W + "px'><b>" + tag + esc(f.name) + "</b></div></html>");
+		name.setFont(FontManager.getRunescapeSmallFont());
 		name.setForeground(f.decliner ? ColorScheme.PROGRESS_ERROR_COLOR
 			: f.unstable ? ColorScheme.PROGRESS_INPROGRESS_COLOR
 			: f.dumping ? ColorScheme.BRAND_ORANGE : ColorScheme.TEXT_COLOR);
@@ -1143,7 +1178,7 @@ class GeflipPanel extends PluginPanel
 		String ft = fillTxt(f.fillHours);
 		// WRAP + EXACT prices so the buy/sell you actually type is ALWAYS fully visible (never clipped by the
 		// 225px width) — this is the info you need to place the trade.
-		JLabel sub = new JLabel("<html><div style='width:165px'>Buy " + exact(f.buy) + " → Sell " + exact(f.sell)
+		JLabel sub = new JLabel("<html><div style='width:" + LINE_W + "px'>Buy " + exact(f.buy) + " → Sell " + exact(f.sell)
 			+ " · +" + exact(f.margin) + " ea ×" + f.quantity + (ft.isEmpty() ? "" : " · " + ft) + "</div></html>");
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sub.setFont(FontManager.getRunescapeSmallFont());
@@ -1159,7 +1194,7 @@ class GeflipPanel extends PluginPanel
 		// #6 sparkline — only the grounded top picks carry a ~2h price series (bounded, so it stays cheap)
 		if (f.series != null && f.series.length >= 2)
 		{
-			Spark spark = new Spark(f.series, PluginPanel.PANEL_WIDTH - 70, 20);
+			Spark spark = new Spark(f.series, LINE_W, 20);
 			spark.setAlignmentX(Component.LEFT_ALIGNMENT);
 			col.add(Box.createRigidArea(new Dimension(0, 2)));
 			col.add(spark);
@@ -1276,14 +1311,14 @@ class GeflipPanel extends PluginPanel
 			BorderFactory.createMatteBorder(2, 0, 0, 0, ColorScheme.BRAND_ORANGE),
 			BorderFactory.createEmptyBorder(6, 7, 7, 7)));
 		card.setAlignmentX(Component.LEFT_ALIGNMENT);
-		card.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH, Integer.MAX_VALUE));
+		card.setMaximumSize(new Dimension(PluginPanel.PANEL_WIDTH - 18, Integer.MAX_VALUE));   // fit inside our scrollbar
 
 		JLabel h = new JLabel("⭐ BUY THESE NOW");
 		h.setFont(FontManager.getRunescapeBoldFont());
 		h.setForeground(ColorScheme.BRAND_ORANGE);
 		h.setAlignmentX(Component.LEFT_ALIGNMENT);
 		card.add(h);
-		JLabel tot = new JLabel("≈ +" + gp(total) + " this cycle · " + basket.size() + (basket.size() == 1 ? " slot" : " slots"));
+		JLabel tot = new JLabel("≈ +" + gp(total) + " if these fill · " + basket.size() + (basket.size() == 1 ? " slot" : " slots"));
 		tot.setFont(FontManager.getRunescapeSmallFont());
 		tot.setForeground(ColorScheme.GRAND_EXCHANGE_PRICE);
 		tot.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -1307,8 +1342,8 @@ class GeflipPanel extends PluginPanel
 		col.setOpaque(false);
 		JPanel top = new JPanel(new BorderLayout(6, 0));
 		top.setOpaque(false);
-		JLabel name = new JLabel(trunc(f.name, 16));
-		name.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		JLabel name = new JLabel("<html><div style='width:" + HERO_NAME_W + "px'><b>" + esc(f.name) + "</b></div></html>");
+		name.setFont(FontManager.getRunescapeSmallFont());
 		name.setForeground(ColorScheme.TEXT_COLOR);
 		JLabel prof = new JLabel("+" + gp((long) f.margin * f.basketQty));
 		prof.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
@@ -1316,7 +1351,7 @@ class GeflipPanel extends PluginPanel
 		prof.setHorizontalAlignment(JLabel.RIGHT);
 		top.add(name, BorderLayout.CENTER); top.add(prof, BorderLayout.EAST);
 		top.setAlignmentX(Component.LEFT_ALIGNMENT);
-		JLabel sub = new JLabel("<html><div style='width:160px'>Buy " + f.basketQty + " @" + exact(f.buy)
+		JLabel sub = new JLabel("<html><div style='width:" + HERO_LINE_W + "px'>Buy " + f.basketQty + " @" + exact(f.buy)
 			+ " → Sell @" + exact(f.sell) + "</div></html>");
 		sub.setFont(FontManager.getRunescapeSmallFont());
 		sub.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
@@ -1324,7 +1359,7 @@ class GeflipPanel extends PluginPanel
 		col.add(top); col.add(sub);
 		if (f.series != null && f.series.length >= 2)
 		{
-			Spark spark = new Spark(f.series, PluginPanel.PANEL_WIDTH - 74, 18);
+			Spark spark = new Spark(f.series, HERO_LINE_W, 18);
 			spark.setAlignmentX(Component.LEFT_ALIGNMENT);
 			col.add(Box.createRigidArea(new Dimension(0, 2)));
 			col.add(spark);
@@ -1367,8 +1402,8 @@ class GeflipPanel extends PluginPanel
 		bar.setForeground(t >= 70 ? ColorScheme.PROGRESS_COMPLETE_COLOR
 			: t >= 45 ? ColorScheme.BRAND_ORANGE : ColorScheme.PROGRESS_ERROR_COLOR);
 		bar.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		bar.setPreferredSize(new Dimension(PluginPanel.PANEL_WIDTH - 60, 14));
-		bar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 14));
+		bar.setPreferredSize(new Dimension(LINE_W, 14));
+		bar.setMaximumSize(new Dimension(LINE_W, 14));
 		bar.setAlignmentX(Component.LEFT_ALIGNMENT);
 		bar.setToolTipText("Trust " + t + "/100 — is this margin REAL? Blends how long the margin actually held, "
 			+ "fill probability, and price stability. " + (t >= 70 ? "Trustworthy." : t >= 45 ? "So-so — check the fill." : "Shaky — treat with caution."));

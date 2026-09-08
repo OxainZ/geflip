@@ -24,6 +24,17 @@ public interface CoachConfig extends Config
 		position = 3)
 	default boolean unlockAlerts() { return true; }
 
+	@ConfigItem(keyName = "rigourUnlocked", name = "I have Rigour unlocked",
+		description = "Tick if you've read a Dexterous prayer scroll (unlocked Rigour). Consumed scrolls leave "
+			+ "no item or varbit to detect, so the Coach can't see it — tick this and it stops telling you to "
+			+ "get it. (Deadeye, the Varlamore version, IS auto-detected.)", position = 4)
+	default boolean rigourUnlocked() { return true; }   // Foo fighta has it — done by default; untick if ever wrong
+
+	@ConfigItem(keyName = "auguryUnlocked", name = "I have Augury unlocked",
+		description = "Tick if you've read an Arcane prayer scroll (unlocked Augury). Same reason as Rigour — "
+			+ "it can't be auto-detected. (Mystic Vigour IS auto-detected.)", position = 4)
+	default boolean auguryUnlocked() { return false; }
+
 	@ConfigItem(keyName = "focusGoal", name = "Focus goal (Path tab)",
 		description = "Type a goal name (e.g. 'Vorkath' or 'Dizana') to see the full ordered path to it — "
 			+ "every skill to train and quest to do, in order, with live ETAs. Blank = auto-pick your "

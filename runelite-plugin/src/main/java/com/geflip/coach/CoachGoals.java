@@ -89,6 +89,19 @@ final class CoachGoals
 		DONE_IF_OWN.put("Infernal cape", new int[]{ INFERNAL_CAPE });
 	}
 
+	/** goal name -> account-unlock key that means "DONE" (read from varbits, not items/levels). A consumed
+	 *  prayer scroll leaves no item, so these unlocks can only be detected by their varbit. Deadeye (ranged)
+	 *  and Mystic Vigour (magic) are the newer prayers that supersede the Rigour/Augury goals for a player
+	 *  who has them — so we stop nagging you to get a ranged/magic DPS prayer you already unlocked. */
+	static final java.util.Map<String, String[]> DONE_IF_UNLOCK = new java.util.HashMap<>();
+	static
+	{
+		// DONE if ANY key is unlocked: rigour/augury are ticked in config (consumed scrolls, no varbit);
+		// deadeye/vigour are the newer Varlamore prayers read from a real unlock varbit and supersede them.
+		DONE_IF_UNLOCK.put("Rigour (ranged prayer)", new String[]{ "rigour", "deadeye" });
+		DONE_IF_UNLOCK.put("Augury (magic prayer)", new String[]{ "augury", "vigour" });
+	}
+
 	// every id the plugin scans equipment/inventory/bank for = key items + all completion items
 	static final int[] KEY_ITEMS;
 	static
