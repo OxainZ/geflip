@@ -138,6 +138,46 @@ public class GeflipPlugin extends Plugin
 		Fill(int id, String side, int price, int qty, int tax, long ts)
 		{ this.id = id; this.side = side; this.price = price; this.qty = qty; this.tax = tax; this.ts = ts; }
 	}
+	/** Fills re-booked inside this window are a duplicate, not a second trade. */
+	private static final long DUPE_WINDOW_S = 120;
+
+	/**
+	 * True when {@code f} looks like a RE-BOOK of a fill already in {@code recent} rather than a
+	 * genuine second trade: same item, side, unit price AND quantity, inside the window.
+	 *
+	 * Double-booking is already prevented per-client by the slotBookedQty deltas - but a SECOND
+	 * client (or a relaunch over a live one) starts those counters at zero and re-books the whole
+	 * filled quantity, and the GE-history rebuild can re-insert rows it already holds. The 2026-09
+	 * ledger audit found 56 such records: 23% of fills.json, ~66M gp of phantom volume. That
+	 * corrupts realised P&L AND the per-item personalisation that scales expGph in the ranking,
+	 * so the "learns from your fills" edge was training on a polluted ledger.
+	 *
+	 * Static + package-private so it is unit-testable without a running client.
+	 */
+	static boolean isDuplicateFill(java.util.List<Fill> recent, Fill f, long windowSec)
+	{
+		for (int i = recent.size() - 1; i >= 0; i--)
+		{
+			Fill p = recent.get(i);
+			if (f.ts - p.ts > windowSec) break;   // time-ordered: past the window means done
+			if (p.id == f.id && p.side.equals(f.side) && p.price == f.price && p.qty == f.qty)
+				return true;
+		}
+		return false;
+	}
+
+	/** Single choke point for booking a fill, so the dedup guard cannot be bypassed. */
+	private void bookFill(Fill f)
+	{
+		if (isDuplicateFill(fills, f, DUPE_WINDOW_S))
+		{
+			log.info("geflip: suppressed duplicate fill id={} {} x{} @ {} (re-book within {}s)",
+				f.id, f.side, f.qty, f.price, DUPE_WINDOW_S);
+			return;
+		}
+		fills.add(f);
+	}
+
 	static final class Session
 	{
 		final long realized, deployed, kept; final int flips, held;
@@ -307,7 +347,7 @@ public class GeflipPlugin extends Plugin
 			int price = scanner.sellHint(id);
 			if (price <= 0) price = (int) (h[1] / Math.max(1, h[0]));   // no quote → book flat at cost
 			int tax = GeflipScanner.saleTax(price, scanner.isExempt(id)) * qty;
-			fills.add(new Fill(id, "SELL", price, qty, tax, System.currentTimeMillis() / 1000));
+			bookFill(new Fill(id, "SELL", price, qty, tax, System.currentTimeMillis() / 1000));
 			pruneFills();
 			java.util.List<Fill> snap = new java.util.ArrayList<>(fills);
 			String[] sig = slotSig.clone(), key = slotKey.clone(); long[] since = slotSince.clone();
@@ -1192,7 +1232,7 @@ public class GeflipPlugin extends Plugin
 		long now = System.currentTimeMillis() / 1000;
 		if (isBuy)
 		{
-			fills.add(new Fill(o.getItemId(), "BUY", unit, deltaQty, 0, now));
+			bookFill(new Fill(o.getItemId(), "BUY", unit, deltaQty, 0, now));
 			long nowMs = System.currentTimeMillis();
 			long[] w = buyWindows.get(o.getItemId());
 			if (w == null || nowMs - w[0] >= BUY_WINDOW_MS) buyWindows.put(o.getItemId(), new long[]{ nowMs, deltaQty });
@@ -1201,7 +1241,7 @@ public class GeflipPlugin extends Plugin
 		else
 		{
 			int tax = GeflipScanner.saleTax(unit, scanner.isExempt(o.getItemId())) * deltaQty;
-			fills.add(new Fill(o.getItemId(), "SELL", unit, deltaQty, tax, now));
+			bookFill(new Fill(o.getItemId(), "SELL", unit, deltaQty, tax, now));
 		}
 		pruneFills();
 		return true;
