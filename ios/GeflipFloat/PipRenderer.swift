@@ -37,11 +37,13 @@ final class PipRenderer {
 
 	func makeFrame(snapshot: Snapshot?, note: String?, paused: Bool, now: Date = Date()) -> CVPixelBuffer? {
 		let w = Int(pixelSize.width), h = Int(pixelSize.height)
-		let attrs: [CFString: Any] = [
-			kCVPixelBufferCGImageCompatibilityKey: true,
-			kCVPixelBufferCGBitmapContextCompatibilityKey: true,
+		// Keyed by String, not CFString: the CFString-keyed dictionary only bridges to
+		// CFDictionary by luck of conformance, and this spelling is the one Apple documents.
+		let attrs: [String: Any] = [
+			kCVPixelBufferCGImageCompatibilityKey as String: true,
+			kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
 			// The display layer needs IOSurface-backed buffers; without this it drops frames.
-			kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
+			kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
 		]
 		var buffer: CVPixelBuffer?
 		guard CVPixelBufferCreate(kCFAllocatorDefault, w, h, kCVPixelFormatType_32BGRA,

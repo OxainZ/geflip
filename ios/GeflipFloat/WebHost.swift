@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import WebKit
 
 /// The `window.geflipSnapshot()` payload. Mirrors the STABLE API block in index.html —

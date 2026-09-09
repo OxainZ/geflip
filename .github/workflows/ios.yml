@@ -19,10 +19,21 @@ concurrency:
 
 jobs:
   ipa:
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+
+      # brew always installs the NEWEST XcodeGen, which writes the newest .xcodeproj
+      # object format (77 = Xcode 16). Pinning an older runner image means an Xcode that
+      # cannot open its own generator's output — macos-14 ships Xcode 15.4 and fails with
+      # "future Xcode project file format (77)". Track the newest image, and pick the
+      # newest Xcode actually installed on it rather than trusting the default symlink.
+      - name: Select the newest Xcode on the runner
+        run: |
+          newest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$newest" ]; then sudo xcode-select -s "$newest"; fi
+          xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
