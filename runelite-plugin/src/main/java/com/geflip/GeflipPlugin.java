@@ -309,6 +309,51 @@ public class GeflipPlugin extends Plugin
 	 * Deliberately uses the REALISED rate, not a hoped-for one: at 11.3k/day a 1.33b gap is 322
 	 * years, and seeing that is the point - the constraint is turnover, not bankroll.
 	 */
+	/**
+	 * ONE line naming the biggest thing costing gp right now, most expensive first.
+	 *
+	 * The scanner already coaches the PICK well (fill probability, phantom margins, decline and
+	 * volatility warnings, your own win-rate). It said nothing about BEHAVIOUR - and behaviour is
+	 * where the money is: measured against this ledger, ~11.3k/day was realised while the modelled
+	 * ceiling for the same bankroll is ~7M/day. That gap is not picks or settings, it is capital
+	 * that does not cycle. Idle coins and empty slots earn exactly nothing.
+	 *
+	 * Returns null when nothing is worth nagging about - silence beats a permanent banner nobody reads.
+	 * Static + package-private so the priority order is unit-testable without a client.
+	 */
+	static String coachLine(long idleGp, long bankroll, int freeSlots, long basketValue,
+		int stuckN, long stuckGp, int daysSinceTrade)
+	{
+		if (bankroll <= 0) return null;
+		int idlePct = (int) Math.round(100.0 * Math.max(0, idleGp) / bankroll);
+		// 1. not trading at all dwarfs every other inefficiency
+		if (daysSinceTrade >= 3)
+			return "No flips in " + daysSinceTrade + "d - idle capital is the whole leak, not your picks.";
+		// 2. free slots with a fundable basket: the most concrete gp on the table
+		if (freeSlots > 0 && basketValue > 0)
+			return freeSlots + " slot" + (freeSlots > 1 ? "s" : "") + " free - the basket would earn ~"
+				+ money(basketValue) + " this cycle. Fill them.";
+		// 3. deployed but sitting on cash
+		if (idlePct >= 40 && idleGp > 0)
+			return money(idleGp) + " idle (" + idlePct + "% of bank) - capital earns nothing in your pocket.";
+		// 4. money stuck in positions that stopped moving
+		if (stuckN > 0)
+			return stuckN + " position" + (stuckN > 1 ? "s" : "") + " idle >14d holding "
+				+ money(stuckGp) + " - reprice or cut, that capital is parked.";
+		if (freeSlots == 0 && idlePct < 20) return "All slots working, capital deployed - this is the pace.";
+		return null;
+	}
+
+	/** Compact gp for coach text (13.5m / 240k / 900). */
+	static String money(long v)
+	{
+		long a = Math.abs(v);
+		if (a >= 1_000_000_000L) return String.format("%.1fb", v / 1e9);
+		if (a >= 1_000_000L) return String.format("%.1fm", v / 1e6);
+		if (a >= 1_000L) return String.format("%.0fk", v / 1e3);
+		return String.valueOf(v);
+	}
+
 	static long daysToGoal(long gap, long gpPerDay)
 	{
 		if (gap <= 0) return 0;
@@ -829,6 +874,23 @@ public class GeflipPlugin extends Plugin
 				if ("BUYING".equals(o.state)) working += (long) o.price * Math.max(0, o.qtyTotal - o.qtySold);
 			}
 			panel.setCapital(working, bankrollGp(), slotsUsed);
+			// behaviour coaching: names the costliest inefficiency right now (idle capital, empty
+			// slots, a stalled position, or simply not trading) - the 600x gap this ledger showed
+			try
+			{
+				long bank = bankrollGp();
+				java.util.List<Hold> hs = buildHoldings();
+				long basketVal = 0;
+				for (GeflipScanner.Flip f : lastFlips)
+					if (f.basketQty > 0) basketVal += (long) f.margin * f.basketQty;
+				long lastTs = 0;
+				for (Fill f : fills) lastTs = Math.max(lastTs, f.ts);
+				int sinceTrade = lastTs > 0
+					? (int) ((System.currentTimeMillis() / 1000 - lastTs) / 86400L) : 0;
+				panel.setCoach(coachLine(Math.max(0, bank - working), bank, Math.max(0, 8 - slotsUsed),
+					basketVal, stuckCount(hs, 14), parkedGp(hs, 14), sinceTrade));
+			}
+			catch (Exception e) { log.debug("geflip: coach line failed", e); }
 			// savings goal: live price vs what you have, ETA at the rate you ACTUALLY realise
 			try
 			{

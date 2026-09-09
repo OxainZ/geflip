@@ -44,6 +44,7 @@ class GeflipPanel extends PluginPanel
 	private final JLabel bankLabel = new JLabel(" ");  // the bankroll being used (your coins)
 	private final JLabel capitalLabel = new JLabel(" ");  // capital working vs idle + slots in use
 	private final JLabel goalLabel = new JLabel(" ");     // savings goal: price, progress, honest ETA
+	private final JLabel coachLabel = new JLabel(" ");    // the one thing costing gp right now
 	private final JLabel session = new JLabel("session: —");
 	private final JLabel calib = new JLabel(" ");      // your ACTUAL results (win% / hold)
 	private final JLabel legend = new JLabel(" ");     // what the row symbols mean
@@ -172,6 +173,10 @@ class GeflipPanel extends PluginPanel
 		goalLabel.setFont(FontManager.getRunescapeSmallFont());
 		goalLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		top.add(goalLabel);
+		coachLabel.setForeground(ColorScheme.PROGRESS_ERROR_COLOR);
+		coachLabel.setFont(FontManager.getRunescapeSmallFont().deriveFont(java.awt.Font.BOLD));
+		coachLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		top.add(coachLabel);
 		top.add(priceRow);
 		top.add(priceResult);
 		top.add(legend);
@@ -559,6 +564,19 @@ class GeflipPanel extends PluginPanel
 	 * years, that IS the finding, and it points at turnover rather than bankroll.
 	 * perDay <= 0 (nothing realised yet) shows progress without inventing a date.
 	 */
+	/** The single biggest thing costing gp right now, or blank when there is nothing worth saying.
+	 *  Deliberately ONE line: a permanent wall of advice is a wall nobody reads. */
+	void setCoach(String line)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			if (line == null || line.isEmpty()) { coachLabel.setText(" "); return; }
+			coachLabel.setText("<html><div style='width:205px'>" + line + "</div></html>");
+			boolean good = line.startsWith("All slots");
+			coachLabel.setForeground(good ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.PROGRESS_ERROR_COLOR);
+		});
+	}
+
 	void setGoal(String name, long price, long have, long perDay)
 	{
 		SwingUtilities.invokeLater(() ->
