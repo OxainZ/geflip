@@ -2564,6 +2564,7 @@ function renderLive(session, fills, source, offers){
   const el = $('liveRl'); if (!el) return;
   const s = session || {}; const F = Array.isArray(fills) ? fills : [];
   const O = Array.isArray(offers) ? offers : [];
+  LIVE_SESSION = s; LIVE_OFFERS = O;   // kept for geflipSnapshot() — see below
   if (!session && !F.length && !O.length){ el.style.display='none'; return; }
   const nameOf = id => (MAPPING && MAPPING.get && MAPPING.get(+id)?.name) || ('#'+id);
   // Your live open GE offers (what you're buying/selling right now, with fill progress)
@@ -2673,6 +2674,47 @@ function renderOverlay(){
       .toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
     + ' · ' + rows.length + (pos.length ? ' slots' : ' picks');
 }
+
+/* ---------------------- the native-host contract ---------------------- *
+ * iOS cannot draw one app over another, so the iPhone host (ios/) cannot just show this
+ * page on top of the game the way the Android one does — it paints its own Picture-in-
+ * Picture frame instead. It must NOT recompute anything to do that: this function hands
+ * it the numbers this page already worked out, so there is still exactly one flip engine.
+ *
+ * STABLE API. ios/PipRenderer.swift parses this shape; if you rename a field, change it
+ * there in the same pass. Every value is already rounded and safe to print.            */
+let LIVE_SESSION = {}, LIVE_OFFERS = [];
+
+window.geflipSnapshot = function geflipSnapshot(){
+  const pos = (LAST.alloc && LAST.alloc.pos) || [];
+  const src = pos.length
+    ? pos.map(p => ({c:p.c, qty:p.qty, gph:p.egph}))
+    : (LAST.cands || []).slice(0, 8).map(c => ({c, qty:c.quantity, gph:c.expGph}));
+  const num = v => Math.round(Number(v) || 0);
+  return {
+    v: 1,
+    t: Math.round(LAST.t || 0),                    // unix seconds; 0 = never scanned
+    allocated: pos.length > 0,                     // false = raw gp/h ranking, no bankroll fit
+    scanning: !!($('btnScan') && $('btnScan').disabled),
+    rows: src.map(r => ({
+      name: String(r.c.name || ''),
+      buy:  num(r.c.buy),
+      sell: num(r.c.sell),
+      qty:  num(r.qty),
+      gph:  num(r.gph),
+    })),
+    // Your live GE offers, when the plugin bridge or cloud sync is feeding this page.
+    offers: (LIVE_OFFERS || []).map(o => ({
+      name:  String(o.name || ('#' + o.id)),
+      price: num(o.price),
+      sold:  num(o.qtySold),
+      total: num(o.qtyTotal),
+      buy:   String(o.state || '').indexOf('BUY') >= 0,
+      stale: !!o.stale,
+    })),
+    realized: num(LIVE_SESSION && LIVE_SESSION.realized),
+  };
+};
 
 async function ovScanNow(){
   const stat = $('ovStat');

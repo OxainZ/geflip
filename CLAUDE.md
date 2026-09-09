@@ -15,14 +15,20 @@ Three surfaces share this repo:
    - `com.geflip.coach.CoachPlugin` — account coach (DPS, goals, dailies,
      farm/skill plans, its own phone page via `CoachServer`)
    - `com.geflip.jad.JadPrayerPlugin` — Jad prayer helper overlay
-3. **Android overlay** (`android/`) — Java 11, AGP 8.5.2, ZERO third-party deps. A
-   `TYPE_APPLICATION_OVERLAY` window hosting a WebView on the PWA's `?overlay=1`
-   layout, so the flip list floats over the OSRS **mobile** client (which has no
-   plugin API and is not modified in any way — see MOBILE.md for the line this does
-   not cross). The app holds NO market logic: the page stays the only flip engine, so
-   phone and desktop cannot disagree. Built by `.github/workflows/android.yml` into a
-   sideloadable debug APK — Jonah installs it off the Actions artifact, no Android
-   Studio. `Prefs.overlayUrl` is the only real logic and is unit-tested (8 tests).
+3. **Phone hosts — `ios/` and `android/`** (see MOBILE.md). Neither mobile client has a
+   plugin API, so both are separate apps showing the PWA's `?overlay=1` layout, and
+   **neither holds any market logic** — the page stays the only flip engine.
+   - `android/` — Java 11, AGP 8.5.2, ZERO third-party deps. A real
+     `TYPE_APPLICATION_OVERLAY` window over the game; fully interactive (tap a price to
+     copy it). Built by CI into a sideloadable debug APK.
+   - `ios/` — Swift, XcodeGen (the .xcodeproj is generated, never committed). iOS has NO
+     draw-over-other-apps, so this is Picture in Picture: an `AVSampleBufferDisplayLayer`
+     whose frames `PipRenderer` paints from `window.geflipSnapshot()`. A PiP window is a
+     video — it CANNOT be tapped or copied from, and that is the platform, not a shortcut.
+     Built unsigned on a macOS runner; AltStore re-signs it on the phone.
+   - `window.geflipSnapshot()` in index.html is a **stable API** consumed by
+     `ios/GeflipFloat/WebHost.swift`. Rename a field there and the iPhone window goes
+     blank — change both in the same pass.
 4. **Cloudflare sync worker** (`sync-worker/src/worker.js`) — relays
    fills/flips/offers between the plugin and the phone page. CORS-open **by
    design**; the sync-id is the secret. Don't "fix" the CORS.
@@ -56,6 +62,13 @@ Three surfaces share this repo:
 - Jonah runs it via `launch-geflip.bat` (dev-mode RuneLite; needs JDK 11 at
   the JAVA_HOME set inside the .bat). Built jar sideloads to
   `~/.runelite/sideloaded-plugins/`.
+
+## Build & test (phone hosts)
+- **iOS**: `cd ios && xcodegen generate && xcodebuild -target GeflipFloat -sdk iphoneos`.
+  Needs a Mac — there isn't one, so `.github/workflows/ios.yml` is the only compiler this
+  code ever sees. Treat a red ios-float run as the type-checker talking.
+- The `.ipa` ships UNSIGNED by design; AltStore signs it with Jonah's free Apple ID, so no
+  certificate or provisioning profile belongs in this repo. Ever.
 
 ## Build & test (Android overlay)
 - `cd android && gradle assembleDebug` — needs an Android SDK (platform 34,
