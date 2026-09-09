@@ -4,7 +4,12 @@ name: android-overlay
 # run, download the geflip-overlay-debug artifact on the phone, tap the .apk. Debug build
 # on purpose — it is signed with the public debug key, so no signing secret lives here.
 on:
+  # push only on main, pull_request everywhere else: one run per commit either way.
+  # Both triggers on a branch meant two builds racing, and collapsing them with
+  # concurrency just traded a wasted build for a cancelled check that leaves every
+  # PR sitting at mergeable_state=unstable.
   push:
+    branches: [main]
     paths: ['android/**', '.github/workflows/android.yml']
   pull_request:
     paths: ['android/**', '.github/workflows/android.yml']
