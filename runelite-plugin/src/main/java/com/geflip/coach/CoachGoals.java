@@ -229,6 +229,42 @@ final class CoachGoals
 		GOALS.add(new Goal("Black chinchompas", 4, "medium",
 			"High gp/hr Hunter in the Wilderness - risky, bank often. Also the fastest Ranged xp in the game.",
 			quest(Quest.EAGLES_PEAK), quest(Quest.MONKEY_MADNESS_II)));
+
+		// --- LATE GAME (2026-09-08) ----------------------------------------------------
+		// The graph stopped at roughly Zulrah/Hydra, which is where a combat-96 / 278-QP account
+		// already IS - so the coach ran out of things to say exactly when it mattered. These are the
+		// tiers above it. Quest prerequisites were read from the wiki quest infoboxes, not recalled.
+		// Where a requirement is a soft gear/experience bar rather than a hard skill gate (the raids),
+		// it is left OUT of the reqs and stated in the note: a fake gate reads as blocked forever.
+		GOALS.add(new Goal("Desert Treasure II", 5, "grind",
+			"The big mid-late unlock: Ancient rings, the four new bosses, and the best magic upgrades. "
+				+ "Long quest chain - check the wiki for the full skill list before starting.",
+			quest(Quest.DESERT_TREASURE_I), quest(Quest.THE_DIG_SITE), quest(Quest.TEMPLE_OF_IKOV),
+			quest(Quest.THE_TOURIST_TRAP), quest(Quest.TROLL_STRONGHOLD), quest(Quest.DEATH_PLATEAU)));
+		GOALS.add(new Goal("Vardorvis", 4, "medium",
+			"DT2 boss - slash is its weakest defence. Solid gp and an axe piece toward the ancient rings.",
+			quest(Quest.DESERT_TREASURE_II__THE_FALLEN_EMPIRE)));
+		GOALS.add(new Goal("Duke Sucellus", 4, "medium",
+			"DT2 boss - lowest slash defence of the four; the most forgiving to learn.",
+			quest(Quest.DESERT_TREASURE_II__THE_FALLEN_EMPIRE)));
+		GOALS.add(new Goal("The Leviathan", 4, "long",
+			"DT2 boss - ranged is its soft spot. Harder than Duke/Vardorvis; bring a good ranged setup.",
+			quest(Quest.DESERT_TREASURE_II__THE_FALLEN_EMPIRE)));
+		GOALS.add(new Goal("The Whisperer", 4, "long",
+			"DT2 boss - magic defence is near zero, so magic shreds it. Needs solid prayer management.",
+			quest(Quest.DESERT_TREASURE_II__THE_FALLEN_EMPIRE)));
+		GOALS.add(new Goal("Ancient rings (DT2)", 5, "grind",
+			"Bellator/Magus/Venator/Ultor - the best rings in the game, from the four DT2 bosses. "
+				+ "A permanent BiS-tier upgrade and the reason to farm them.",
+			quest(Quest.DESERT_TREASURE_II__THE_FALLEN_EMPIRE)));
+		GOALS.add(new Goal("Chambers of Xeric (CoX)", 5, "grind",
+			"First raid. NO hard skill gate - the real requirement is gear, food and a team, so it is "
+				+ "listed as ready and gated by your own judgement. Twisted bow drops here.",
+			skill(Skill.PRAYER, 43)));
+		GOALS.add(new Goal("Theatre of Blood (ToB)", 5, "grind",
+			"Second raid, harder than CoX and far less forgiving. No hard skill gate either - gear, "
+				+ "learning and a team are the real bar. Scythe and Rapier drop here.",
+			skill(Skill.PRAYER, 43)));
 	}
 
 	// --- curated high-value quests (with their BINDING requirements) ----------
