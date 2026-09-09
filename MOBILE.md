@@ -38,11 +38,15 @@ That buys you a window that survives you swiping to OSRS. It costs you interacti
 window cannot be tapped, scrolled, or copied from.** It is a read-out — your open GE offers,
 then what to buy at what price — and you type the numbers yourself.
 
-### Before you invest any time in this
+### Does PiP actually survive OSRS?
 
-**Test whether PiP survives OSRS on your phone, it takes 30 seconds:** start any video in
-PiP (YouTube, Safari), swipe to OSRS, see whether the window stays up and keeps playing.
-If iOS or the game kills it, this whole approach is dead and no amount of code fixes it.
+**Yes — checked on Jonah's iPhone: a YouTube PiP window stays up over the running game.**
+That is the load-bearing assumption behind this whole directory, so it was tested before
+any of it was worth building. If a future iOS release breaks it, nothing in `ios/` can
+work around it — the approach dies with it.
+
+Re-run the check the same way on any new phone or iOS version: start a video in PiP,
+swipe to OSRS, see whether it stays.
 
 ### Install (no Mac needed)
 
