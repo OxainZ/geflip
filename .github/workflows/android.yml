@@ -1,0 +1,57 @@
+name: android-overlay
+
+# Builds the phone overlay APK so it can be installed without Android Studio: open the
+# run, download the geflip-overlay-debug artifact on the phone, tap the .apk. Debug build
+# on purpose — it is signed with the public debug key, so no signing secret lives here.
+on:
+  push:
+    paths: ['android/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-overlay-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # AGP 8.5.2 wants JDK 17 and Gradle 8.7+. No wrapper is committed (same rule as
+      # runelite-plugin/), so the Gradle version is pinned here instead.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Pinned to the version this module was actually built and tested against, rather
+      # than AGP 8.5.2's bare minimum (8.7). Same reason build.gradle pins AGP.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Unit tests
+        working-directory: android
+        run: gradle --no-daemon testDebugUnitTest
+
+      - name: Build debug APK
+        working-directory: android
+        run: gradle --no-daemon assembleDebug
+
+      - name: Lint
+        working-directory: android
+        run: gradle --no-daemon lintDebug
+        continue-on-error: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: geflip-overlay-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

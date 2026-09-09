@@ -15,10 +15,18 @@ Three surfaces share this repo:
    - `com.geflip.coach.CoachPlugin` — account coach (DPS, goals, dailies,
      farm/skill plans, its own phone page via `CoachServer`)
    - `com.geflip.jad.JadPrayerPlugin` — Jad prayer helper overlay
-3. **Cloudflare sync worker** (`sync-worker/src/worker.js`) — relays
+3. **Android overlay** (`android/`) — Java 11, AGP 8.5.2, ZERO third-party deps. A
+   `TYPE_APPLICATION_OVERLAY` window hosting a WebView on the PWA's `?overlay=1`
+   layout, so the flip list floats over the OSRS **mobile** client (which has no
+   plugin API and is not modified in any way — see MOBILE.md for the line this does
+   not cross). The app holds NO market logic: the page stays the only flip engine, so
+   phone and desktop cannot disagree. Built by `.github/workflows/android.yml` into a
+   sideloadable debug APK — Jonah installs it off the Actions artifact, no Android
+   Studio. `Prefs.overlayUrl` is the only real logic and is unit-tested (8 tests).
+4. **Cloudflare sync worker** (`sync-worker/src/worker.js`) — relays
    fills/flips/offers between the plugin and the phone page. CORS-open **by
    design**; the sync-id is the secret. Don't "fix" the CORS.
-4. **The AI lane (2026-08-24, `ASK_THE_AI.md`)** — CoachPlugin pushes a full
+5. **The AI lane (2026-08-24, `ASK_THE_AI.md`)** — CoachPlugin pushes a full
    account snapshot (`account` key: skills, QP, quests, gp, net worth, CA
    tier, slayer, WOM, top goals+gaps) to the same worker every ~5 min, using
    the FLIPPER's cloudUrl/cloudId settings (nothing new to configure). One
@@ -48,6 +56,15 @@ Three surfaces share this repo:
 - Jonah runs it via `launch-geflip.bat` (dev-mode RuneLite; needs JDK 11 at
   the JAVA_HOME set inside the .bat). Built jar sideloads to
   `~/.runelite/sideloaded-plugins/`.
+
+## Build & test (Android overlay)
+- `cd android && gradle assembleDebug` — needs an Android SDK (platform 34,
+  build-tools 34) and **JDK 17** (AGP 8.5.2's floor; the plugin's JDK 11 will not do).
+  No wrapper committed, same rule as `runelite-plugin/`.
+- `gradle testDebugUnitTest` — 1 test class / 8 tests. Keep them green.
+- CI does both and uploads the APK; nothing here needs Android Studio.
+- The overlay layout lives in `index.html` behind `?overlay=1` — changing it means
+  bumping `SHELL` in `sw.js` like any other index.html change.
 
 ## Data
 - `data/trends.json` — 30/90/180d trend snapshots, refreshed by
@@ -134,4 +151,8 @@ phone** — update `hermes_chat.py` in the same pass. (See also `osrs_advisor.py
   Jonah's explicit decision. Never ship it publicly, never bundle it into the Pages deploy, and
   don't quietly disable or re-enable it on your own. His call, not yours.
 - Plugins are **read-only** toward the game — observe and advise, never automate input.
+- The Android overlay only **draws on top**. Never add an accessibility service,
+  MediaProjection/screen capture, OCR of the client, or input injection — that is the
+  difference between a second app and a banned client mod, and it is not a line to
+  experiment with.
 - The pinned JDK / Gradle / client versions are load-bearing. Don't "modernise" them casually.
