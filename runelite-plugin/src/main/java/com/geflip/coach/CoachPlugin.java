@@ -88,6 +88,12 @@ public class CoachPlugin extends Plugin
 	// runs off it, where touching the client is unsafe and walking the bank is slow - doing it there
 	// is what hung the Ask panel on 'thinking...'. Read these fields; never call the client there.
 	private volatile String lastTaskLine, lastEquipLine, lastBankLine;
+	// bankLine() runs on the CLIENT THREAD every refresh and costs two itemManager lookups per
+	// stack - on a big bank that is real work competing with the game's own frame. Cache it and
+	// recompute only when the bank actually changed: the signature loop is plain int math, which is
+	// orders of magnitude cheaper than the price/composition lookups it avoids.
+	private volatile int bankSig;
+	private volatile String bankLineCache;
 	private volatile long lastWomMs = 0;
 	private volatile java.util.Map<String, double[][]> womRates;   // WOM community-optimal xp/hr rate tables (fetched once)
 	private ScheduledFuture<?> priceRefresh;   // the net-worth price poller (cancelled on shutdown)
@@ -1298,6 +1304,10 @@ public class CoachPlugin extends Plugin
 		{
 			net.runelite.api.ItemContainer bc = client.getItemContainer(net.runelite.api.InventoryID.BANK);
 			if (bc == null) return null;
+			int sig = 0;
+			for (net.runelite.api.Item it : bc.getItems())
+				if (it != null) sig = sig * 31 + it.getId() * 31 + it.getQuantity();
+			if (sig == bankSig && bankLineCache != null) return bankLineCache;   // unchanged: skip the lookups
 			java.util.List<long[]> rows = new java.util.ArrayList<>();   // {value, id, qty}
 			long total = 0;
 			for (net.runelite.api.Item it : bc.getItems())
@@ -1319,7 +1329,8 @@ public class CoachPlugin extends Plugin
 				sb.append(itemManager.getItemComposition((int) r[1]).getName())
 					.append(" x").append(r[2]).append(" (").append(CoachGoals.gp(r[0])).append(")");
 			}
-			return sb.toString();
+			bankSig = sig; bankLineCache = sb.toString();
+			return bankLineCache;
 		}
 		catch (Exception e) { return null; }
 	}

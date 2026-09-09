@@ -345,6 +345,9 @@ public class GeflipPlugin extends Plugin
 	}
 
 	/** Compact gp for coach text (13.5m / 240k / 900). */
+	private volatile String goalNameCache = null;
+	private volatile int goalIdCache = -1;
+
 	static String money(long v)
 	{
 		long a = Math.abs(v);
@@ -863,7 +866,8 @@ public class GeflipPlugin extends Plugin
 		notifyPrimed = true;
 		if (panel != null)
 		{
-			panel.setSession(ledger); panel.setHoldings(buildHoldings());
+			java.util.List<Hold> holdsNow = buildHoldings();   // build ONCE, reused by the coach line below
+			panel.setSession(ledger); panel.setHoldings(holdsNow);
 			panel.setTopItems(topItems()); panel.setWatch(buildWatch());
 			// capital-utilization meter: stock held + gp tied up in pending buys, vs bankroll
 			long working = ledger.inventoryCost;
@@ -879,7 +883,7 @@ public class GeflipPlugin extends Plugin
 			try
 			{
 				long bank = bankrollGp();
-				java.util.List<Hold> hs = buildHoldings();
+				java.util.List<Hold> hs = holdsNow;
 				long basketVal = 0;
 				for (GeflipScanner.Flip f : lastFlips)
 					if (f.basketQty > 0) basketVal += (long) f.margin * f.basketQty;
@@ -895,7 +899,11 @@ public class GeflipPlugin extends Plugin
 			try
 			{
 				String want = config.goalItem();
-				int gid = (want == null || want.trim().isEmpty()) ? -1 : scanner.idForName(want.trim());
+				// idForName is a linear pass over the ~4k mapping. The goal only changes when the config
+				// does, so resolve once and cache rather than rescanning every refresh.
+				String wantKey = want == null ? "" : want.trim();
+				if (!wantKey.equals(goalNameCache)) { goalNameCache = wantKey; goalIdCache = wantKey.isEmpty() ? -1 : scanner.idForName(wantKey); }
+				int gid = goalIdCache;
 				int gprice = gid > 0 ? scanner.buyHint(gid) : -1;
 				if (gprice > 0)
 				{
