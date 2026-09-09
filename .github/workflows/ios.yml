@@ -14,7 +14,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-float-${{ github.ref }}
+  # head_ref (pull_request) and ref_name (push) are both the branch name, so the two
+  # triggers for one commit collapse into a single build instead of racing.
+  group: ios-float-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:

@@ -38,9 +38,9 @@ targets:
         UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        UIRequiresFullScreen: false
         # The plugin's LAN bridge is plain http on your own wifi. iOS needs both of these
         # to let a third-party app talk to a 192.168.x.x address at all.
         NSAppTransportSecurity:
