@@ -1273,6 +1273,14 @@ public class CoachPlugin extends Plugin
 		return highest < 0 ? null : CA_NAMES[highest];
 	}
 
+	/**
+	 * Diary progress AND what the next tier actually gives you.
+	 *
+	 * This used to report only "Ardougne: Hard" - a scoreboard. The reward is the whole reason to
+	 * do the next tier, so it belongs on the same line; without it the panel told you where you
+	 * were and never why to move. Rewards come from DiaryRewards (scraped per-tier from the wiki),
+	 * and a finished diary says so rather than dangling a tier that does not exist.
+	 */
 	private List<String> diaryLines()
 	{
 		List<String> out = new ArrayList<>();
@@ -1280,7 +1288,14 @@ public class CoachPlugin extends Plugin
 		{
 			int highest = -1;
 			for (int t = 0; t < 4; t++) if (client.getVarbitValue((Integer) d[t + 1]) > 0) highest = t;
-			out.add(d[0] + ": " + (highest < 0 ? "—" : TIER[highest] + " ✓"));
+			String name = (String) d[0];
+			String done = highest < 0 ? "—" : TIER[highest] + " ✓";
+			if (highest >= 3) { out.add(name + ": Elite ✓ complete"); continue; }
+			String nextTier = TIER[highest + 1];
+			String[] rw = DiaryRewards.of(name, nextTier);
+			out.add(rw == null
+				? name + ": " + done + "  → next " + nextTier
+				: name + ": " + done + "  → " + nextTier + ": " + rw[0] + " (" + rw[1] + ")");
 		}
 		return out;
 	}
