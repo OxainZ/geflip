@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- geflip overlay — a floating window that draws OVER the OSRS mobile client.
+     It never talks to the game: no accessibility service, no input injection, no screen
+     capture, no reading the client's memory or its files. It is a second app that happens
+     to sit on top, showing prices from the OSRS Wiki API and your own RuneLite plugin's
+     sync. That is the whole reason it is allowed to exist. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material"
+        android:usesCleartextTraffic="true">
+        <!-- cleartext: the LAN path is http://<pc-ip>:7777, the plugin's own bridge on your
+             wifi. The hosted page is https and unaffected. -->
+
+        <activity
+            android:name=".SetupActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".OverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <!-- Required from API 34. There is no stock type for "user's own HUD over another
+                 app"; specialUse is the documented escape hatch. Sideloaded, never Play-listed. -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Draws the user's own Grand Exchange data in a floating window over other apps" />
+        </service>
+    </application>
+</manifest>

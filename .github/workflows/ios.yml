@@ -1,0 +1,78 @@
+name: ios-float
+
+# Builds the iPhone app on a macOS runner, so no Mac is needed to develop it. The .ipa is
+# UNSIGNED on purpose: AltStore/SideStore re-signs it on the phone with your own free Apple
+# ID, which means no certificate or provisioning secret ever lives in this repo.
+on:
+  # push only on main, pull_request everywhere else: one run per commit either way.
+  # Both triggers on a branch meant two builds racing, and collapsing them with
+  # concurrency just traded a wasted build for a cancelled check that leaves every
+  # PR sitting at mergeable_state=unstable.
+  push:
+    branches: [main]
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # head_ref (pull_request) and ref_name (push) are both the branch name, so the two
+  # triggers for one commit collapse into a single build instead of racing.
+  group: ios-float-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # brew always installs the NEWEST XcodeGen, which writes the newest .xcodeproj
+      # object format (77 = Xcode 16). Pinning an older runner image means an Xcode that
+      # cannot open its own generator's output — macos-14 ships Xcode 15.4 and fails with
+      # "future Xcode project file format (77)". Track the newest image, and pick the
+      # newest Xcode actually installed on it rather than trusting the default symlink.
+      - name: Select the newest Xcode on the runner
+        run: |
+          newest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$newest" ]; then sudo xcode-select -s "$newest"; fi
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # The .xcodeproj is generated, not committed — see ios/project.yml.
+      - name: Generate project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -project GeflipFloat.xcodeproj \
+            -target GeflipFloat \
+            -configuration Release \
+            -sdk iphoneos \
+            CONFIGURATION_BUILD_DIR="$PWD/out" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package .ipa
+        working-directory: ios
+        run: |
+          test -d out/GeflipFloat.app
+          mkdir -p Payload
+          cp -R out/GeflipFloat.app Payload/
+          zip -qry GeflipFloat.ipa Payload
+          ls -la GeflipFloat.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: geflip-float-unsigned-ipa
+          path: ios/GeflipFloat.ipa
+          if-no-files-found: error

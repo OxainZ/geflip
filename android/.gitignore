@@ -1,0 +1,10 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+# Same rule as runelite-plugin/: no wrapper is committed. Use system Gradle 8.7+,
+# or let .github/workflows/android.yml build the APK for you.
+gradle/
+gradlew
+gradlew.bat
