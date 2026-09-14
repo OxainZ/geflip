@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#14100C"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:letterSpacing="0.14"
+            android:text="GEFLIP OVERLAY"
+            android:textColor="#FF981F"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:lineSpacingMultiplier="1.3"
+            android:text="Floats your flip list over the OSRS mobile client, because mobile has no plugins. It only draws on top — it never reads the game, never touches your input, and holds no account details. Prices come from the OSRS Wiki API; your live GE offers come from the geflip RuneLite plugin over your own sync."
+            android:textColor="#9A8A6E"
+            android:textSize="13sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:text="Page"
+            android:textColor="#E6D9BF"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/url"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:hint="https://oxainz.github.io/geflip/"
+            android:importantForAutofill="no"
+            android:inputType="textUri"
+            android:textColor="#E6D9BF"
+            android:textColorHint="#6B5D46"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:lineSpacingMultiplier="1.3"
+            android:text="Leave the default to use the hosted app. To see live fills and your open GE offers, point it at the plugin bridge on the same wifi instead — http://PC-IP:7777/?t=YOUR-TOKEN — or set the cloud sync id once in the full app (⤢)."
+            android:textColor="#6B5D46"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/grant"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:text="Allow drawing over other apps" />
+
+        <Button
+            android:id="@+id/start"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Start overlay" />
+
+        <Button
+            android:id="@+id/stop"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Stop overlay" />
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textColor="#9A8A6E"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:lineSpacingMultiplier="1.3"
+            android:text="In the window: drag the title bar to move, ◢ to resize, – to shrink to a bubble, ◐ to fade it, ⟳ to reload, ✕ to close. Tap a price to copy it, then paste it into the Grand Exchange offer box."
+            android:textColor="#6B5D46"
+            android:textSize="12sp" />
+    </LinearLayout>
+</ScrollView>
