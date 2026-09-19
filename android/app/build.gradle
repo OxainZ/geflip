@@ -1,0 +1,30 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.geflip.overlay'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.geflip.overlay'
+        minSdk 26          // TYPE_APPLICATION_OVERLAY landed in API 26; nothing here predates it
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildTypes {
+        // Debug is the shipping build: this is sideloaded from a CI artifact, and a debug
+        // APK is signed with the public debug key so it installs without a keystore secret.
+        release { minifyEnabled false }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    // Test-only. The app itself ships with no third-party code at all.
+    testImplementation 'junit:junit:4.13.2'
+}
