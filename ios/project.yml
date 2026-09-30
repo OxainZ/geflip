@@ -1,0 +1,58 @@
+# XcodeGen spec — the .xcodeproj is generated, never committed, so there is no 40k-line
+# pbxproj to merge-conflict over. CI runs `xcodegen generate` before building.
+name: GeflipFloat
+
+options:
+  deploymentTarget:
+    iOS: "15.0"          # custom-content PiP (AVPictureInPictureController.ContentSource) is iOS 15+
+  createIntermediateGroups: true
+  groupSortPosition: none
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"        # iPhone
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  GeflipFloat:
+    type: application
+    platform: iOS
+    sources:
+      - path: GeflipFloat
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.geflip.float
+        PRODUCT_NAME: GeflipFloat
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: GeflipFloat/Info.plist
+      properties:
+        CFBundleDisplayName: geflip float
+        UILaunchScreen: {}
+        # PiP keeps the app alive once it is behind the game; without this background mode
+        # iOS suspends us the moment you swipe to OSRS and the window goes dead.
+        UIBackgroundModes: [audio]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # The plugin's LAN bridge is plain http on your own wifi. iOS needs both of these
+        # to let a third-party app talk to a 192.168.x.x address at all.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: >-
+          Lets geflip reach the RuneLite plugin's bridge on your own wifi, so the window can
+          show your real fills and open Grand Exchange offers.
+
+schemes:
+  GeflipFloat:
+    build:
+      targets:
+        GeflipFloat: all
+    run:
+      config: Debug
