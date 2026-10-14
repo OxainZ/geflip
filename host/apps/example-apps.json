@@ -1,0 +1,24 @@
+{
+  "_comment": "What Install-PocketLite.ps1 adds to Sunshine's apps.json. Paste these into the Sunshine web UI (Applications > Add) if you prefer to do it by hand. Field names follow Sunshine's parser (src/process.cpp).",
+  "env": {},
+  "apps": [
+    {
+      "name": "RuneLite",
+      "cmd": "C:\\Program Files (x86)\\Jagex Launcher\\JagexLauncher.exe",
+      "working-dir": "C:\\Program Files (x86)\\Jagex Launcher",
+      "wait-all": true,
+      "auto-detach": true,
+      "exit-timeout": 5,
+      "prep-cmd": []
+    },
+    {
+      "name": "RuneLite (direct)",
+      "cmd": "C:\\Users\\<you>\\AppData\\Local\\RuneLite\\RuneLite.exe",
+      "working-dir": "C:\\Users\\<you>\\AppData\\Local\\RuneLite",
+      "wait-all": true,
+      "auto-detach": true,
+      "exit-timeout": 5,
+      "prep-cmd": []
+    }
+  ]
+}

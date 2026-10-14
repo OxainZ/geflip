@@ -1,0 +1,10 @@
+# Pester / analyzer output
+testResults.xml
+coverage.xml
+# Editor
+.vscode/
+.idea/
+*.swp
+# OS
+Thumbs.db
+.DS_Store
