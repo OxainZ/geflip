@@ -1,0 +1,5 @@
+// Pinned on purpose, same rule as runelite-plugin/: reproducible beats latest.
+// AGP 8.5.2 needs Gradle 8.7+ and JDK 17 (see .github/workflows/android.yml).
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}
