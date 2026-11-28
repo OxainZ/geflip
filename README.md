@@ -70,6 +70,15 @@ to trust today.
    (one tick in front of the queue), plus break-even and the cost to check the spread.
 4. **Journal** — after your flips fill, log the result and hit Verify to calibrate.
 
+## On the phone, over the game
+
+Neither mobile client has a plugin API, so geflip does the other thing: **a separate app
+that keeps the flip list on screen while you play** — live GE offers, then what to buy at
+what price. `android/` gets a real overlay window (tap a price to copy it); `ios/` gets a
+Picture-in-Picture read-out, because iOS has no draw-over-other-apps at all. Both show the
+`?overlay=1` layout of this same page and hold no market logic of their own. Neither reads
+the game, touches input, or modifies the client. See **[MOBILE.md](MOBILE.md)**.
+
 ## Privacy
 
 Everything — config, journal, positions — lives in your browser's `localStorage`.
@@ -82,6 +91,7 @@ Single `index.html`, no dependencies, no build. Served static on GitHub Pages. A
 scan fetches 4 wiki endpoints (`latest`, `1h`, `5m`, `24h`) and caches the item
 mapping for 24h; the two optional endpoints degrade gracefully on a weak signal, and
 **Lite mode** halves the data for a bad connection. `osrsflip.pyz` is a Python
-command-line build of the same idea.
+command-line build of the same idea. `android/` (Java, zero deps) and `ios/` (Swift) host
+this page on a phone and hold no market logic of their own.
 
 > Play fair. This is a decision aid for manual flipping — no automation, no botting.
